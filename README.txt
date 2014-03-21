@@ -29,7 +29,7 @@ RUNNING
 Run the example cam from the top level source directory where you 
 unpacked g2cam, e.g.
 
-$ g2cam --loglevel=20 --stderr --cam=SIMCAM
+$ ./scripts/g2cam --loglevel=20 --stderr --cam=SIMCAM
 
 DOCUMENTATION
 -------------
