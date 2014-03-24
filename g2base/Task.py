@@ -763,6 +763,9 @@ class QueueTaskset(Task):
             #self.logger.error("Error cancelling child task: %s" % (str(e)))
             pass
 
+        # put termination sentinel
+        self.queue.put(None)
+
             
     def stop_child(self):
         self.flush()
@@ -785,6 +788,10 @@ class QueueTaskset(Task):
                 self.check_state()
 
                 task = self.queue.get(block=True, timeout=self.timeout)
+                if task == None:
+                    # termination sentinel
+                    break
+                
                 self.task = task
 
                 task.register_callback(self.child_done, args=[task])
@@ -967,6 +974,10 @@ class WorkerThread(object):
                     # self.timeout secs
                     (priority, task) = self.queue.get(block=True,
                                                       timeout=self.timeout)
+                    if task == None:
+                        # termination sentinel
+                        self.queue.put((priority, task))
+                        break
 
                     self.execute(task)
                     
@@ -994,6 +1005,8 @@ class WorkerThread(object):
         self.thread.start()
         
     def stop(self):
+        # Put termination sentinal on queue
+        self.queue.put((priority, task))
         self.ev_quit.set()
         
     def reset(self):

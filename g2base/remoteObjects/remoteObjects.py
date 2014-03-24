@@ -2,9 +2,7 @@
 #
 # remoteObjects.py -- remote object server module.
 #
-#[ Eric Jeschke (eric@naoj.org) --
-#  Last edit: Thu Mar 20 13:07:31 HST 2014
-#]
+# Eric Jeschke (eric@naoj.org)
 #
 # TODO:
 # [ ] ? allow authentication on a method-by-method basis
@@ -40,28 +38,25 @@ import inspect
 
 from g2base import Bunch, Task, ssdlog
 
-
 from ro_config import *
+
 
 # Collect the different transports we can use 
 transports = {}
 try:
     import ro_XMLRPC
     transports['xmlrpc'] = ro_XMLRPC
-except ImportError as e:
-    print "xmlrpc: %s" % (str(e))
+except ImportError:
     pass
 try:
     import ro_socket
     transports['socket'] = ro_socket
-except ImportError as e:
-    print "socket: %s" % (str(e))
+except ImportError:
     pass
 try:
     import ro_ZMQRPC
     transports['zmqrpc'] = ro_ZMQRPC
-except ImportError as e:
-    print "zmqrpc: %s" % (str(e))
+except ImportError:
     pass
 
 version = '20130801.0'
@@ -102,7 +97,7 @@ class remoteObjectServer(object):
     def __init__(self, svcname=None, obj=None, logger=None, ev_quit=None,
                  name='', host=None, port=None, usethread=True,
                  timeout=0.1, ping_interval=default_ns_ping_interval,
-                 strict_registration=False,
+                 strict_registration=False, numthreads=default_num_threads,
                  threaded_server=default_threaded_server,
                  threadPool=None, transport=default_transport,
                  encoding=default_encoding,
@@ -181,6 +176,7 @@ class remoteObjectServer(object):
         
         self.usethread = usethread
         self.threadPool = threadPool
+        self.numthreads = numthreads
         self.timeout = timeout
         self.lastpingtime = 0.0
         self.pinginterval = ping_interval
@@ -211,7 +207,8 @@ class remoteObjectServer(object):
                                  authDict=self.authDict,
                                  cert_file=self.cert_file,
                                  threaded=self.threaded_server,
-                                 threadPool=self.threadPool)
+                                 threadPool=self.threadPool,
+                                 numthreads=self.numthreads)
 
 
     def ro_start(self, wait=False, timeout=None):

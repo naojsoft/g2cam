@@ -1,14 +1,10 @@
 #
 # ro_XMLRPC.py -- enhanced XML-RPC services for remoteObjects system
 #
-#[ Eric Jeschke (eric@naoj.org) --
-#  Last edit: Thu Mar 20 13:08:42 HST 2014
-#]
+# Eric Jeschke (eric@naoj.org)
 #
-"""
-"""
 import sys, os, time
-import threading
+import threading, Queue
 import base64, urllib
 import httplib
 import string
@@ -29,7 +25,7 @@ except ImportError:
 
 from g2base import Task
 
-version = '20101208.0'
+version = '20140323.0'
 
 # Timeout value for XML-RPC sockets
 socket_timeout = 0.25
@@ -374,7 +370,7 @@ class BaseXMLRPCServer(SimpleXMLRPCServer.SimpleXMLRPCDispatcher):
     def __init__(self, host, port, ev_quit=None, timeout=0.1,
                  logger=None,
                  requestHandler=XMLRPCRequestHandler,
-                 threaded=True, threadPool=None,
+                 threaded=True, threadPool=None, numthreads=5,
                  logRequests=False, allow_none=True, encoding=None,
                  authDict=None):
         
@@ -399,8 +395,9 @@ class BaseXMLRPCServer(SimpleXMLRPCServer.SimpleXMLRPCDispatcher):
         # Defines how responsive to termination we are
         self.timeout = timeout
 
-        self.useThread = threaded
+        self.threaded = threaded
         self.threadPool = threadPool
+        self._num_threads = numthreads
         
         # Yecchh!  They changed the SimpleXMLRPCDispatcher constructor
         # API at Python v2.4
@@ -648,7 +645,56 @@ class BaseXMLRPCServer(SimpleXMLRPCServer.SimpleXMLRPCDispatcher):
                     self.logger.debug("Error in close: %s" % (str(e)))
 
 
+    def do_process_request(self, request, client_address):
+        """Same as in SocketServer.BaseServer but as a thread.
+
+        In addition, exception handling is done here.
+
+        """
+        try:
+            self.finish_request(request, client_address)
+            self.close_request(request)
+
+        except Exception, e:
+            self.logger.error("Error handling request: %s" % (
+                    str(e)))
+            try:
+                self.handle_error(request, client_address)
+                self.close_request(request)
+            except Exception, e:
+                self.logger.error("Error handling error handling!: %s" % (
+                        str(e)))
+                raise e
+
+
+    def worker(self, i, queue):
+
+        self.logger.info("worker %d spinning up..." % (i))
+
+        while not self.ev_quit.isSet():
+            try:
+                # NOTE: if timeout is specified, then performance
+                # drops *substantially*.
+                tup = queue.get(block=True, timeout=None)
+                assert len(tup) == 2, \
+                       Error("Invalid queue contents: len(tup) != 2 (%d)" % (
+                                    len(tup)))
+                request, client_address = tup
+                if request == None:
+                    # Termination sentinal
+                    queue.put(tup)
+                    break
+
+            except Queue.Empty:
+                continue
+
+            self.do_process_request(request, client_address)
+                
+        self.logger.info("worker %d shutting down..." % (i))
+
+
     def _server(self):
+
         while not self.ev_quit.isSet():
             try:
                 self.handle_request()
@@ -668,18 +714,40 @@ class BaseXMLRPCServer(SimpleXMLRPCServer.SimpleXMLRPCDispatcher):
                 self.logger.error("Unexpected exception raised: %s" % str(e))
                 raise
 
-    def start(self):
-        if not self.useThread:
+        if self.threaded:
+            # send termination sentinal to workers
+            self.queue.put((None, None))
+
+    def start(self, use_thread=True):
+        # Threaded server.  Start N workers either as new threads or using
+        # the thread pool, if we have one.
+        if self.threaded:
+            # queue for communicating with workers
+            self.queue = Queue.Queue()
+
+            for i in xrange(self._num_threads):
+                if self.threadPool == None:
+                    thread = threading.Thread(target=self.worker,
+                                              name="RPC-Worker-%d" % (i+1),
+                                              args=[i, self.queue])
+                    thread.daemon = False
+                    thread.start()
+                else:
+                    task = Task.FuncTask2(self.worker, i, self.queue)
+                    self.threadPool.addTask(task)
+
+        if not use_thread:
             self._server()
 
-        elif self.threadPool == None:
-            thread = threading.Thread(target=self._server)
-            thread.daemon=True
-            thread.start()
-
         else:
-            task = Task.FuncTask2(self._server)
-            self.threadPool.addTask(task)
+            if self.threadPool == None:
+                thread = threading.Thread(target=self._server)
+                thread.daemon=True
+                thread.start()
+
+            else:
+                task = Task.FuncTask2(self._server)
+                self.threadPool.addTask(task)
 
     def stop(self):
         self.ev_quit.set()
@@ -869,62 +937,18 @@ class SSLSocketServer(SocketServer.BaseServer):
 class ProcessingMixIn(object):
     """Mix-in class to handle each request in a new thread."""
 
-    def __init__(self, fn=None, threaded=False, daemon=False,
-                 threadPool=None):
-        if fn:
-            self.fn = fn
-        else:
-            self.fn = self.do_process_request
-            
-        self.useThread = threaded
+    def __init__(self, daemon=False, threaded=False, threadPool=None):
         self.daemon_threads = daemon
-        self.threadPool = threadPool
         
-    def do_process_request(self, request, client_address):
-        """Same as in SocketServer.BaseServer but as a thread.
-
-        In addition, exception handling is done here.
-
-        """
-        try:
-            self.finish_request(request, client_address)
-            self.close_request(request)
-
-        except Exception, e:
-            self.logger.error("Error handling request: %s" % (
-                    str(e)))
-            try:
-                self.handle_error(request, client_address)
-                self.close_request(request)
-            except Exception, e:
-                self.logger.error("Error handling error handling!: %s" % (
-                        str(e)))
-                raise e
-
     def process_request(self, request, client_address):
-        """Start a new thread to process the request."""
+        """Optional multithreaded request processing."""
 
-        if self.useThread:
-            if self.threadPool:
-                self.logger.debug("Handing off request %s to threadpool." % (
-                        str(client_address)))
-                # If there is a threadpool with worker tasks, use it
-                task = Task.FuncTask2(self.fn, request, client_address)
-                task.initialize(self)
-                self.threadPool.addTask(task)
-            else:
-                self.logger.debug("Creating thread to handle request %s." % (
-                        str(client_address)))
-                # otherwise create a new thread
-                t = threading.Thread(target=self.fn,
-                                     args=(request, client_address))
-                if self.daemon_threads:
-                    t.setDaemon(1)
-                t.start()
+        if self.threaded:
+            self.queue.put((request, client_address))
             
         # Default behavior is single-threaded sequential execution
         else:
-            self.fn(request, client_address)
+            self.do_process_request(request, client_address)
 
 
 
@@ -949,7 +973,7 @@ class XMLRPCServer(ProcessingMixIn, BaseXMLRPCServer,
                  logger=None, 
                  requestHandler=XMLRPCRequestHandler,
                  logRequests=False, allow_none=True, encoding=None,
-                 threaded=False, threadPool=None,
+                 threaded=False, threadPool=None, numthreads=5,
                  authDict=None, cert_file=None):
         
         BaseXMLRPCServer.__init__(self, host, port, ev_quit=ev_quit,
@@ -957,7 +981,9 @@ class XMLRPCServer(ProcessingMixIn, BaseXMLRPCServer,
                                   requestHandler=requestHandler,
                                   logRequests=logRequests,
                                   allow_none=allow_none, encoding=encoding,
-                                  authDict=authDict)
+                                  authDict=authDict,
+                                  threaded=threaded, threadPool=threadPool,
+                                  numthreads=numthreads)
                                   
         self.ssl_pad = False
         ProcessingMixIn.__init__(self, threaded=threaded, threadPool=threadPool)

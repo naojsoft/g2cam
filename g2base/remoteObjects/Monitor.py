@@ -2,12 +2,10 @@
 #
 # Monitor.py -- internal status monitoring and synchronization
 #
-#[ Eric Jeschke (eric@naoj.org) --
-#  Last edit: Thu Mar 20 13:00:24 HST 2014
-#]
+# Eric Jeschke (eric@naoj.org)
 #
 """
-The Monitor and Minimon classes are subclasses of the PubSubsetvals class.
+The Monitor and Minimon classes are subclasses of the PubSub class.
 
 They differ from the more generic PubSub class in the following ways:
 
@@ -50,7 +48,7 @@ Important definitions:
 
 Main issues to think about/resolve:
    
-    [X] Deleting data (esp. wrt. bidirectional subscriptions)
+  [X] Deleting data (esp. wrt. bidirectional subscriptions)
 """
 import sys, re
 import time
@@ -61,13 +59,13 @@ import logging
 
 from g2base import Task, Bunch, ssdlog
 from g2base import remoteObjects as ro
-from g2base.remoteObjects import PubSub as ps
 
+import PubSub as ps
 import NestedBunch
 
 serviceName = 'monitor'
 
-version = '20100128.0'
+version = '20140323.0'
 
 
 class MonitorError(ps.PubSubError):
@@ -105,10 +103,6 @@ def has_keys(valDict, keys):
     return True
     
 
-# TODO: should this also inherit from NestedBunch?  Would save having to
-# define a bunch of delegate calls, but would lose generality of 3rd party
-# store
-#
 class Monitor(ps.PubSub):
 
     def __init__(self, name, logger, dbpath=None, useSync=False,
@@ -157,14 +151,9 @@ class Monitor(ps.PubSub):
 
     # PUBSUB INTERFACE
     
-    def remote_update(self, payload, names, channels):
+    def monitor_update(self, payload, names, channels):
         """method called by PubSub to notify us with items.
         """
-        # Avoid cyclic dependencies--don't update ourselves if we
-        # originated this event
-        if self.name in names:
-            return ro.OK
-
         bnch = unpack_payload(payload)
 
         # Check for late delivery of monitor messages
@@ -184,9 +173,6 @@ class Monitor(ps.PubSub):
                 
         else:
             raise MonitorError("Unrecognized 'msg' field: %s" % (msg))
-
-        # Then update any of our subscribers
-        return super(Monitor, self).remote_update(payload, names, channels)
 
 
     def update(self, path, value, channels):
@@ -223,9 +209,9 @@ class Monitor(ps.PubSub):
         
         return self.notify(payload, channels)
 
-
     ###########################################################
     
+
     def setvals(self, channels, path, **values):
         """Similar method to update(), but uses keyword arguments as the
         value (a dict) to store.

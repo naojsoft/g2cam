@@ -2,17 +2,12 @@
 #
 # PubSub.py -- Subaru Remote Objects Publish/Subscribe module
 #
-#[ Eric Jeschke (eric@naoj.org) --
-#  Last edit: Thu Mar 20 13:00:25 HST 2014
-#]
+# Eric Jeschke (eric@naoj.org)
 #
 
 """
 Main issues to think about/resolve:
    
-  [ ] Preserving ordering of updates (e.g. use a queue or sequence number)
-       is it even necessary (or desirable)?
-  [ ] Clumping updates together to improve network efficiency (i.e. caching)
   [ ] Bidirectional channel subscriptions
   [X] Local subscriber callbacks
   [X] Ability to set up ad-hoc channels based on aggregate channels;
@@ -22,15 +17,13 @@ Main issues to think about/resolve:
 
 import sys, time
 import threading, Queue
-# API at Python v2.4
-if sys.hexversion < 0x02040000:
-    from sets import Set as set
 
 from g2base import Bunch, Task, ssdlog
 from g2base import remoteObjects as ro
+
 from ro_config import *
 
-version = '20110722.0'
+version = '20140322.0'
 
 # Subscriber options
 TWO_WAY = 'bidirectional'
@@ -66,7 +59,7 @@ class PubSubBase(object):
         self.numthreads = numthreads
 
         # Handles to subscriber remote proxies
-        self._partner = Bunch.threadSafeBunch()
+        self._partner = {}
         # Defines aggregate channels
         self.aggregates = Bunch.threadSafeBunch()
 
@@ -99,41 +92,30 @@ class PubSubBase(object):
         # who is unresponsive
         self.failure_limit = 60.0
 
+        self.cb_subscr_cnt = 0
+
     def get_threadPool(self):
         return self.threadPool
 
     
     def add_channel(self, channelName):
-        self._lock.acquire()
-        try:
+        with self._lock:
             self._get_channelInfo(channelName, create=True)
-                
-        finally:
-            self._lock.release()
                 
     
     def add_channels(self, channelNames):
-        self._lock.acquire()
-        try:
+        with self._lock:
             for channelName in channelNames:
                 self._get_channelInfo(channelName, create=True)
                 
-        finally:
-            self._lock.release()
-                
     
     def get_channels(self):
-        self._lock.acquire()
-        try:
+        with self._lock:
             return self._sub_info.keys()
-                
-        finally:
-            self._lock.release()
                 
     
     def loadConfig(self, moduleName):
-        self._lock.acquire()
-        try:
+        with self._lock:
             try:
                 self.logger.debug("Loading configuration from '%s'" % (
                         moduleName))
@@ -145,9 +127,6 @@ class PubSubBase(object):
 
             if hasattr(cfg, 'setup'):
                 cfg.setup(self)
-
-        finally:
-            self._lock.release()
 
 
     def loadConfigs(self, moduleList):
@@ -191,8 +170,7 @@ class PubSubBase(object):
             if options.has_key('unsub'):
                 can_unsubscribe = options['unsub']
 
-        self._lock.acquire()
-        try:
+        with self._lock:
             # Record proxy in _partner table
             self._partner[subscriber] = Bunch.Bunch(proxy=proxy_obj,
                                                     time_failure=None,
@@ -205,9 +183,6 @@ class PubSubBase(object):
             # Compute subscriber relationships
             self.compute_subscribers()
 
-        finally:
-            self._lock.release()
-
         
     def _unsubscribe(self, subscriber, channels, options):
         """Delete a subscriber (named by _subscriber_) to channel (or list
@@ -218,8 +193,7 @@ class PubSubBase(object):
         """
         channels = set(channels)
 
-        self._lock.acquire()
-        try:
+        with self._lock:
             for channel in channels:
 
                 bunch = self._get_channelInfo(channel)
@@ -237,9 +211,6 @@ class PubSubBase(object):
             # Compute subscriber relationships
             self.compute_subscribers()
 
-        finally:
-            self._lock.release()
-
 
     def remove_subscriber(self, subscriber):
         channels = self.get_channels()
@@ -247,13 +218,14 @@ class PubSubBase(object):
         self._unsubscribe(subscriber, channels, [])
 
         # Delete proxy entry
-        try:
-            del self._partner[subscriber]
-        except KeyError:
-            pass
+        with self._lock:
+            try:
+                del self._partner[subscriber]
+            except KeyError:
+                pass
 
 
-    def _named_update(self, value, names, channels):
+    def _named_update(self, value, names, channels, priority=0):
         """
         Internal method to push a _value_.  _names_ are the
         names of the pubsubs doing the updating.  _channels_ is the
@@ -262,16 +234,10 @@ class PubSubBase(object):
         self.logger.debug("update: names=%s, channels=%s value=%s" % (
             str(names), str(channels), str(value)))
 
-        # Start a task to do the remote update to subscribers.  Task will
-        # call _subscriber_update(value, names, channels).  Meanwhile,
-        # we are free to return immediately so as not delay the caller
-        # any further.
-        #self._subscriber_update(value, names, channels)
-        t = Task.FuncTask2(self._subscriber_update, value, names, channels)
-        t.init_and_start(self)
+        self._subscriber_update(value, names, channels, priority)
 
 
-    def _subscriber_update(self, value, names, channels):
+    def _subscriber_update(self, value, names, channels, priority):
         """
         Internal method to update all subscribers who would be affected
         by these channels.  Triggered by a _named_update() call, which creates
@@ -309,7 +275,7 @@ class PubSubBase(object):
                 # Start a new task to concurrently do the individual update
                 task = Task.FuncTask(self._individual_update,
                                      (subscriber, value, updnames,
-                                         all_channels), {},
+                                         all_channels, priority), {},
                                      logger=self.logger)
                 task.init_and_start(self)
 
@@ -318,7 +284,8 @@ class PubSubBase(object):
                     subscriber, str(e)))
 
 
-    def _individual_update(self, subscriber, value, names, channels):
+    def _individual_update(self, subscriber, value, names, channels,
+                           priority):
         self.logger.debug("attempting to update subscriber '%s' on channels(%s)  with value: %s" % (
             subscriber, str(channels), str(value)))
         
@@ -373,30 +340,22 @@ class PubSubBase(object):
         other channels (channels).  (channels) may contain aggregate or
         non-aggregate channels.
         """
-        self._lock.acquire()
-        try:
+        with self._lock:
             self.aggregates[channel] = set(channels)
 
             # Update subscriber relationships
             self.compute_subscribers()
-
-        finally:
-            self._lock.release()
         
 
     def deaggregate(self, channel):
         """
         Delete an aggregate channel (channel). 
         """
-        self._lock.acquire()
-        try:
+        with self._lock:
             self.aggregates.delitem(channel)
 
             # Update subscriber relationships
             self.compute_subscribers()
-
-        finally:
-            self._lock.release()
         
 
     def _get_constituents(self, channel, visited):
@@ -406,8 +365,7 @@ class PubSubBase(object):
 
         res = set([])
 
-        self._lock.acquire()
-        try:
+        with self._lock:
             # Only process this if it is an aggregate channel and we haven't
             # visited it yet
             if (not self.aggregates.has_key(channel)) or (channel in visited):
@@ -426,9 +384,6 @@ class PubSubBase(object):
 
             return res
 
-        finally:
-            self._lock.release()
-
 
     def get_constituents(self, channel):
         """
@@ -446,8 +401,7 @@ class PubSubBase(object):
         aggregate() and deaggregate(), methods.
         """
 
-        self._lock.acquire()
-        try:
+        with self._lock:
             # PASS 1
             # For each channel, initialize its set of computed subscribers
             # to the explicitly subscribed set
@@ -491,9 +445,6 @@ class PubSubBase(object):
             #    bunch = self._get_channelInfo(channel)
             #    self.logger.debug("%s --> %s" % (channel,
             #                                     str(list(bunch.computed_subscribers))))
-        finally:
-            self._lock.release()
-
         
     def _get_subscribers(self, channels):
         """Get the list of subscriber names that match subscriptions for
@@ -504,8 +455,7 @@ class PubSubBase(object):
             channels = [channels]
         self.logger.debug("channels=%s" % str(channels))
         
-        self._lock.acquire()
-        try:
+        with self._lock:
             # Optomization for case where there is only one channel
             if len(channels) == 1:
                 channel = channels[0]
@@ -539,9 +489,6 @@ class PubSubBase(object):
                 
                 return (subscribers, all_channels)
 
-        finally:
-            self._lock.release()
-
 
     def get_subscribers(self, channels):
         """
@@ -554,6 +501,13 @@ class PubSubBase(object):
         return (list(subscribers), list(all_channels))
 
         
+    def _monitor_update(self, value, names, channels, priority):
+        # update monitor
+        self.monitor_update(value, names, channels)
+
+        # if successful, update our subscribers
+        self._named_update(value, names, channels, priority=priority)
+        
 
     def remote_update(self, value, names, channels):
         """method called by another PubSub to update this one
@@ -564,10 +518,24 @@ class PubSubBase(object):
         if self.name in names:
             return ro.OK
 
-        return self._named_update(value, names, channels)
+        # Monitor update--this can be removed once Monitor is
+        # no longer a subclass of PubSub
+        if hasattr(self, 'monitor_update'):
+            task = Task.FuncTask(self._monitor_update,
+                                 (value, names, channels, 0),
+                                 {}, logger=self.logger)
+        else:
+            task = Task.FuncTask(self._named_update,
+                                 (value, names, channels),
+                                 {'priority': 0},
+                                 logger=self.logger)
+
+        task.init_and_start(self)
+
+        return ro.OK
 
 
-    def notify(self, value, channels):
+    def notify(self, value, channels, priority=0):
         """
         Method called by local users of this PubSub to update it
         with new and changed items.
@@ -575,7 +543,13 @@ class PubSubBase(object):
             channels    one (a string) or more (a list) of channel names to
                         which to send the specified update
         """
-        return self._named_update(value, [self.name], channels)
+        names = [ self.name ]
+        task = Task.FuncTask(self._named_update,
+                             (value, names, channels),
+                             {'priority': priority},
+                             logger=self.logger)
+
+        task.init_and_start(self)
 
 
 class PubSub(PubSubBase):
@@ -609,18 +583,20 @@ class PubSub(PubSubBase):
         self.update_interval = 10.0
 
 
-    def removeAllProxies(self):
-        self._proxyCache = {}
-        
-    def removeProxies(self, nameList):
+    def clear_proxy_cache(self):
+        with self._lock:
+            self._proxyCache = {}
+            
+    def remove_proxies(self, nameList):
         """Remove remoteObject proxies to remote pubsubs (subscribers).
         """
-        for name in nameList:
-            try:
-                del self._proxyCache[name]
-            except KeyError:
-                # already deleted?  in any case, it's ok
-                pass
+        with self._lock:
+            for name in nameList:
+                try:
+                    del self._proxyCache[name]
+                except KeyError:
+                    # already deleted?  in any case, it's ok
+                    pass
 
     def _getProxy(self, subscriber, options):
         """Internal method to create & cache remoteObject proxies to remote
@@ -628,7 +604,8 @@ class PubSub(PubSubBase):
         """
         try:
             # If we already have a proxy for the _svcname_, return it.
-            return self._proxyCache[subscriber]
+            with self._lock:
+                return self._proxyCache[subscriber]
 
         except KeyError:
             # Create a new proxy to the external pubsub and cache it
@@ -651,7 +628,8 @@ class PubSub(PubSubBase):
                 port = int(port)
                 proxy_obj = ro.remoteObjectClient(host, port, **kwdargs)
                 
-            self._proxyCache[subscriber] = proxy_obj
+            with self._lock:
+                self._proxyCache[subscriber] = proxy_obj
             self.logger.debug("Created proxy for '%s'" % (subscriber))
 
             return proxy_obj
@@ -795,16 +773,12 @@ class PubSub(PubSubBase):
         if not options:
             options = {}
             
-        self._lock.acquire()
-        try:
+        with self._lock:
             #self._remote_sub_info.add((publisher, channels, options))
             self._remote_sub_info[(publisher, channels)] = (publisher,
                                                             channels, options)
 
             self._subscribe_remote(publisher, channels, options)
-            
-        finally:
-            self._lock.release()
                 
     
     def unsubscribe_remote(self, publisher, channels, options):
@@ -816,53 +790,12 @@ class PubSub(PubSubBase):
             channels = tuple(channels)
         assert(type(channels) == tuple)
 
-        self._lock.acquire()
-        try:
+        with self._lock:
             #self._remote_sub_info.remove((publisher, channels, options))
             del self._remote_sub_info[(publisher, channels)]
 
             self._unsubscribe_remote(publisher, channels, options)
-        finally:
-            self._lock.release()
                 
-
-    def subscribe_local(self, local_obj, channels):
-        """Register a subscriber (represented by _local_obj_)
-        for updates on channel(s) _channels_.
-
-        This call is expected to be a local call.
-        """
-        # TODO: is this string guaranteed to be unique among objects?
-        subscriber = str(local_obj)
-        
-        self.logger.debug("registering '%s' as a subscriber for '%s'." % (
-            subscriber, channels))
-
-        if (not hasattr(local_obj, 'remote_update')) or \
-               (not hasattr(local_obj, 'remote_delete')):
-            raise PubSubError('object needs both remote_update and remote_delete methods')
-
-        super(PubSub, self)._subscribe(subscriber, local_obj,
-                                        channels, {})
-        self.logger.debug("local registration of '%s' successful." % (
-            subscriber))
-
-
-    def unsubscribe_local(self, local_obj, channels):
-        """Unregister a subscriber (named by _subscriber_) for updates on
-        channel(s) _channels_.
-
-        This call is expected to be a local call.
-        """
-        subscriber = str(local_obj)
-        
-        self.logger.debug("unregistering '%s' as a subscriber for '%s'." % (
-            subscriber, channels))
-
-        super(PubSub, self)._unsubscribe(subscriber, channels, {})
-        self.logger.debug("local unregistration of '%s' successful." % (
-            subscriber))
-
 
     def subscribe_cb(self, fn_update, channels):
         """Register local subscriber callback (_fn_update_)
@@ -873,20 +806,34 @@ class PubSub(PubSubBase):
         if not callable(fn_update):
             raise PubSubError('subscriber functions must be callables')
 
-        # TODO: should come up with unique name
-        subscriber = fn_update.__name__
+        # TODO: make sure this is a unique name
+        with self._lock:
+            subscriber = fn_update.__name__ + str(self.cb_subscr_cnt)
+            self.cb_subscr_cnt += 1
+            
         self.logger.debug("registering '%s' as a subscriber for '%s'." % (
             subscriber, channels))
 
         class anonClass(object):
-            def __init__(self, update):
+            def __init__(self, update, parent):
                 self.update = update
+                self.parent = parent
                 
-            def remote_update(self, value, name, channels):
-                # Could wrap this or modify interface if necessary
-                self.update(value, name, channels)
+            def remote_update(self, value, names, channels):
+                try:
+                    # This is being called from a thread in the workers
+                    self.update(value, names, channels)
+                    return ro.OK
+                    ## task = Task.FuncTask(self.update, (value, names, channels),
+                    ##                      {}, logger=self.parent.logger)
+                    ## task.init_and_start(self.parent)
 
-        local_obj = anonClass(fn_update)
+                except Exception as e:
+                    # Don't requeue local subscribers
+                    self.parent.logger.error("Error updating local subscriber: %s" % (
+                        str(e)))
+
+        local_obj = anonClass(fn_update, self)
 
         super(PubSub, self)._subscribe(subscriber, local_obj,
                                         channels, {})
@@ -959,12 +906,9 @@ class PubSub(PubSubBase):
         while not self.ev_quit.isSet():
             time_end = time.time() + self.update_interval
 
-            self._lock.acquire()
-            try:
+            with self._lock:
                 #tups = list(self._remote_sub_info)
                 tups = self._remote_sub_info.values()
-            finally:
-                self._lock.release()
                 
             self.logger.debug("updating remote subscriptions: %s" % (
                 str(tups)))
@@ -993,26 +937,6 @@ class PubSub(PubSubBase):
             self.logger.debug("End interval wait")
 
 
-##     def ro_echo(self, arg):
-##         """(Required by remoteObjects interface for 'pinging'.)
-##         """
-##         return arg
-
-
-class ExampleSubscriber(object):
-
-    def __init__(self, queue):
-        self.queue = queue
-
-    def get(self, block=True, timeout=None):
-        return self.queue.get(block=block, timeout=timeout)
-
-    def remote_update(self, value, names, channels):
-        """This will be called by the PubSub class when a value is available.
-        """
-        self.queue.put(value)
-
-    
 def my_import(name):
     mod = __import__(name)
     components = name.split('.')

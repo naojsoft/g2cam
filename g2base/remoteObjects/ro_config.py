@@ -54,6 +54,9 @@ default_ns_ping_interval = 10.0
 # Should remoteObject servers be multithreaded by default?
 default_threaded_server = True
 
+# Default number of threads to use for the server
+default_num_threads = 5
+
 # Should we allow Long to pass unhindered?  (long is not a part of the
 # XML-RPC standard)
 # [only for transport=xmlrpc]

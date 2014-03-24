@@ -3,8 +3,6 @@
 #
 # Eric Jeschke (eric@naoj.org)
 #
-"""
-"""
 import sys, os, time
 import threading
 from uuid import uuid4 
@@ -16,7 +14,6 @@ import select
 import Queue
 
 from g2base import Task
-
 import ro_codec
 
 # Timeout value for RPC sockets
@@ -246,7 +243,7 @@ class SocketRPCServer(object):
         if logger == None:
             logger = logging.getLogger("RPCServer")
         self.logger = logger
-        self.useThread = threaded
+        self.threaded = threaded
         self.threadPool = threadPool
         
         host = ''
@@ -400,7 +397,7 @@ class SocketRPCServer(object):
                     req = RpcRequest()
                     req.address = cliaddr
 
-                    if self.useThread:
+                    if self.threaded:
                         # If we are a threaded server, then hand this request
                         # off to a thread via the queue
                         queue.put((clisock, req))
@@ -428,7 +425,7 @@ class SocketRPCServer(object):
         self.logger.info("server exiting.")
             
      
-    def start(self, useThread=True):
+    def start(self, use_thread=True):
         """
         start()
 
@@ -445,7 +442,7 @@ class SocketRPCServer(object):
 
         # Threaded server.  Start N workers either as new threads or using
         # the thread pool, if we have one.
-        if self.useThread:
+        if self.threaded:
             for i in xrange(self._num_threads):
                 if self.threadPool == None:
                     thread = threading.Thread(target=self.worker,
@@ -458,16 +455,20 @@ class SocketRPCServer(object):
                     self.threadPool.addTask(task)
 
         # Start the server
-        if self.threadPool == None:
-            thread = threading.Thread(target=self.server,
-                                      name="RPC-Device",
-                                      args=[queue])
-            thread.daemon = False
-            thread.start()
+        if not use_thread:
+            self.server(queue)
 
         else:
-            task = Task.FuncTask2(self.server, queue)
-            self.threadPool.addTask(task)
+            if self.threadPool == None:
+                thread = threading.Thread(target=self.server,
+                                          name="RPC-Device",
+                                          args=[queue])
+                thread.daemon = False
+                thread.start()
+
+            else:
+                task = Task.FuncTask2(self.server, queue)
+                self.threadPool.addTask(task)
 
 
     def stop(self):
