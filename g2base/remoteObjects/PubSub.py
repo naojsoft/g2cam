@@ -42,7 +42,8 @@ class PubSubBase(object):
     ######## INTERNAL METHODS ########
     
     def __init__(self, name, logger,  
-                 ev_quit=None, threadPool=None, numthreads=10):
+                 ev_quit=None, threadPool=None, numthreads=15,
+                 outlimit=5):
         """
         Constructor for the PubSubBase class.
             name        pubsub name
@@ -57,6 +58,7 @@ class PubSubBase(object):
         self.logger = logger
         self.name = name
         self.numthreads = numthreads
+        self.outlimit = outlimit
 
         # Handles to subscriber remote proxies
         self._partner = {}
@@ -93,6 +95,8 @@ class PubSubBase(object):
         self.failure_limit = 60.0
 
         self.cb_subscr_cnt = 0
+        self.outbound_sem = threading.BoundedSemaphore(self.outlimit)
+        
 
     def get_threadPool(self):
         return self.threadPool
@@ -293,7 +297,8 @@ class PubSubBase(object):
             bnch = self._partner[subscriber]
             proxy_obj = bnch.proxy
 
-            proxy_obj.remote_update(value, names, channels)
+            with self.outbound_sem:
+                proxy_obj.remote_update(value, names, channels)
 
             bnch.time_failure = None
 
@@ -559,15 +564,16 @@ class PubSub(PubSubBase):
     """
 
     def __init__(self, name, logger,
-                 ev_quit=None, threadPool=None, numthreads=10):
+                 ev_quit=None, threadPool=None, numthreads=15,
+                 outlimit=5):
         """Constructor.
         """
 
         super(PubSub, self).__init__(name, logger,
-                                      ev_quit=ev_quit,
-
-                                      threadPool=threadPool,
-                                      numthreads=numthreads)
+                                     ev_quit=ev_quit,
+                                     threadPool=threadPool,
+                                     numthreads=numthreads,
+                                     outlimit=outlimit)
         
         # Holds proxies to other pubsubs
         self._proxyCache = {}
@@ -963,7 +969,8 @@ def main(options, args):
     
     # Create our pubsub and start it
     pubsub = PubSub(options.svcname, logger,
-                    numthreads=options.numthreads)
+                    numthreads=options.numthreads,
+                    outlimit=options.outlimit)
 
     # Load configurations, if any specified
     if options.config:
@@ -1000,6 +1007,8 @@ if __name__ == '__main__':
     optprs.add_option("--debug", dest="debug", default=False,
                       action="store_true",
                       help="Enter the pdb debugger on main()")
+    optprs.add_option("--limit", dest="outlimit", type="int", default=20,
+                      help="Limit outgoing connections to NUM", metavar="NUM")
     optprs.add_option("--numthreads", dest="numthreads", type="int",
                       default=100,
                       help="Use NUM threads", metavar="NUM")
