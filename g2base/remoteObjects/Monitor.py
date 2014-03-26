@@ -58,7 +58,7 @@ import Queue
 import logging
 
 from g2base import Task, Bunch, ssdlog
-from g2base import remoteObjects as ro
+from g2base.remoteObjects import remoteObjects as ro
 
 import PubSub as ps
 import NestedBunch

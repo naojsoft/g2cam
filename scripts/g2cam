@@ -15,7 +15,7 @@ import logging
 
 # g2base imports
 from g2base import Task
-import g2base.remoteObjects as ro
+from g2base.remoteObjects import remoteObjects as ro
 import g2base.remoteObjects.Monitor as Monitor
 from g2base import ssdlog
 

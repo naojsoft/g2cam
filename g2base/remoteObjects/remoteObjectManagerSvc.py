@@ -17,10 +17,10 @@ import threading
 import time, signal
 
 from g2base import Bunch, myproc, ssdlog
-from g2base import remoteObjects as ro
+from g2base.remoteObjects import remoteObjects as ro
 
 # Our version
-version = '20080524.0'
+version = '20140323.0'
 
 
 class managerSvcError(Exception):

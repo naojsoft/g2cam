@@ -19,7 +19,7 @@ import sys, time
 import threading, Queue
 
 from g2base import Bunch, Task, ssdlog
-from g2base import remoteObjects as ro
+from g2base.remoteObjects import remoteObjects as ro
 
 from ro_config import *
 

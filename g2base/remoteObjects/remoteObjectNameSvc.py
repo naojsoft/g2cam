@@ -35,7 +35,7 @@ import threading
 import socket
 # optparse imported below (if needed)
 
-from g2base import remoteObjects as ro
+from g2base.remoteObjects import remoteObjects as ro
 from g2base.remoteObjects import Monitor
 from g2base import ssdlog
 

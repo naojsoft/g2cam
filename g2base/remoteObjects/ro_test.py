@@ -7,9 +7,9 @@
 
 import sys, time
 import logging
-import remoteObjects as ro
-import Task
-import ssdlog
+
+from g2base import Task, ssdlog
+from g2base.remoteObjects import remoteObjects as ro
 
 class TestRO(ro.remoteObjectServer):
 

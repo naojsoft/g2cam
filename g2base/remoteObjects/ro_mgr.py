@@ -33,7 +33,7 @@ Instructions:
      as illustrated in the examples below.
 """
 import sys
-import remoteObjects as ro
+from g2base.remoteObjects import remoteObjects as ro
 
 
 def get_ms_handle(host=None):
