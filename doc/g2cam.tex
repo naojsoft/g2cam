@@ -173,15 +173,16 @@ archived from the OCS via STARS.
 \chapter{G2CAM}
 G2CAM is a object-oriented software framework, written in Python, for
 interfacing top-level instrument control systems to Subaru Telescope's
-Observation Control System. As shown in the diagram in Figure 1, G2CAM
-implements and abstracts the low level interfaces used for commands to,
-status transfer to and from, and file transfer from, the instrument's
-top level computer, or ``OBCP''. Using this framework, developers can
-write multi-threaded applications to interface with the OCS with a quite
-high level of abstraction. The top-level G2CAM module can be written to
-interface with instrument's own internal subsystems in a variety of
-ways, including Python classes and functions, embedded C code, FIFOs,
-sockets, files, shared memory, etc. 
+Observation Control System. As shown in the diagram in Figure
+\ref{fig:obssubsys}, G2CAM implements and abstracts the low level
+interfaces used for commands to, status transfer to and from, and file
+transfer from, the instrument's top level computer, or ``OBCP''. Using
+this framework, developers can write multi-threaded applications to
+interface with the OCS with a quite high level of abstraction. The
+top-level G2CAM module can be written to interface with instrument's
+own internal subsystems in a variety of ways, including Python classes
+and functions, embedded C code, FIFOs, sockets, files, shared memory,
+etc.
 
 \section{The G2CAM API}
 To interface with the G2CAM framework, a Python module is created which

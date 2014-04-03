@@ -15,8 +15,10 @@ dvi:	$(DOC).dvi
 # $(DOC).pdf:	$(DOC).ps
 # 	ps2pdf $(DOC).ps $(DOC).pdf 
 
+# Run xelatex twice so that TOC and figure references get written correctly
 $(DOC).pdf:	$(DOC).tex
 	#pdflatex $(DOC).tex
+	xelatex $(DOC).tex
 	xelatex $(DOC).tex
 
 $(DOC).ps:	$(DOC).dvi
