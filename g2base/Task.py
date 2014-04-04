@@ -728,7 +728,7 @@ class QueueTaskset(Task):
     completion before starting the next task.
     """
     
-    def __init__(self, queue, waitflag=True, timeout=0.1):
+    def __init__(self, queue, waitflag=True, timeout=0.1, ev_quit=None):
 
         super(QueueTaskset, self).__init__()
 
@@ -739,6 +739,9 @@ class QueueTaskset(Task):
         self.task = None
         self.ev_cancel = threading.Event()
         self.ev_pause = threading.Event()
+        if ev_quit == None:
+            ev_quit = threading.Event()
+        self.ev_quit = ev_quit
 
 
     def flush(self):
@@ -783,7 +786,7 @@ class QueueTaskset(Task):
         self.count = 0
         self.totaltime = 0
         self.logger.debug("Queue Taskset starting")
-        while True:
+        while not self.ev_quit.isSet():
             try:
                 self.check_state()
 
