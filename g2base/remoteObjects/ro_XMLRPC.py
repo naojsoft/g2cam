@@ -751,7 +751,8 @@ class BaseXMLRPCServer(SimpleXMLRPCServer.SimpleXMLRPCDispatcher):
 
     def stop(self):
         self.ev_quit.set()
-        
+        self.server_close()
+
 #
 # ------------------ SSL EXTENSIONS ------------------
 #
