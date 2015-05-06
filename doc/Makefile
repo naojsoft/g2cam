@@ -28,3 +28,6 @@ $(DOC).dvi:	$(DOC).tex
 	latex $(DOC)
 	latex $(DOC)
 
+clean:
+	/bin/rm -f *.aux *.log *.pdf *.toc
+
