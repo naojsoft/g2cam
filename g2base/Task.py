@@ -15,7 +15,7 @@ import inspect, types, ctypes
 import bisect
 import random
 import traceback
- 
+
 
 class TaskError(Exception):
     """Exception generated for task errors"""
@@ -94,7 +94,7 @@ class Task(object):
             except:
                 # Failed--fall back to internal tagger
                 self.tag = get_tag(taskParent)
-            
+
         # Some per-task specific initialization
         self.ev_done.clear()
         self.starttime = time.time()
@@ -126,7 +126,7 @@ class Task(object):
 
         return tag
 
-        
+
     def check_state(self):
         """Abstract method that should check for pause, cancellation, or
         any other sort of preemption event.
@@ -139,10 +139,10 @@ class Task(object):
         for var in varlist:
             if hasattr(self, var):
                 shares.add(var)
-        
+
         self.shares = shares
 
-                
+
     def stop(self):
         """This method cancels an executing task (if possible).
         Subclass should override this method.
@@ -180,7 +180,7 @@ class Task(object):
         # If it is an exception, then raise it in this waiter
         if isinstance(self.result, Exception):
             raise(self.result)
-        
+
         # Release waiters and perform callbacks
         # done() has already been called, because of self.ev_done check
         # "asynchronous" tasks should could call done() here
@@ -220,7 +220,7 @@ class Task(object):
             if isinstance(self.result, Exception) and (not noraise):
                 raise self.result
             return self.result
-        
+
         # calculate running time and other finalization
         self.endtime = time.time()
         try:
@@ -251,7 +251,7 @@ class Task(object):
         """
         if args == None:
             args = []
-            
+
         if callable(fn):
             self.callbacks.put((fn, args))
         else:
@@ -262,13 +262,13 @@ class Task(object):
     def do_callbacks(self):
         """Makes callbacks on all registered functions waiting on this task.
         """
-        
+
         while not self.callbacks.empty():
             (fn, rest) = self.callbacks.get()
 
             args = [self.result]
             args.extend(rest)
-            
+
             fn(*args)
 
 
@@ -285,7 +285,7 @@ class Task(object):
 
     def getExecutionTime(self):
         return self.totaltime
-    
+
 
     def runTask(self, task, timeout=None):
         """Run a child task to completion.  Returns the result of
@@ -306,14 +306,14 @@ class Task(object):
         # Now we're done
         return res
 
-    
+
     def run(self, task, timeout=None):
         """Run a child task to completion.  Returns the result of
         the child task.  Simply calls runTask().
         """
         return self.runTask(task, timeout=timeout)
 
-        
+
 # For testing...
 
 class printTask(Task):
@@ -324,7 +324,7 @@ class printTask(Task):
 
     def execute(self):
         print self.msg
-        
+
 class sleepTask(Task):
     """Simple task that sleeps for delay seconds."""
     def __init__(self, delay):
@@ -333,7 +333,7 @@ class sleepTask(Task):
 
     def execute(self):
         self.ev_done.wait(timeout=self.delay)
-        
+
 class FuncTask(Task):
     """Simple task that calls func and returns func's return value."""
     def __init__(self, func, args, kwdargs, logger=None):
@@ -342,7 +342,7 @@ class FuncTask(Task):
         self.kwdargs = kwdargs
         self.logger = logger
         super(FuncTask, self).__init__()
-        
+
     def execute(self):
         if self.logger:
             # Cap logging size around 500 characters
@@ -364,7 +364,7 @@ class FuncTask(Task):
             if self.logger:
                 self.logger.debug("Function returned %s" % (
                     str(res)))
-                
+
         except Exception, e:
             if self.logger:
                 self.logger.error("Task '%s' terminated with exception: %s" % \
@@ -390,7 +390,7 @@ class FuncTask2(FuncTask):
 
     def set_logger(self, logger):
         self.logger = logger
-        
+
 
 def make_tasker(func):
     """make_tasker takes a callable (function, method, etc.) and returns
@@ -410,7 +410,7 @@ def make_tasker(func):
 
                     self.logger.debug("Done executing fn %s" % func)
                     return val
-                
+
                 except Exception, e:
                     # Log error message and re-raise exception.
                     self.logger.error("fn %s raised exception: %s" % (
@@ -426,7 +426,7 @@ def make_tasker(func):
 class SequentialTaskset(Task):
     """Compound task that runs a series of tasks sequentially.
     """
-    
+
     def __init__(self, taskseq):
 
         super(SequentialTaskset, self).__init__()
@@ -439,12 +439,12 @@ class SequentialTaskset(Task):
 
         super(SequentialTaskset, self).initialize(taskParent, **kwdargs)
 
-        
+
     def step(self):
         """Run the next child task and wait for completion (no timeout)."""
         if self.index >= len(self.tasklist):
             raise TaskError("step(): sequential compound task %s finished" % self)
-            
+
         self.check_state()
 
         # Select next task from the set and advance the index
@@ -477,21 +477,21 @@ class SequentialTaskset(Task):
 
         except TaskError, e:
             self.logger.error("Error cancelling child task: %s" % (str(e)))
-            
-            
+
+
     def addTask(self, task):
         """Append a task to the task sequence.  If the SequentialTaskset has
         already completed execution, this will do nothing unless it is
         restarted (initialize(), start()).
         """
         self.tasklist.append(task)
-            
+
 
 class oldConcurrentAndTaskset(Task):
     """Compound task that runs a set of tasks concurrently, and does not
     return until they all terminate.
     """
-    
+
     def __init__(self, taskseq):
 
         super(oldConcurrentAndTaskset, self).__init__()
@@ -518,7 +518,7 @@ class oldConcurrentAndTaskset(Task):
             self.count += 1
 
         self.numtasks = self.count
-        
+
         # Now start each child task.
         with self.regcond:
             for task in self.taskset:
@@ -544,7 +544,7 @@ class oldConcurrentAndTaskset(Task):
                 raise value
 
         return 0
-            
+
 
     def child_done(self, result, count, task):
         """Acquire the condition variable for the compound task object.
@@ -591,7 +591,7 @@ class newConcurrentAndTaskset(Task):
     """Compound task that runs a set of tasks concurrently, and does not
     return until they all terminate.
     """
-    
+
     def __init__(self, taskseq):
 
         super(newConcurrentAndTaskset, self).__init__()
@@ -626,7 +626,7 @@ class newConcurrentAndTaskset(Task):
         while num_tasks > 0:
 
             self.check_state()
-            
+
             for i in xrange(num_tasks):
                 try:
                     try:
@@ -635,10 +635,10 @@ class newConcurrentAndTaskset(Task):
                         # A task got deleted from the set.  Jump back out
                         # to outer loop and repoll the number of tasks
                         break
-                                        
+
                     #self.logger.debug("waiting on %s" % task)
                     res = task.wait(timeout=self.idletime)
-                
+
                     #self.logger.debug("finished: %s" % task)
                     self.child_done(res, task)
 
@@ -667,7 +667,7 @@ class newConcurrentAndTaskset(Task):
 
         # Return value of last child to complete
         return value
-            
+
 
     def child_done(self, result, task):
         with self._lock_c:
@@ -691,7 +691,7 @@ class newConcurrentAndTaskset(Task):
                     # Task does not have a way to stop it.
                     # TODO: notify who?
                     pass
-        
+
         # stop ourself
         #self.ev_intr.set()
 
@@ -718,7 +718,7 @@ class newConcurrentAndTaskset(Task):
         with self._lock_c:
             return len(self.taskset)
 
-        
+
 class ConcurrentAndTaskset(newConcurrentAndTaskset):
     pass
 
@@ -727,7 +727,7 @@ class QueueTaskset(Task):
     concurrently.  If _waitflag_ is True, then it will run each task to
     completion before starting the next task.
     """
-    
+
     def __init__(self, queue, waitflag=True, timeout=0.1, ev_quit=None):
 
         super(QueueTaskset, self).__init__()
@@ -753,7 +753,7 @@ class QueueTaskset(Task):
             except Queue.Empty:
                 break
 
-            
+
     def stop(self):
         self.flush()
         #self.ev_intr.set()
@@ -769,7 +769,7 @@ class QueueTaskset(Task):
         # put termination sentinel
         self.queue.put(None)
 
-            
+
     def stop_child(self):
         self.flush()
 
@@ -781,7 +781,7 @@ class QueueTaskset(Task):
             #self.logger.error("Error cancelling child task: %s" % (str(e)))
             pass
 
-            
+
     def execute(self):
         self.count = 0
         self.totaltime = 0
@@ -794,7 +794,7 @@ class QueueTaskset(Task):
                 if task == None:
                     # termination sentinel
                     break
-                
+
                 self.task = task
 
                 task.register_callback(self.child_done, args=[task])
@@ -840,9 +840,9 @@ class QueueTaskset(Task):
 
         # TODO: should we wait for self.count > 0?
         self.logger.debug("Queue Taskset terminating")
-        
+
         return self.result
-            
+
 
     def child_done(self, result, task):
         with self.lock:
@@ -856,10 +856,10 @@ class QueueTaskset(Task):
 
         super(QueueTaskset, self).cancel()
 
-            
+
     def addTask(self, task):
         self.queue.put(task)
-            
+
 # ------------ PRIORITY QUEUES ------------
 
 class PriorityQueue(Queue.PriorityQueue):
@@ -901,17 +901,17 @@ class WorkerThread(object):
         """
         with self.lock:
             self.status = status
-        
+
 
     def getstatus(self):
         """Returns our status--a string describing what we are doing.
         """
         with self.lock:
             return (self.status, self.time_start)
-        
+
 
     def execute(self, task):
-        """Execute a task. 
+        """Execute a task.
         """
 
         taskid = str(task)
@@ -928,7 +928,7 @@ class WorkerThread(object):
 
             except UserTaskException, e:
                 res = e
-                
+
             except Exception, e:
                 self.logger.error("Task '%s' raised exception: %s" % \
                                   (str(task), str(e)))
@@ -956,7 +956,7 @@ class WorkerThread(object):
             self.time_start = 0.0
             self.setstatus('idle')
 
-        
+
     # Basic task execution loop.  Dequeue a task and run it, then look
     # for another one
     def taskloop(self):
@@ -983,10 +983,10 @@ class WorkerThread(object):
                         break
 
                     self.execute(task)
-                    
+
                 except _WorkerReset:
                     self.logger.info("Worker reset!")
-                
+
                 except Queue.Empty, e:
                     # Reach here when we time out waiting for a task
                     pass
@@ -999,32 +999,32 @@ class WorkerThread(object):
 
             self.setstatus('stopped')
 
-            
+
 #    def start(self, args=[], **kwdargs):
 #        self.thread = Thread(target=self.taskloop, args=args,
 #                                       kwdargs=kwdargs)
     def start(self):
         self.thread = Thread(target=self.taskloop, args=[])
         self.thread.start()
-        
+
     def stop(self):
         # Put termination sentinal on queue
         self.queue.put((priority, task))
         self.ev_quit.set()
-        
+
     def reset(self):
         self.raise_exc(_WorkerReset)
-        
+
     def kill(self):
         """Terminates the thread with prejudice."""
         # requires threading hack (see Thread class below)
         self.thread.terminate()
-        
+
     def raise_exc(self, exc_class):
         """Force a worker thread to exit a task via an exception."""
         # requires threading hack (see Thread class below)
         self.thread.raise_exc(exc_class)
-        
+
 # ------------ THREAD POOL ------------
 
 class ThreadPool(object):
@@ -1079,7 +1079,7 @@ class ThreadPool(object):
             #assert(self.status == 'down')
             if self.ev_quit.isSet():
                 return
-            
+
             self.runningcount = 0
             self.status = 'start'
             self.workers = []
@@ -1132,7 +1132,7 @@ class ThreadPool(object):
                     # For now, silently abandon additional request to stop
                     self.logger.warn("ignoring duplicate request to stop thread pool.")
                     return
-                
+
                 self.logger.debug("waiting for threads: count=%d" % \
                                   self.runningcount)
                 self.regcond.wait()
@@ -1218,7 +1218,7 @@ class ThreadPool(object):
             self.regcond.notify()
 
 # ------------ THREADING MODS ------------
-    
+
 def _async_raise(tid, exctype):
     """raises the exception, performs cleanup if needed"""
     if not inspect.isclass(exctype):
@@ -1233,37 +1233,37 @@ def _async_raise(tid, exctype):
         raise ValueError("invalid thread id")
 
     elif res != 1:
-        # """if it returns a number greater than one, you're in trouble, 
+        # """if it returns a number greater than one, you're in trouble,
         # and you should call it again with exc=NULL to revert the effect"""
         ctypes.pythonapi.PyThreadState_SetAsyncExc(tid, 0)
         raise SystemError("PyThreadState_SetAsyncExc failed")
- 
- 
+
+
 class Thread(threading.Thread):
 
     def _get_my_tid(self):
         """determines this (self's) thread id"""
         if not self.isAlive():
             raise threading.ThreadError("the thread is not active")
-        
+
         # do we have it cached?
         if hasattr(self, "_thread_id"):
             return self._thread_id
-        
+
         # no, look for it in the _active dict
         for tid, tobj in threading._active.items():
             if tobj is self:
                 self._thread_id = tid
                 return tid
-        
+
         raise AssertionError("could not determine the thread's id")
-    
+
     def raise_exc(self, exctype):
         """raises the given exception type in the context of this thread"""
         _async_raise(self._get_my_tid(), exctype)
-    
+
     def terminate(self):
-        """raises SystemExit in the context of the given thread, which should 
+        """raises SystemExit in the context of the given thread, which should
         cause the thread to exit silently (unless caught)"""
         self.raise_exc(SystemExit)
 
@@ -1277,13 +1277,13 @@ def get_tag(taskParent):
     with _lock_seqnum:
         generic_id = 'task%d' % (_count_seqnum)
         _count_seqnum += 1
-        
+
     if taskParent:
         tag = str(taskParent) + '.' + generic_id
     else:
         tag = generic_id
-    
+
     return tag
-    
+
 
 #END Task.py

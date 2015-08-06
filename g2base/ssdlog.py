@@ -1,9 +1,7 @@
 #
 # Simple common log format for Python logging module
 #
-#[ Eric Jeschke (eric@naoj.org) --
-#  Last edit: Mon Oct 11 23:27:51 HST 2010
-#]
+# Eric Jeschke (eric@naoj.org)
 #
 import sys, os
 import re, string
@@ -44,11 +42,11 @@ class QueueHandler(logging.Handler):
         self.queue = queue
         #super(QueueHandler, self).__init__(level=level)
         logging.Handler.__init__(self, level=level)
-        
+
     def emit(self, record):
         self.queue.put(self.format(record))
 
-        
+
 class QueueHandler2(logging.Handler):
     """Logs to a Queue.Queue object."""
 
@@ -56,7 +54,7 @@ class QueueHandler2(logging.Handler):
         self.queue = queue
         #super(QueueHandler, self).__init__(level=level)
         logging.Handler.__init__(self, level=level)
-        
+
     def emit(self, record):
         self.queue.put(record)
 
@@ -66,16 +64,16 @@ class QueueHandler2(logging.Handler):
 
     def process_queue(self, logger, ev_quit, timeout=0.1):
         # Takes another logger and a quit event.  Invokes the logger
-        # on records coming through the 
+        # on records coming through the
         while not ev_quit.isSet():
             try:
                 record = self.queue.get(block=False, timeout=timeout)
                 logger.handle(record)
-                
+
             except Queue.Empty:
                 pass
-    
-        
+
+
 class BroadcastHandler(logging.Handler):
     """Logs to a broadcast or host IP datagram."""
 
@@ -94,7 +92,7 @@ class BroadcastHandler(logging.Handler):
         self.buflimit = buflimit
         # the buffer
         self.buffer = []
-        
+
         # time of the last transmission
         self.lastsend = time.time()
         # time delta (sec) beyond which the buffer is sent regardless
@@ -105,7 +103,7 @@ class BroadcastHandler(logging.Handler):
         if queue == None:
             queue = Queue.Queue()
         self.queue = queue
-        
+
         # Used to strip out bogus characters from log buffers
         self.deletechars = ''.join(set(string.maketrans('', '')) -
                                    set(string.printable))
@@ -124,7 +122,7 @@ class BroadcastHandler(logging.Handler):
         self.bufsize = 0
         self.lastsend = time.time()
         self.sock.sendto(buf, (self.addr, self.port))
-        
+
     def start_queue(self, ev_quit=None):
         if not ev_quit:
             ev_quit = threading.Event()
@@ -136,7 +134,7 @@ class BroadcastHandler(logging.Handler):
 
     def stop_queue(self):
         self.ev_quit.set()
-        
+
     def process_queue(self, ev_quit):
         """Processes the logs messages that are deposited in the queue by
         the logger.  (ev_quit) is a threading.Event that controls when to
@@ -165,9 +163,9 @@ class BroadcastHandler(logging.Handler):
             # send the buffer
             if (self.bufsize > 0) and (time.time() - self.lastsend > self.interval):
                 self._sendbuf()
-            
-            
-        
+
+
+
 class NullHandler(logging.Handler):
     """Logs to a black hole."""
 
@@ -213,7 +211,7 @@ class FixedTimeRotatingFileHandler(logging.handlers.BaseRotatingHandler):
         self.rolloverAt = None
         if rotateOpts:
             self.options.update(rotateOpts)
-        
+
             self.rolloverAt = computeRollover(time.time(), self.time_inc,
                                               **self.options)
         #print "Will rollover at %d, %d seconds from now" % (self.rolloverAt, self.rolloverAt - time.time())
@@ -376,7 +374,7 @@ def parse_logspec(spec, options):
     if ':' in spec:
         name, level = spec.split(':')
         level = get_level(level)
-            
+
     else:
         name = spec
         level = get_level(options.loglevel)
@@ -399,7 +397,7 @@ def parse_logspec(spec, options):
                 rotopts[unit] = val
             except IndexError, ValueError:
                 raise LoggingError("Bad time rotation spec: '%s'" % (options.logtime))
-            
+
     return (name, level, options.logsize, options.logbackups, rotopts)
 
 
@@ -421,7 +419,7 @@ def make_logger(logname, options, format=STD_FORMAT):
         fileHdlr.setLevel(level)
         logger.addHandler(fileHdlr)
 
-    #islogging = options.logfile or options.logport or 
+    #islogging = options.logfile or options.logport or
     # Add output to stderr, if requested
     if options.logstderr:
         level = get_level(options.loglevel)
@@ -457,7 +455,7 @@ def make_logger(logname, options, format=STD_FORMAT):
     #     logger.addHandler(sockHdlr)
 
     return logger
-        
+
 
 def simple_logger(logname, level=logging.ERROR, format=STD_FORMAT):
 
@@ -473,7 +471,7 @@ def simple_logger(logname, level=logging.ERROR, format=STD_FORMAT):
     logger.addHandler(stderrHdlr)
 
     return logger
-        
+
 
 def get_handler(logger, klass):
 
@@ -482,14 +480,14 @@ def get_handler(logger, klass):
             return hndlr
 
     return None
-        
+
 
 def get_handler_formatter(handler):
     return handler.formatter
-        
+
 def get_handler_level(handler):
     return handler.level
-        
+
 
 def mklog(logname, queue, level, format=STD_FORMAT):
     logger = logging.getLogger(logname)

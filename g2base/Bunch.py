@@ -1,14 +1,12 @@
 #
 # Bunch.py -- simple classes for grouping variables
-# 
+#
 # See http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/52308
 # Description:
 #
 # TODO: make these true subclasses of dict
 #
-#[ Eric Jeschke (eric@naoj.org) --
-#  Last edit: Thu Dec 30 10:15:10 HST 2010
-#]
+# Eric Jeschke (eric@naoj.org)
 #
 import threading
 
@@ -32,7 +30,7 @@ class caselessDict(object):
 
     def update(self, inDict):
         for key in inDict.keys():
-            k = self.lower(key) 
+            k = self.lower(key)
             self.dict[k] = (key, inDict[key])
 
     def store(self, inDict):
@@ -130,7 +128,7 @@ class caselessDict(object):
 
     def __contains__(self, item):
         return self.dict.has_key(item.lower())
-        
+
     def __repr__(self):
         items = ", ".join([("%r: %r" % (k,v)) for k,v in self.items()])
         return "{%s}" % items
@@ -141,19 +139,19 @@ class caselessDict(object):
     def copy(self):
         d={}
         for k,v in self.dict.items():
-            d[k]=v[1] 
+            d[k]=v[1]
         return d
 
 
-    
+
 class Bunch(object):
     """Often we want to just collect a bunch of stuff together, naming each
     item of the bunch; a dictionary's OK for that, but a small do-nothing
     class is even handier, and prettier to use.
-    
+
     e.g.
     point = Bunch(datum=y, squared=y*y, coord=x)
-    
+
     and of course you can read/write the named attributes you just created,
     add others, delete some of them, e.g.
         if point.squared > threshold:
@@ -190,7 +188,7 @@ class Bunch(object):
         # after initialisation, setting attributes is the same as setting
         # an item.
         self.__initialised = True
-        
+
 
     def __getitem__(self, key):
         """Maps dictionary keys to values.
@@ -346,7 +344,7 @@ class threadSafeBunch(object):
         # After initialisation, setting attributes is the same as setting
         # an item.
         self.__initialised = True
-        
+
 
     def enter(self):
         """Acquires the lock used for this Bunch.  USE WITH EXTREME CAUTION!
@@ -402,7 +400,7 @@ class threadSafeBunch(object):
                 res[key] = self.tbl[key]
 
             return res
-        
+
         finally:
             self.lock.release()
 
@@ -434,12 +432,12 @@ class threadSafeBunch(object):
 
     def __setitem__(self, key, value):
         return self.setitem(key, value)
-    
+
 
     def setvals(self, **kwdargs):
         return self.update(kwdargs)
 
-    
+
     def delitem(self, key):
         """Deletes key/value pairs from object.
         """
@@ -453,7 +451,7 @@ class threadSafeBunch(object):
 
     def __delitem__(self, key):
         return self.delitem(key)
-    
+
 
     def __getattr__(self, key):
         """Maps values to attributes.
@@ -486,7 +484,7 @@ class threadSafeBunch(object):
 
             finally:
                 self.lock.release()
-            
+
 
     def __delattr__(self, key):
         """Deletes key/value pairs from object.
@@ -582,7 +580,7 @@ class threadSafeBunch(object):
         try:
             for (key, value) in updict.items():
                 self.setitem(key, value)
-                
+
         finally:
             self.lock.release()
 
@@ -600,13 +598,13 @@ class threadSafeBunch(object):
 
     def get(self, key, alt=None):
         """If dictionary contains _key_ return the associated value,
-        otherwise return _alt_. 
+        otherwise return _alt_.
         """
         self.lock.acquire()
         try:
             if self.has_key(key):
                 return self.getitem(key)
-            
+
             else:
                 return alt
 
@@ -653,7 +651,7 @@ class threadSafeBunch(object):
 
             self.setitem(key, value)
             return value
-        
+
         finally:
             self.lock.release()
 
@@ -674,33 +672,32 @@ class threadSafeList(object):
         self.lock.acquire()
         try:
             self.list.append(item)
-            
+
         finally:
             self.lock.release()
-        
-        
+
+
     def extend(self, list2):
         self.lock.acquire()
         try:
             self.list.extend(list2)
-            
+
         finally:
             self.lock.release()
-        
-        
+
+
     def prepend(self, item):
         self.lock.acquire()
         try:
             self.list = [item].extend(self.list)
             return self.list
-            
+
         finally:
             self.lock.release()
-        
-        
+
+
     def cons(self, item):
         return self.prepend(item)
 
-    
-#END Bunch.py
 
+#END Bunch.py

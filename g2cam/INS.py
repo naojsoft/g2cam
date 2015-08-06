@@ -2,9 +2,7 @@
 #
 # Instrument configuration file.
 #
-#[ Eric Jeschke (eric@naoj.org) --
-#  Last edit: Fri Jul 29 11:31:18 HST 2011
-#]
+# Eric Jeschke (eric@naoj.org)
 #
 # remove once we're certified on python 2.6
 from __future__ import with_statement
@@ -308,7 +306,7 @@ class INSdata(object):
                     info = infopath
             except:
                 pass
-            
+
         # Update from supplementary info provided by the user
         if info:
             if isinstance(info, str):
@@ -340,7 +338,7 @@ class INSdata(object):
         """Get the 3-letter code used for a particular instrument name (_insname_).
         Returns a string or raises a KeyError if the instrument is not found.
         """
-        
+
         insname = insname.upper()
 
         return self.nameMap[insname]['code']
@@ -350,7 +348,7 @@ class INSdata(object):
         """Get the number used for a particular instrument name (_insname_).
         Returns an integer or raises a KeyError if the instrument is not found.
         """
-        
+
         insname = insname.upper()
 
         return self.nameMap[insname]['number']
@@ -360,7 +358,7 @@ class INSdata(object):
         """Get the name used for a particular instrument by _code_.
         Returns a string or raises a KeyError if the instrument is not found.
         """
-        
+
         code = code.upper()
 
         return self.codeMap[code]['name']
@@ -370,7 +368,7 @@ class INSdata(object):
         """Get the number used for a particular instrument _code_.
         Returns an integer or raises a KeyError if the instrument is not found.
         """
-        
+
         code = code.upper()
 
         return self.codeMap[code]['number']
@@ -380,7 +378,7 @@ class INSdata(object):
         """Get the name used for a particular instrument by _number_.
         Returns a string or raises a KeyError if the instrument is not found.
         """
-        
+
         return self.numberMap[number]['name']
 
 
@@ -388,7 +386,7 @@ class INSdata(object):
         """Get the 3-letter code used for a particular instrument by _number_.
         Returns a string or raises a KeyError if the instrument is not found.
         """
-        
+
         return self.numberMap[number]['code']
 
 
@@ -445,9 +443,9 @@ class INSdata(object):
         _insname_.
         Returns a dict or raises a KeyError if the instrument is not found.
         """
-        
+
         d = self.nameMap[insname]
-        
+
         res = {}
         res.update(d)
 
@@ -495,7 +493,7 @@ class INSdata(object):
         _insname_.
         Returns a string or raises a KeyError if the instrument is not found.
         """
-        
+
         d = self.nameMap[insname]
         return d['interface']
 
@@ -506,7 +504,7 @@ class INSdata(object):
         AgAutoSelect.cfg configuration file.
         Returns a float or raises a KeyError if the instrument is not found.
         """
-        
+
         d = self.nameMap[insname]
         return d['fov']
 
@@ -514,7 +512,7 @@ class INSdata(object):
 def main(options, args):
 
     ins_data = INSdata()
-    
+
     show = options.show.lower()
     ins_list = options.ins.upper().strip()
 
@@ -540,7 +538,7 @@ def main(options, args):
                 except KeyError:
                     raise Exception("I don't understand the type of items in '%s'" % options.ins)
 
-    
+
     for num in ins_list:
         info = ins_data.getOBCPInfoByNumber(num)
         if show == 'all':
@@ -551,8 +549,8 @@ def main(options, args):
                 print info[show]
             except KeyError:
                 raise Exception("I don't understand --show=%s" % show)
-        
-        
+
+
 if __name__ == '__main__':
 
     # Parse command line options
@@ -560,7 +558,7 @@ if __name__ == '__main__':
 
     usage = "usage: %prog [options]"
     optprs = OptionParser(usage=usage, version=('%%prog'))
-    
+
     optprs.add_option("--debug", dest="debug", default=False,
                       action="store_true",
                       help="Enter the pdb debugger on main()")

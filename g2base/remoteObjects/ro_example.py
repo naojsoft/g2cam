@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 #
-#[ Eric Jeschke (eric@naoj.org) --
-#  Last edit: Tue Jul 20 14:49:38 HST 2010
-#]
-""" 
+# Eric Jeschke (eric@naoj.org)
+#
+"""
 Simple example of a remoteObjects client/service.
 
 To run example:
@@ -18,7 +17,7 @@ To run example:
    ./ro_example.py --server
 
   on CLIENT host, in another xterm, run
-   ./ro_example.py 
+   ./ro_example.py
 
 Using HTTP authentication:
    (server) ./ro_example.py --server --auth=bob:foo
@@ -47,7 +46,7 @@ class MyRemoteService(ro.remoteObjectServer):
                  default_auth=False, authDict=None, cert_file=None):
 
         self.count = 0
-        
+
         # Superclass constructor
         ro.remoteObjectServer.__init__(self, svcname=svcname,
                                        usethread=usethread,
@@ -60,8 +59,8 @@ class MyRemoteService(ro.remoteObjectServer):
                                                   str(auth), str(client_addr))
         method = getattr(self, methodName)
         return method(*params, **kwdargs)
-    
-    
+
+
     def search(self, ra, dec, radius, mag):
         self.count += 1
         print "(%5d) ra: %f  dec: %f  radius: %f  mag: %f" % \
@@ -84,12 +83,12 @@ def main(options, args):
     auth = None
     if options.auth:
         auth = options.auth.split(':')
-    
+
     if options.server:
         authDict = {}
         if auth:
             authDict[auth[0]] = auth[1]
-        
+
         print "Starting '%s' service..." % svcname
         svc = MyRemoteService(svcname, usethread=False, authDict=authDict,
                               secure=options.secure, cert_file=options.cert,
@@ -115,7 +114,7 @@ def main(options, args):
                 try:
                     res = svc.search(1.0, 2.0, 3.0, 4.0)
                     print "(%5d)  res=%s" % (i, str(res))
-                    
+
                 except ro.remoteObjectError, e:
                     print "Call error: %s" % (str(e))
 
@@ -125,7 +124,7 @@ def main(options, args):
 
         except KeyboardInterrupt:
             print "Keyboard interrupt received!"
-            
+
 
 if __name__ == '__main__':
 
@@ -134,7 +133,7 @@ if __name__ == '__main__':
 
     usage = "usage: %prog [options]"
     parser = OptionParser(usage=usage, version=('%%prog'))
-    
+
     parser.add_option("--auth", dest="auth",
                       help="Use authorization; arg should be user:passwd")
     parser.add_option("--cert", dest="cert",
@@ -184,6 +183,5 @@ if __name__ == '__main__':
 
     else:
         main(options, args)
-       
-#END
 
+#END

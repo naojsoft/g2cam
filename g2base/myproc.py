@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 #
-#[ Eric Jeschke (eric@naoj.org) --
-#  Last edit: Tue Aug  5 15:27:32 HST 2008
-#]
+# Eric Jeschke (eric@naoj.org)
 #
 """
 
@@ -12,7 +10,7 @@ process management in Python programs.
 The interface provides the following functions, variables and exceptions:
 
 myproc.
-  status() -- 
+  status() --
   wait() --
   reason() --
   signal(signum) --
@@ -50,7 +48,7 @@ def exec_cmd(cmd, env=None, addenv=False, close_fds=False):
     Exec a command.  This will transform the current process into a new
     one.  The call does not return unless the exec fails.  Usually raises
     an OSError if the call to exec fails.
-    
+
     Parameters:
       cmd: may be a string or a list.  If a string, it is a command string
       that will be invoked via the user's SHELL.  If a list, it is a list
@@ -61,7 +59,7 @@ def exec_cmd(cmd, env=None, addenv=False, close_fds=False):
 
       addenv: if True, then the variables in env will AUGMENT the current
       environment, and not replace it.
-      
+
       close_fds: if True, then all open file descriptors except stdin,
       stdout and stderr are closed immediately before the exec.
     """
@@ -103,7 +101,7 @@ def exec_cmd(cmd, env=None, addenv=False, close_fds=False):
 
     prog = cmd[0]
     #prog = cmd.pop(0)
-    
+
     return os.execve(prog, cmd, newenv)
 
 
@@ -134,8 +132,8 @@ def testloop():
     while True:
         print "Yessir!"
         time.sleep(1.0)
-        
-        
+
+
 class myproc(object):
 
     # myproc constructor.
@@ -180,18 +178,18 @@ class myproc(object):
                 if detach:
                     os.close(rdfd)
                     # Decouple from parent environment.
-                    os.chdir("/") 
+                    os.chdir("/")
                     # ?????
-                    #os.umask(0) 
-                    os.setsid() 
+                    #os.umask(0)
+                    os.setsid()
 
                 if detach or doublefork:
                     # Do second fork.
-                    try: 
-                        pid = os.fork() 
+                    try:
+                        pid = os.fork()
                         if pid > 0:
                             # FIRST CHILD (SECOND PARENT)
-                            try: 
+                            try:
                                 # Write pid of *our* child to *our* parent, who will
                                 # read it and put it in the myproc object.
                                 tmp_f = os.fdopen(wdfd, 'w')
@@ -208,7 +206,7 @@ class myproc(object):
                                                   (os.getpid()))
                                 sys.exit(exitcode) # Exit second parent.
 
-                    except OSError, e: 
+                    except OSError, e:
                         sys.stderr.write ("(%d) fork #2 failed: (%d) %s\n" % \
                                           (os.getpid(), e.errno, e.strerror))
                         try:
@@ -218,7 +216,7 @@ class myproc(object):
                         finally:
                             sys.exit(1)
 
-                    except Exception, e: 
+                    except Exception, e:
                         sys.stderr.write ("(%d) fork #2 failed: %s\n" % \
                                           (os.getpid(), str(e)))
                         try:
@@ -302,8 +300,8 @@ class myproc(object):
                     try:
                         exec_cmd(fn, env=env, addenv=addenv,
                                  close_fds=close_fds)
-                        
-                    except OSError, e: 
+
+                    except OSError, e:
                         exitcode = e.errno
                         sys.stderr.write("Failed to exec '%s'\n" % str(fn))
 
@@ -356,7 +354,7 @@ class myproc(object):
             else:
                 # TODO: reap processes?
                 pass
-            
+
 
     #end __init__()
 
@@ -365,14 +363,14 @@ class myproc(object):
     def __str__(self):
         return self.output()
 
-    
+
     # Query and return the status of our process.
     # Return values: exited, exited-with-signal, stopped, running
     #
     def status(self, waitflag=None):
 
         self.__update_status(waitflag)
-        
+
         return self.stat
 
 
@@ -389,9 +387,9 @@ class myproc(object):
         while (self.stat == 'running') and (time.time() < end_time):
             # Sleep for a bit
             time.sleep(self.sleep_incr)
-            
+
             self.__update_status()
-            
+
         return self.stat
 
 
@@ -409,11 +407,11 @@ class myproc(object):
             while (status == 'running'):
                 # Sleep for a bit
                 time.sleep(self.sleep_incr)
-            
+
                 status = self.statuspg()
 
             return status
-            
+
         else:
             end_time = time.time() + timeout
 
@@ -431,9 +429,9 @@ class myproc(object):
             while (status == 'running') and (time.time() < end_time):
                 # Sleep for a bit
                 time.sleep(self.sleep_incr)
-            
+
                 status = self.statuspg()
-            
+
             return status
 
 
@@ -462,7 +460,7 @@ class myproc(object):
         exited-with-signal: signal that caused the process to die
         stopped: signal that caused the process to stop
         """
-    
+
         self.__update_status()
 
         if self.stat == 'running':
@@ -487,7 +485,7 @@ class myproc(object):
         """
 
         self.__update_status()
-        
+
         if self.dead:
             raise myprocError('process has already exited')
 
@@ -498,7 +496,7 @@ class myproc(object):
 
         except OSError, e:
             raise myprocError(str(e))
-        
+
 
     def signalpg(self, signum):
         """Send the process group a signal.  _signum_ indicates the signal as
@@ -506,7 +504,7 @@ class myproc(object):
         """
 
         self.__update_status()
-        
+
 ##         if self.dead:
 ##             raise myprocError('process has already exited')
 
@@ -517,24 +515,24 @@ class myproc(object):
 
         except OSError, e:
             raise myprocError(str(e))
-        
+
 
     def kill(self):
         """Terminate the subprocess with prejudice.
         """
 
         self.signal(signum=9)
-            
+
         # This will reap the process.
         self.status(waitflag=1)
-            
+
 
     def killpg(self):
         """Terminate the process group with prejudice.
         """
 
         self.signalpg(signum=9)
-        
+
         # This will reap the process.
         self.status(waitflag=1)
 
@@ -544,26 +542,26 @@ class myproc(object):
     #
     def output(self):
         self.__update_status()
-        
+
         if self.stdout:
             return self.stdout.read()
-        
+
         else:
             raise myprocError("process object was passed an explicit stdout")
-            
+
 
     # Get the stderr of the process.  This is only practical for moderate
     # levels of output.
     #
     def error(self):
         self.__update_status()
-        
+
         if self.stderr:
             return self.stderr.read()
-        
+
         else:
             raise myprocError("process object was passed an explicit stderr")
-            
+
 
     # Query and update the internal status of our process.
     #
@@ -613,7 +611,7 @@ class myproc(object):
         """Get the status of a process group.  If *all* processes have
         terminated then return 'exited', else return 'running'.
         """
-        
+
         # This will reap dead children, if using a process group
         try:
             pid = -1
@@ -622,10 +620,10 @@ class myproc(object):
                 pid, status = os.waitpid(-self.pid, os.WNOHANG)
                 #if pid != 0:
                 #    print "REAPED pid=%d status=%d" % (pid, status)
-                    
+
 
             return 'running'
-        
+
         except OSError, e:
             errmsg = "[Errno 10] No child processes"
             if errmsg == str(e):
@@ -658,7 +656,7 @@ class getproc(object):
         self.stat = 'exited'
         return
 
-       
+
     # getproc constructor.
     #
     def __init__(self, pid=os.getpid(), pidfile=None):
@@ -672,7 +670,7 @@ class getproc(object):
         self.stat = 'unknown'
 
         self.__update_status()
-        
+
 
     # Query and return the status of our process.
     # Return values: exited, running
@@ -680,7 +678,7 @@ class getproc(object):
     def status(self):
 
         self.__update_status()
-        
+
         return self.stat
 
 
@@ -689,28 +687,28 @@ class getproc(object):
     def signal(self, signum):
 
         self.__update_status()
-        
+
         if self.dead:
             raise myprocError('process does not exist')
 
         os.kill(self.pid, signum)
 
         self.__update_status()
-        
+
 
     # Send the process group a signal.
     #
     def signalpg(self, signum):
 
         self.__update_status()
-        
+
         if self.dead:
             raise myprocError('process does not exist')
 
         os.killpg(self.pid, signum)
 
         self.__update_status()
-        
+
 
     # Terminate the process.
     #
@@ -728,4 +726,3 @@ class getproc(object):
 
 
 #END myproc
-

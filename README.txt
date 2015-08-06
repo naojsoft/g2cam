@@ -1,9 +1,11 @@
 G2CAM ABOUT
 -----------
+g2cam is a Python module for interfacing instruments to Subaru Telescope
 
 COPYRIGHT AND LICENSE
 ---------------------
-Copyright (c) 2014  National Astronomical Observatory of Japan.  All rights reserved.
+Copyright (c) 2014-2015 Subaru Telescope, National Astronomical
+  Observatory of Japan.  All rights reserved.
 
 g2cam is distributed under an open-source BSD licence.  Please see the
 file LICENSE.txt in the top-level directory for details.

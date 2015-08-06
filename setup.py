@@ -20,7 +20,7 @@ def get_docs():
     docdir = os.path.join(srcdir, 'doc')
     res = []
     # ['../../doc/Makefile', 'doc/conf.py', 'doc/*.rst',
-    #                              'doc/manual/*.rst', 'doc/figures/*.png']    
+    #                              'doc/manual/*.rst', 'doc/figures/*.png']
     return res
 
 setup(
@@ -32,7 +32,7 @@ setup(
     long_description = read('README.txt'),
     license = "BSD",
     keywords = "subaru, telescope, instrument, toolkit, interface",
-    url = "http://naoj.github.com/g2cam",
+    url = "http://naojsoft.github.com/g2cam",
     packages = ['g2cam', 'g2base',
                 # Misc g2cam
                 'g2cam.util',
@@ -51,4 +51,3 @@ setup(
     ],
     cmdclass={'build_py': build_py}
 )
-
