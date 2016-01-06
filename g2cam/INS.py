@@ -12,6 +12,8 @@ import re
 
 regex_frameid = re.compile(r'^(\w{3})([AQ])(\d)(\d{7})$')
 
+# NOTE: fov is specified as a RADIUS in DEGREES
+
 insinfo = {
     'IRCS': {
         'name': 'IRCS',
@@ -136,7 +138,7 @@ insinfo = {
     'SCEXAO': {
         'name': 'SCEXAO',
         'number': 16,
-        'code': 'XAO',
+        'code': 'SCX',
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.045,
@@ -154,7 +156,7 @@ insinfo = {
         'number': 18,
         'code': 'FMS',
         'active': True,
-        'interface': ('daqtk', 1.0),
+        'interface': ('g2cam', 1.0),
         'fov': 0.22433,
         },
     'FLDMON': {
@@ -162,7 +164,7 @@ insinfo = {
         'number': 19,
         'code': 'FLD',
         'active': True,
-        'interface': ('daqtk', 1.0),
+        'interface': ('g2cam', 1.0),
         'fov': 0.023570,
         },
     'AO188': {
@@ -170,7 +172,7 @@ insinfo = {
         'number': 20,
         'code': 'AON',
         'active': True,
-        'interface': ('daqtk', 1.0),
+        'interface': ('g2cam', 1.0),
         'fov': 0.045,
         },
     'HICIAO': {
@@ -194,7 +196,7 @@ insinfo = {
         'number': 23,
         'code': 'LGS',
         'active': True,
-        'interface': ('daqtk', 1.0),
+        'interface': ('g2cam', 1.0),
         'fov': 0.023570,
         },
     'HSC': {
@@ -205,52 +207,52 @@ insinfo = {
         'fov': 0.83,
         'interface': ('g2cam', 1.0),
         },
-    'OTHER25': {
-        'name': 'OTHER25',
+    'K3C': {
+        'name': 'K3C',
         'number': 25,
-        'code': '025',
-        'active': False,
-        'interface': ('daqtk', 1.0),
+        'code': 'K3C',
+        'active': True,
+        'interface': ('g2cam', 1.0),
         'fov': 0.023570,
         },
-    'OTHER26': {
-        'name': 'OTHER26',
+    'CHARIS': {
+        'name': 'CHARIS',
         'number': 26,
-        'code': '026',
+        'code': 'CRS',
         'active': False,
-        'interface': ('daqtk', 1.0),
+        'interface': ('g2cam', 1.0),
         'fov': 0.023570,
         },
-    'OTHER27': {
-        'name': 'OTHER27',
+    'PFS': {
+        'name': 'PFS',
         'number': 27,
-        'code': '027',
+        'code': 'PFS',
         'active': False,
-        'interface': ('daqtk', 1.0),
+        'interface': ('g2cam', 1.0),
         'fov': 0.023570,
         },
-    'OTHER28': {
-        'name': 'OTHER28',
+    'IRD': {
+        'name': 'IRD',
         'number': 28,
-        'code': '028',
+        'code': 'IRD',
         'active': False,
-        'interface': ('daqtk', 1.0),
+        'interface': ('g2cam', 1.0),
         'fov': 0.023570,
         },
-    'OTHER29': {
-        'name': 'OTHER29',
+    'SWIMS': {
+        'name': 'SWIMS',
         'number': 29,
-        'code': '029',
+        'code': 'SWS',
         'active': False,
-        'interface': ('daqtk', 1.0),
+        'interface': ('g2cam', 1.0),
         'fov': 0.023570,
         },
-    'OTHER30': {
-        'name': 'OTHER30',
+    'MIMIZUKU': {
+        'name': 'MIMIZUKU',
         'number': 30,
-        'code': '030',
+        'code': 'MZK',
         'active': False,
-        'interface': ('daqtk', 1.0),
+        'interface': ('g2cam', 1.0),
         'fov': 0.023570,
         },
     'OTHER31': {

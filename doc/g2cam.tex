@@ -566,6 +566,30 @@ that indicates the last frame saved:
 
 \end{verbatim}
 
+\section{Viewing data in the OCS FITS viewer}
+An instrument can send data to be viewed by the OCS online viewer
+without having to allocate a frame and/or archive a file. If the data is
+already on disk, the following code illustrates the necessary call: 
+\begin{verbatim}
+
+    self.logger.info("Viewing FITS file '%s' in the OCS" % name)
+    self.ocs.view_file_as_buffer(fitspath, num_hdu=0,
+                                      imname=name)
+\end{verbatim}
+
+If the image data is already in memory, there are some other options:
+\begin{verbatim}
+
+    # view astropy.io.fits (pyfits) HDU
+    self.ocs.view_hdu(hdu, name)
+
+    # view bare numpy data array 
+    # populate header dictionary with keyword/value pairs if desired
+    header = {}
+    self.ocs.view_data(data_np, name, header=header)
+
+\end{verbatim}
+
 \section{Archiving files}
 When an instrument has a FITS file to archive, it uses the fourth
 interface provided by the framework. This action is also initiated from

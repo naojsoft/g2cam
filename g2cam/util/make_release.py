@@ -2,7 +2,7 @@ import os
 import time
 
 major = 2
-minor = 0
+minor = 1
 
 rlfile = 'version.py'
 backup = 'version.py.bak'
@@ -25,7 +25,6 @@ def make_release():
         out_f.write("\n")
         out_f.write("version = '%d.%d.%d' % (major, minor, release)\n")
         out_f.write("\n")
-    
+
 if __name__ == "__main__":
     print make_release()
-    

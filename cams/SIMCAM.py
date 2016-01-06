@@ -42,7 +42,7 @@ class SIMCAM(BASECAM):
     def __init__(self, logger, env, ev_quit=None):
 
         super(SIMCAM, self).__init__()
-        
+
         self.logger = logger
         self.env = env
         # Convoluted but sure way of getting this module's directory
@@ -63,7 +63,7 @@ class SIMCAM(BASECAM):
         # Thread-safe bunch for storing parameters read/written
         # by threads executing in this object
         self.param = Bunch.threadSafeBunch()
-        
+
         # Interval between status packets (secs)
         self.param.status_interval = 10.0
 
@@ -73,7 +73,7 @@ class SIMCAM(BASECAM):
     #######################################
 
     def initialize(self, ocsint):
-        '''Initialize instrument.  
+        '''Initialize instrument.
         '''
         super(SIMCAM, self).initialize(ocsint)
         self.logger.info('***** INITIALIZE CALLED *****')
@@ -90,7 +90,7 @@ class SIMCAM(BASECAM):
         # For task inheritance:
         self.tag = 'simcam'
         self.shares = ['logger', 'ev_quit', 'threadPool']
-        
+
         # Get our 3 letter instrument code and full instrument name
         self.inscode = self.insconfig.getCodeByNumber(self.obcpnum)
         self.insname = self.insconfig.getNameByNumber(self.obcpnum)
@@ -107,7 +107,7 @@ class SIMCAM(BASECAM):
                                                  'time'])
 
         # Add other tables here if you have more than one table...
-        
+
         # Establish initial status values
         self.stattbl1.setvals(status='ALIVE', mode='LOCAL', count=0)
 
@@ -121,7 +121,7 @@ class SIMCAM(BASECAM):
 
     def start(self, wait=True):
         super(SIMCAM, self).start(wait=wait)
-        
+
         self.logger.info('SIMCAM STARTED.')
 
         # Start auto-generation of status task
@@ -139,7 +139,7 @@ class SIMCAM(BASECAM):
 
     def stop(self, wait=True):
         super(SIMCAM, self).stop(wait=wait)
-        
+
         # Terminate status generation task
         if self.status_task != None:
             self.status_task.stop()
@@ -166,7 +166,7 @@ class SIMCAM(BASECAM):
         params = {}
         params.update(kwdargs)
         params['tag'] = tag
-        
+
         try:
             # Try to look up the named method
             method = getattr(self, cmdName)
@@ -188,7 +188,7 @@ class SIMCAM(BASECAM):
 
         # extend the tag to make a subtag
         subtag = '%s.1' % tag
-        
+
         # Set up the association of the subtag in relation to the tag
         # This is used by integgui to set up the subcommand tracking
         # Use the subtag after this--DO NOT REPORT ON THE ORIGINAL TAG!
@@ -200,10 +200,10 @@ class SIMCAM(BASECAM):
         #     cmd_time, ack_time, end_time (for communicating systems)
         # * Having the value of str:
         #     cmd_str, task_error
-        
+
         self.ocs.setvals(subtag, task_start=time.time(),
                          cmd_str='Sleep %f ...' % itime)
-        
+
         self.logger.info("\nSleeping for %f sec..." % itime)
         while int(itime) > 0:
             self.ocs.setvals(subtag, cmd_str='Sleep %f ...' % itime)
@@ -241,7 +241,7 @@ class SIMCAM(BASECAM):
 
         except SIMCAMError, e:
             return (1, "Failed to fetch status: %s" % (str(e)))
-        
+
         #cgi_str = "http://dbs1:30000/dss1_subaru?ra=%(ra)s&dec=%(dec)s&mime-type=application/x-fits&x=%(x)s&y=%(y)s"
         cgi_str = "http://archive.eso.org/dss/dss?ra=%(ra)s&dec=%(dec)s&x=%(x)s&y=%(y)s&mime-type=application/x-fits"
 
@@ -295,20 +295,20 @@ class SIMCAM(BASECAM):
             py_f.flush(output_verify='ignore')
             self.logger.info("closing")
             py_f.close(output_verify='ignore')
-        
+
         except Exception, e:
             return (1, "Failed to open/update returned DSS file: %s" % (
                 str(e)))
 
         try:
             self.logger.debug("archiving")
-            self.ocs.archive_frame(frame_no, filename, 
+            self.ocs.archive_frame(frame_no, filename,
                                    transfermethod='scp')
 
         except Exception as e:
             raise SIMCAMError("Failed to transfer file '%s': %s" % (
                 filename, str(e)))
-            
+
 
     def fits_file(self, motor='OFF', frame_no=None, template=None, delay=0,
                   tag=None):
@@ -353,11 +353,11 @@ class SIMCAM(BASECAM):
 
         except SIMCAMError, e:
             return (1, "Failed to fetch status: %s" % (str(e)))
-        
+
         # Iterate over number of frames, creating fits files
         frame_end = frame_cnt + num_frames
         framelist = []
-        
+
         while frame_cnt < frame_end:
             # Construct frame_no and fits file
             frame_no = '%3.3s%1.1s%08.8d' % (inst_code, frame_type, frame_cnt)
@@ -366,7 +366,7 @@ class SIMCAM(BASECAM):
                 raise SIMCAMError("File does not exist: %s" % (fitsfile))
 
             fits_f = pyfits.open(templfile)
-            
+
             hdu = fits_f[0]
             updDict = {'FRAMEID': frame_no,
                        'EXP-ID': frame_no,
@@ -396,7 +396,7 @@ class SIMCAM(BASECAM):
             frame_cnt += 1
 
         # self.logger.debug("done exposing...")
-        
+
         # If there was a non-negligible delay specified, then queue up
         # a task for later archiving of the file and terminate this command.
         if delay:
@@ -449,7 +449,7 @@ class SIMCAM(BASECAM):
 #         # Iterate over number of frames, creating fits files
 #         frame_end = frame_cnt + num_frames
 #         framelist = []
-        
+
 #         while frame_cnt < frame_end:
 #             # Construct frame_no and fits file
 #             frame_no = '%3.3s%1.1s%08.8d' % (inst_code, frame_type, frame_cnt)
@@ -473,7 +473,7 @@ class SIMCAM(BASECAM):
 #             frame_cnt += 1
 
 #         self.logger.debug("done exposing...")
-        
+
 #         # If there was a non-negligible delay specified, then queue up
 #         # a task for later archiving of the file and terminate this command.
 #         if delay:
@@ -525,6 +525,19 @@ class SIMCAM(BASECAM):
         self.logger.info("Status returned: ra=%s dec=%s" % (ra, dec))
 
 
+    def view_file(self, path=None, num_hdu=0, tag=None):
+        """View a FITS file in the OCS viewer.
+        """
+        self.ocs.view_file(path, num_hdu=num_hdu)
+
+
+    def view_fits(self, path=None, num_hdu=0, tag=None):
+        """View a FITS file in the OCS viewer
+             (sending entire file as buffer, no need for astropy).
+        """
+        self.ocs.view_file_as_buffer(path, num_hdu=num_hdu)
+
+
     def reqframes(self, num=1, type="A"):
         """Forced frame request.
         """
@@ -573,8 +586,8 @@ class SIMCAM(BASECAM):
             self.logger.error("Error issuing shutdown: %s" % str(e))
 
         self.stop()
-            
+
         self.ocs.shutdown(res)
 
-    
+
 #END SIMCAM.py

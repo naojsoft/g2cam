@@ -31,14 +31,14 @@ class BASECAM(object):
 
     def __init__(self):
         pass
-        
+
     def initialize(self, ocsint):
         """Initialize the instrument such that it can be started with
         start().  Parameter _ocsint_ is the object through which we can
         communicate with the OCS via certain methods.
         """
         self._ocsint = ocsint
-        
+
 
     def start(self, wait=True):
         """Start the instrument.  Starts any threads, etc.
@@ -55,14 +55,14 @@ class BASECAM(object):
         print "Press ^C to terminate instrument..."
         while not ev_quit.isSet():
             ev_quit.wait(0.01)
-    
+
 
 class Instrument(object):
 
     def __init__(self, logger, threadPool, monitor, monchannels,
                  ev_quit=None, timeout=0.1,
                  archiveint=None, frameint=None, statusint=None,
-                 env=None, obcpnum=9, numthreads=50,
+                 viewerint=None, env=None, obcpnum=9, numthreads=50,
                  soundsink=None):
 
         self.monitor = monitor
@@ -83,6 +83,8 @@ class Instrument(object):
         # For reading various instrument configuration values
         self.insconfig = INSconfig()
         self.obcpnum = obcpnum
+        # Instrument name, can be overridden
+        self.insname = self.insconfig.getNameByNumber(self.obcpnum)
 
         # Holds various client-settable parameters
         # Install reasonable defaults for timeouts:
@@ -91,7 +93,7 @@ class Instrument(object):
         self.params = threadSafeBunch(timeout_status=15.0,
                                       timeout_thrucmd=None,
                                       timeout_filexfr=120.0)
-        
+
         # For task inheritance:
         self.tag = 'Instrument'
         self.shares = ['logger', 'threadPool', 'monitor', 'params']
@@ -111,6 +113,9 @@ class Instrument(object):
 
         # Set up linkage between ourself and archive interface
         self.archiveint = archiveint
+
+        # Set up linkage between ourself and fits viewer
+        self.viewerint = viewerint
 
         # Create the "environment" (see loadPersonality())
         if env:
@@ -142,11 +147,11 @@ class Instrument(object):
         if not alias:
             alias = camName
         alias = alias.upper()
-            
+
         try:
             if self.cams.has_key(alias):
                 camInfo = self.cams[alias]
-            
+
                 self.logger.info("Reloading instrument personality '%s'" % \
                                  camName)
                 module = camInfo.module
@@ -168,7 +173,7 @@ class Instrument(object):
             self.logger.error("sys.path is '%s'" % ':'.join(sys.path))
             self.logger.error("Instrument personality not loaded!")
             return
-        
+
         try:
             # Get the class constructor for this instrument personality
             classObj = getattr(module, camName)
@@ -179,7 +184,7 @@ class Instrument(object):
                               camName)
             self.logger.error("Instrument personality not loaded!")
             return
-        
+
         # Create the instrument personality
         cam = classObj(self.logger, self.env, ev_quit=self.ev_quit)
         camInfo.cam = cam
@@ -205,24 +210,24 @@ class Instrument(object):
 
         self.logger.info("Reloading camera module %s..." % (camName))
         self.loadPersonality(camName)
-        
+
         self.logger.info("Trying to start camera %s..." % (camName))
         self.startCam(camName)
-        
+
     def reload_and_restart(self, camName):
         # Start another task so that cam's thread (if called from cam)
         # can go back and be terminated properly
         t = Task.FuncTask2(self._reload_and_restart, camName)
         t.init_and_start(self)
-        
+
 
     def get_INSconfig(self):
         return self.insconfig
-    
+
     def get_obcpnum(self):
         return self.obcpnum
-    
-        
+
+
     def startCam(self, camName, wait=True):
         if not self.cams.has_key(camName):
             self.logger.warn("No instrument personality '%s' to start" % \
@@ -231,7 +236,7 @@ class Instrument(object):
             camInfo = self.cams[camName]
             # Do any initialization of the module
             camInfo.cam.start()
-            
+
     def stopCam(self, camName, wait=True):
         if not self.cams.has_key(camName):
             self.logger.warn("No instrument personality '%s' to stop" % \
@@ -239,7 +244,7 @@ class Instrument(object):
         else:
             camInfo = self.cams[camName]
 
-            
+
     def shutdown(self, res):
         """
         Called by the instrument to let us know to shutdown the interface.
@@ -248,13 +253,13 @@ class Instrument(object):
         #self.ev_quit = True
         pass
 
-    
+
     def start(self, wait=True):
 
         # Start the instrument(s)
         for cam in self.cams.keys():
             self.startCam(cam, wait=wait)
-            
+
         # start the command servers
         self.ro_svc = {}
         for cam in self.cams.keys():
@@ -266,7 +271,7 @@ class Instrument(object):
                                                      usethread=True,
                                                      threadPool=self.threadPool)
             self.ro_svc[cam].ro_start(wait=True)
-    
+
     def stop(self, wait=True):
 
         # Stop the instrument(s)
@@ -285,7 +290,7 @@ class Instrument(object):
         """
         try:
             camInfo = self.cams[camName]
-        
+
         except KeyError:
             result = "ERROR: No personality loaded for '%s'!" % (camName)
             self.logger.error(result)
@@ -299,7 +304,7 @@ class Instrument(object):
 
     def reload_module(self, moduleName):
         reload(sys.modules[moduleName])
-        
+
     #####################################
     # COMMAND FUNCTIONS
     #####################################
@@ -311,10 +316,10 @@ class Instrument(object):
 
         self.logger.debug("Command received: subsys=%s cmdName=%s args=%s tag=%s" % (
                 camName, cmdName, str(kwdargs), tag))
-        
+
         try:
             camInfo = self.cams[camName]
-        
+
         except KeyError:
             result = "ERROR: No personality loaded for '%s'!" % (camName)
             self.logger.error(result)
@@ -334,7 +339,7 @@ class Instrument(object):
             except AttributeError, e:
                 # Push command name back on argument list as first arg
                 args.insert(0, cmdName)
-                try: 
+                try:
                     method = getattr(camInfo.cam, 'defaultCommand')
                 except AttributeError, e:
                     result = "ERROR: No such method in subsystem: %s" % (cmdName)
@@ -348,7 +353,7 @@ class Instrument(object):
                                  {},
                                  logger=self.logger)
             task.init_and_start(self)
-        
+
         except Exception, e:
             result = "Error invoking task: %s" % (e)
             self.logger.error(result)
@@ -399,7 +404,7 @@ class Instrument(object):
             msg = str(e)
             self.logger.error(msg)
             res = (1, msg)
-                    
+
         except Exception, e:
             msg = "ERROR: Command terminated with exception: %s" % \
                   (str(e))
@@ -414,7 +419,7 @@ class Instrument(object):
 
             except Exception, e:
                 self.logger.error("Traceback information unavailable.")
-                
+
             res = (1, msg)
 
         end_time = time.time()
@@ -468,11 +473,11 @@ class Instrument(object):
             if camInfo.cancel:
                 camInfo.cancel(tag)
 
-    
+
     #####################################
     # "THROUGH" COMMANDS (EXPERIMENTAL)
     #####################################
-    
+
     def execOCScommand(self, cmdstr, timeout=None):
 
         raise CamInterfaceError("This feature is not yet implemented!")
@@ -480,7 +485,7 @@ class Instrument(object):
     #####################################
     # STATUS FUNCTIONS
     #####################################
-    
+
     def exportStatusTable(self, tableName):
         """
         Send one table of status data to OCS.  tableName should be
@@ -509,7 +514,7 @@ class Instrument(object):
 
         except ro.remoteObjectError, e:
             raise CamInterfaceError(e)
-            
+
         self.logger.debug("Sending status finished.")
         return 0
 
@@ -523,7 +528,7 @@ class Instrument(object):
 
         return 0
 
-        
+
     def addStatusTable(self, tableName, keyOrder, formatStr=None,
                        mapping=None):
         """
@@ -545,7 +550,7 @@ class Instrument(object):
             mapping = {}
             for key in keyOrder:
                 mapping['%s.%s' % (inscode, key.upper())] = key
-                
+
         newtbl = threadSafeBunch(name=tableName, table=table,
                                  keyOrder=keyOrder, formatStr=formatStr,
                                  mapping=mapping)
@@ -553,14 +558,14 @@ class Instrument(object):
         self._mystatus[tableName] = newtbl
         return table
 
-        
+
     def getInternalStatusInfo(self, tableName):
         try:
             tableBunch = self._mystatus[tableName]
-            
+
         except KeyError, e:
             raise CamError("No such table defined: '%s'" % (tableName))
-                
+
         return tableBunch
 
 
@@ -571,21 +576,21 @@ class Instrument(object):
         """
         tableBunch = self.getInternalStatusInfo(tableName)
         return tableBunch.table
-        
+
 
     def getStatusValue(self, tableName, key):
         """
         Return a local status value for key from table tableName.
         """
         table = self.getStatusTable(tableName)
-            
+
         # May raise KeyError, that's OK
         return table[key]
 
 
     def getStatusDict(self, tableName, statusDict):
         table = self.getStatusTable(tableName)
-            
+
         # May raise KeyError, that's OK
         table.fetchDict(statusDict)
         return statusDict
@@ -593,7 +598,7 @@ class Instrument(object):
 
     def getStatusList(self, tableName, keySeq):
         table = self.getStatusTable(tableName)
-            
+
         # May raise KeyError, that's OK
         return table.fetchList(keySeq)
 
@@ -603,13 +608,13 @@ class Instrument(object):
         Set a local status value for key in table tableName.
         """
         table = self.getStatusTable(tableName)
-                
+
         table[key] = value
 
 
     def setStatusDict(self, tableName, statusDict):
         table = self.getStatusTable(tableName)
-                
+
         table.update(statusDict)
 
 
@@ -632,10 +637,10 @@ class Instrument(object):
             self.logger.debug("request=%s" % (str(statusDict)))
 
             resDict = self.statusint.fetch(statusDict)
-            
+
             statusDict.update(resDict)
             self.logger.debug("result=%s" % (str(statusDict)))
-            
+
         except ro.remoteObjectError, e:
             raise CamInterfaceError(e)
 
@@ -653,7 +658,7 @@ class Instrument(object):
             # TODO: this is a very rough approximation of error.
             if strval.startswith('#') or (strval == 'UNDEF'):
                 res.append(alias)
-                
+
         return res
 
 
@@ -674,7 +679,7 @@ class Instrument(object):
 
         return statusDict
 
-        
+
     def requestOCSstatusList2List(self, aliasList, timeout=None):
         """
         Takes a list of status aliases and returns a list of OCS status
@@ -691,7 +696,7 @@ class Instrument(object):
 
         return res
 
-        
+
     def getOCSstatus(self, statusDict):
         """
         In Gen2, there is no difference between requestOCSstatus and
@@ -701,7 +706,7 @@ class Instrument(object):
 
         return 0
 
-        
+
     def getOCSstatusList2Dict(self, aliasList):
         """
         In Gen2, there is no difference between getOCSstatusList2Dict and
@@ -709,7 +714,7 @@ class Instrument(object):
         """
         return self.requestOCSstatusList2Dict(aliasList)
 
-        
+
     def getOCSstatusList2List(self, aliasList):
         """
         In Gen2, there is no difference between getOCSstatusList2List and
@@ -717,7 +722,7 @@ class Instrument(object):
         """
         return self.requestOCSstatusList2List(aliasList)
 
-        
+
     #####################################
     # FITS TRANSFER FUNCTIONS
     #####################################
@@ -754,20 +759,20 @@ class Instrument(object):
 
         # TODO: timeout is not yet supported!
         try:
-            self.archiveint.archive_framelist(host, transfermethod, 
+            self.archiveint.archive_framelist(host, transfermethod,
                                               framelist)
-            
+
         except ro.remoteObjectError, e:
             raise CamInterfaceError(e)
-        
+
         return 0
-    
-        
+
+
     def archive_fits(self, framelist):
         self.logger.error("***DEPRECATED FUNCTION--PLEASE USE FUNCTION 'archive_framelist' INSTEAD ***")
         return self.archive_framelist(framelist)
 
-        
+
     def archive_frame_md5(self, frameid, fitspath, md5sum, timeout=None,
                           host='lookup', transfermethod='lookup'):
         """
@@ -780,11 +785,11 @@ class Instrument(object):
 
         size = self.get_filesize(fitspath)
         framelist = [ (frameid, fitspath, size, md5sum) ]
-        
+
         return self.archive_framelist(framelist, timeout=timeout,
                                       host=host, transfermethod=transfermethod)
 
-        
+
     def archive_frame(self, frameid, fitspath, timeout=None,
                       host='lookup', transfermethod='lookup'):
         """
@@ -797,11 +802,11 @@ class Instrument(object):
 
         size = self.get_filesize(fitspath)
         framelist = [ (frameid, fitspath, size) ]
-        
+
         return self.archive_framelist(framelist, timeout=timeout,
                                       host=host, transfermethod=transfermethod)
 
-        
+
     def archive(self, filepath, filetype='fits', timeout=None, frtype='A',
                 host='lookup', transfermethod='lookup'):
         """
@@ -811,21 +816,21 @@ class Instrument(object):
 
         if timeout == None:
             timeout = self.params.timeout_status
-            
+
         if filetype.lower() != 'fits':
             raise CamError("Currently I can only archive FITS files!")
-        
+
         # Get a frame of the appropriate type
         frameid = self.getFrame(frtype)
 
         return self.archive_frame(frameid, filepath, timeout=timeout,
                                   host=host, transfermethod=transfermethod)
 
-        
+
     #####################################
     # FRAME ID FUNCTIONS
     #####################################
-    
+
     def getFrames(self, num, frtype):
         """
         Obtain 'num' frame ids of type 'frtype'.  Returns a list of 'num'
@@ -838,7 +843,7 @@ class Instrument(object):
 
         obcpnum = self.get_obcpnum()
         insname = self.insconfig.getNameByNumber(obcpnum)
-        
+
         if not frtype in ('A', 'Q'):
             raise CamError("Frame type (%s) must be 'A' or 'Q'" % str(type))
 
@@ -852,45 +857,177 @@ class Instrument(object):
             assert(isinstance(framelist, list)), \
                 CamInterfaceError("getFrames() unexpected return: '%s'" % (
                                      str(framelist)))
-                
+
             assert(len(framelist) == num), \
                 CamInterfaceError("getFrames() frame list length != %d" % (
                 num))
 
             return framelist
-        
+
         except ro.remoteObjectError, e:
             raise CamInterfaceError(e)
 
-        
+
     def getFrame(self, frtype):
         """
         Obtain a single Subaru frame id.  'frtype' should be 'A' or 'Q'.
         """
         framelist = self.getFrames(1, frtype)
         return framelist[0]
-        
-        
+
+
     #####################################
     # SOUND FUNCTIONS
     #####################################
-    
+
     def playLocalSoundFile(self, filepath, format=None):
         if self.soundsink != None:
             self.soundsink.playFile(filepath, format=format)
         else:
             raise CamInterfaceError("This cam was not configured with a SoundSink")
-        
+
     def playSoundBuffer(self, buffer, format='ogg'):
         if self.soundsink != None:
             self.soundsink.playSound(buffer, format=format)
         else:
             raise CamInterfaceError("This cam was not configured with a SoundSink")
 
-        
+
+    #####################################
+    # VIEWER FUNCTIONS
+    #####################################
+
+    def view_buffer(self, data_buf, shape, dtype, imname, chname=None,
+                    byteswap=False, compress=False, header=None,
+                    clean_header=True):
+
+        self.logger.info("view_buffer")
+        if chname is None:
+            chname = '%s_raw' % (self.insname)
+
+        # just in case transport has some trouble with the data type
+        shape = tuple(shape)
+
+        if header is None:
+            header = {}
+
+        else:
+            # Convert some header items if the data types
+            # do not encode cleanly over remote objects transport
+            if clean_header:
+                header = ro.cleanse_dict(header)
+
+        # usually compression is a lose, time-wise, but depends on the
+        # image size and network
+        compressed = False
+        if compress:
+            data_buf = ro.compress(data_buf)
+            compressed = True
+
+        # encode for transport
+        buf = ro.binary_encode(data_buf)
+
+        metadata = dict(compressed=compressed, byteswap=byteswap)
+
+        return self.viewerint.display_fitsbuf2(imname, chname, buf, shape,
+                                               dtype, header, metadata)
+
+
+    def view_data(self, data_np, imname, chname=None,
+                  compress=False, header=None, clean_header=True):
+
+        self.logger.info("view_data")
+
+        dtype = str(data_np.dtype)
+        self.logger.info("dtype=%s" % dtype)
+
+        # encode numpy data as a buffer
+        data_buf = data_np.tostring(order='C')
+
+        return self.view_buffer(data_buf, data_np.shape, dtype, imname,
+                                chname=chname, header=header,
+                                compress=compress, clean_header=clean_header)
+
+
+    def view_hdu(self, hdu, imname, chname=None,
+                 compress=False, header=None, clean_header=True):
+
+        self.logger.info("view_hdu")
+        data_np = hdu.data
+        if header is None:
+            header = hdu.header
+
+        return self.view_data(data_np, imname, chname=chname,
+                              compress=compress, header=header,
+                              clean_header=clean_header)
+
+
+    def view_file(self, path, num_hdu=0, imname=None, chname=None,
+                  compress=False, header=None, clean_header=True):
+        self.logger.info("view_file")
+        try:
+            from astropy.io import fits
+
+        except ImportError as e:
+            raise CamInterfaceError("'astropy' required to use this function: %s" % (str(e)))
+
+        dirname, filename = os.path.split(path)
+        name, ext = os.path.splitext(filename)
+
+        if imname is None:
+            imname = name
+
+        # load fits data, header and size dimensions
+        with fits.open(path, 'readonly') as in_f:
+
+            # Seems to be needed otherwise we sometimes get "unparsable card"
+            # errors for broken FITS files
+            in_f.verify('fix')
+            
+            hdu = in_f[num_hdu]
+            return self.view_hdu(hdu, imname, chname=chname,
+                                 compress=compress, header=header,
+                                 clean_header=clean_header)
+
+
+    def view_file_as_buffer(self, path, num_hdu=0, imname=None, chname=None,
+                            compress=False, header=None, clean_header=True):
+        """
+        Parameters
+        ----------
+        path : str
+            A path to a FITS-formatted file
+        num_hdu : int
+            The number of the HDU to view in the file
+        """
+
+        dirname, filename = os.path.split(path)
+        name, ext = os.path.splitext(filename)
+
+        if imname is None:
+            imname = name
+
+        # Read in entire file as a buffer
+        with open(path, 'rb') as in_f:
+            data_buf = in_f.read()
+
+        # Optionally compress
+        compressed = False
+        if compress:
+            data_buf = ro.compress(data_buf)
+            compressed = True
+
+        # encode for transport
+        buf = ro.binary_encode(data_buf)
+
+        metadata = dict(compressed=compressed)
+
+        return self.viewerint.display_fitsbuf3(imname, chname, buf, num_hdu,
+                                               metadata)
+
+
     #####################################
     # MISC FUNCTIONS
     #####################################
-    
-        
+
 # END

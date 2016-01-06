@@ -41,7 +41,7 @@ from g2base import Bunch, Task, ssdlog
 from ro_config import *
 
 
-# Collect the different transports we can use 
+# Collect the different transports we can use
 transports = {}
 try:
     import ro_XMLRPC
@@ -86,7 +86,7 @@ class ManagerServiceWarning(RuntimeWarning):
 #
 
 class remoteObjectServer(object):
-    
+
     '''This module implements the interface for the remote calling of
     object methods.  i.e. it implements the "server" side.
 
@@ -138,7 +138,7 @@ class remoteObjectServer(object):
                             methodNames.append(attrName)
                     elif not attrName.startswith('_'):
                         methodNames.append(attrName)
-                        
+
         self.method_list = methodNames
         self.method_list.sort()
 
@@ -167,13 +167,13 @@ class remoteObjectServer(object):
             self.authDict = {svcname: svcname}
         else:
             self.authDict = None
-            
+
         self.secure = secure
         self.nsopts = { 'secure': secure, 'transport': transport,
                         'encoding': encoding,
                         }
         self.cert_file = cert_file
-        
+
         self.usethread = usethread
         self.threadPool = threadPool
         self.numthreads = numthreads
@@ -199,7 +199,7 @@ class remoteObjectServer(object):
             port = find_free_port(self.bindhost,
                                   start_port, start_port+15000)
             self.port = port
-            
+
         self.server = serv_klass(self.bindhost, self.port,
                                  ev_quit=self.ev_quit,
                                  timeout=self.timeout,
@@ -229,7 +229,7 @@ class remoteObjectServer(object):
                 self.ev_start.wait(timeout=timeout)
         else:
             self.__cmd_loop()
-        
+
 
     def ro_stop(self, wait=False, timeout=None):
         '''Stop/disable remote object server.'''
@@ -249,7 +249,7 @@ class remoteObjectServer(object):
         '''Wait for remote object server to start.'''
         if not self.ev_start.isSet():
             self.ev_start.wait(timeout=timeout)
-            
+
         if not self.ev_start.isSet():
             raise remoteObjectError("Timed out waiting for server to start")
 
@@ -258,7 +258,7 @@ class remoteObjectServer(object):
         '''Wait for remote object server to terminate.'''
         if not self.ev_stop.isSet():
             self.ev_stop.wait(timeout=timeout)
-            
+
         if not self.ev_stop.isSet():
             raise remoteObjectError("Timed out waiting for server to terminate")
 
@@ -288,7 +288,7 @@ class remoteObjectServer(object):
 
 
     def ro_help(self, methodName):
-        """Introspection function to print the method, its parameters, 
+        """Introspection function to print the method, its parameters,
         and it's docstring, if any.
         """
         # Check that the requested method is in the allowed list
@@ -315,17 +315,17 @@ class remoteObjectServer(object):
         res = []
         for methodName in self.method_list:
             res.append(self.ro_help(methodName))
-            
+
         return '\n===\n'.join(res)
 
 
     def ro_setLogLevel(self, level):
-        # this allows numeric 
+        # this allows numeric
         level = ssdlog.get_level(level)
 
         self.logger.setLevel(level)
         # Because levels are settable at each handler, we have to run
-        # through the handlers to set them as well.  
+        # through the handlers to set them as well.
         # Ugh...no logging API for getting handlers!
         for hdlr in self.logger.handlers:
             hdlr.setLevel(level)
@@ -363,7 +363,7 @@ class remoteObjectServer(object):
                     #    raise(e)
                     self.logger.warn("Failed to ping name service: %s" % (
                         str(e)))
-                    
+
                 self.lastpingtime = now
 
 
@@ -372,7 +372,7 @@ class remoteObjectServer(object):
         if self.svcname and self.ns:
             try:
                 self.ns.unregister(self.svcname, self.host, self.port)
-                
+
             except remoteObjectError as e:
                 # Just as in SOSSrpc module, sometimes unregistering fails.
                 # It seems best to silently ignore these for now...
@@ -408,7 +408,7 @@ class remoteObjectServer(object):
         try:
             self.ev_stop.clear()
             self.ev_start.set()
-            
+
             self.server.start()
 
             while not self.ev_quit.isSet():
@@ -416,7 +416,7 @@ class remoteObjectServer(object):
                 self.__ns_ping()
 
                 self.ev_quit.wait(timeout=1.0)
-                
+
         except Exception as e:
             self.logger.error("Error running server: %s" % str(e))
 
@@ -504,7 +504,7 @@ def call_remote(client, attrname, args, kwdargs):
 
 
 class remoteObjectClient(object):
-    
+
     """This class implements the interface for the remote calling of
     object methods.  i.e. it implements the "client" side as a proxy object.
 
@@ -520,7 +520,7 @@ class remoteObjectClient(object):
             self.name = name
             self.transport = transport
             self.encoding = encoding
-            
+
             ro_transport = transports[transport]
 
             if (not auth) and default_auth:
@@ -528,13 +528,13 @@ class remoteObjectClient(object):
             elif isinstance(auth, str):
                 # user:pass
                 auth = auth.split(':')
-                
+
             #print "client: auth=", auth
             self.proxy = ro_transport.make_serviceProxy(host, port,
                                                         auth=auth,
                                                         secure=secure,
                                                         timeout=timeout)
-            
+
         except Exception as e:
             raise remoteObjectError("Can't create proxy to service found on host '%s' at port %d: %s" % \
                              (host, port, str(e)))
@@ -547,7 +547,7 @@ class remoteObjectClient(object):
             (flag, res) = call_remote(self, attrname, args, kwdargs)
             if flag == OK:
                 return res
-            
+
             raise remoteObjectError(res)
 
         return call
@@ -558,7 +558,7 @@ class remoteObjectClient(object):
 
 
 class remoteObjectSP(object):
-    
+
     """Base class for 'SP' (Service Pack)-based remote objects.
 
     """
@@ -594,7 +594,7 @@ class remoteObjectSP(object):
                         (host, port, authp) = tup
                     else:
                         raise remoteObjectError("Malformed hostports!")
-                    
+
                     self.sp.addHost(host, port, name=name, auth=authp,
                                     secure=secure, transport=transport)
         else:
@@ -603,13 +603,13 @@ class remoteObjectSP(object):
     def __str__(self):
         return ("remoteObjectProxy(%s)" % (self.name))
 
-    
+
     # Subclasses should provide a __getattr__
     #def __getattr__(self, attrname):
 
 
 class remoteObjectSPAll(remoteObjectSP):
-    
+
     """This class implements a 'call all' remote object.  It will attempt to call
     the method on all of the clients in the service pack and return a dictionary of
     the results, indexed by (host, port) tuples.
@@ -626,14 +626,14 @@ class remoteObjectSPAll(remoteObjectSP):
                 key = (client.host, client.port)
 
                 results[key] = call_remote(client, attrname, args, kwdargs)
-                
+
             return results
 
         return call
 
 
 class remoteObjectSPFailover(remoteObjectSP):
-    
+
     """This class implements an SP remote object, which tries to call a method
     and will fail over to other entries in the service pack if errors occur.
 
@@ -653,7 +653,7 @@ class remoteObjectSPFailover(remoteObjectSP):
             num = self.sp.numClients()
 
             res = "No client available"
-            
+
             # Try the method on each client in the service pack, until one
             # returns with an answer, or we exhaust all possible clients.
             for i in xrange(num):
@@ -679,7 +679,7 @@ class remoteObjectSPFailover(remoteObjectSP):
 
 
 class remoteObjectProxy(remoteObjectSP):
-    
+
     """This class implements an SP remote object, which tries to call a method
     and will fail over to other entries in the service pack if errors occur.
 
@@ -715,7 +715,7 @@ class remoteObjectProxy(remoteObjectSP):
 
             if self.clientidx < 0:
                 self.__reset()
-                
+
             client = self.sp[self.clientidx]
             (flag, res) = call_remote(client, attrname, args, kwdargs)
             if flag == OK:
@@ -724,9 +724,9 @@ class remoteObjectProxy(remoteObjectSP):
             elif flag == ERROR_FAILOVER:
                 # Failover.  Reset our idea of the current set of service providers.
                 self.__reset()
-            
+
                 num = self.sp.numClients()
-                
+
                 # Try the method on each client in the service pack, until one
                 # returns with an answer, or we exhaust all possible clients.
                 for i in xrange(num):
@@ -751,7 +751,7 @@ class remoteObjectProxy(remoteObjectSP):
 
 
 class remoteObjectSPFailoverRR(remoteObjectSP):
-    
+
     """This class implements an SP remote object, which tries to call a method
     and will subsequently call it on each successive client in the service pack
     on subsequent invocations of the call.
@@ -771,7 +771,7 @@ class remoteObjectSPFailoverRR(remoteObjectSP):
 
             num = self.sp.numClients()
             res = "No remote object servers available"
-                
+
             # Try the method on each client in the service pack, until one
             # returns with an answer, or we exhaust all possible clients.
             for i in xrange(num):
@@ -847,7 +847,7 @@ class servicePack(object):
             transport = self.transport
 
         return (auth, secure, transport)
-            
+
     def addHost(self, host, port, name='', auth=None, secure=None,
                 transport=None, timeout=None, replace=True):
         (auth, secure, transport) = self._get_auth_secure(auth, secure,
@@ -910,7 +910,7 @@ class servicePack(object):
         # If no entry for this service, silently return.
         if not self.clients.has_key(key):
             return
-        
+
         if self.proxy == self.clients[key]:
             self.proxy = None
 
@@ -964,13 +964,13 @@ class servicePack(object):
 
         self.proxy = None
         raise remoteObjectError("No client responds to ping: %s" % str(hosts))
-    
+
     def getLosers(self):
 
         hostports = self.clients.keys()
         echoval = 99
         results = []
-        
+
         for key in hostports:
             client = self.clients[key]
             try:
@@ -982,7 +982,7 @@ class servicePack(object):
 
         return results
 
-    
+
     # Delete any services from this service pack that are not responding to
     # heartbeats.
     #
@@ -990,7 +990,7 @@ class servicePack(object):
 
         goodclient = None
         hosts = self.clients.keys()
-        
+
         for key in hosts:
             client = self.clients[key]
             try:
@@ -1008,7 +1008,7 @@ class servicePack(object):
         if not self.proxy:
             self.proxy = goodclient
 
- 
+
 #------------------------------------------------------------------
 # Misc helper functions and classes
 #
@@ -1057,9 +1057,25 @@ def compress(data):
 def uncompress(buffer):
     return zlib.decompress(buffer)
 
+def cleanse_dict(d):
+    new_d = {}
+    for key, val in d.items():
+        if isinstance(val, float):
+            pass
+        elif isinstance(val, int):
+            pass
+        elif isinstance(val, str):
+            pass
+        else:
+            # convert everything else to a string
+            val = str(val)
+
+        new_d[key] = val
+    return new_d
+
 
 def populate_host(hostbnch, def_user=None, def_port=None):
-    
+
     hostbnch.setdefault('user', def_user)
     port = hostbnch.setdefault('port', def_port)
     fqdn = socket.getfqdn(hostbnch.host)
@@ -1071,19 +1087,19 @@ def populate_host(hostbnch, def_user=None, def_port=None):
     hostbnch.setdefault('key', key)
 
     return hostbnch
-    
+
 
 def split_host(elt, def_user=None, def_port=None):
     # elt is of the format user@host:port
 
     res = Bunch.Bunch()
-    
+
     # Split into host, port (port is optional)
     info = elt.split(':')
     elt = info[0]
     if len(info) > 1:
         res.port = int(info[1])
-        
+
     # Split host into user, host (user is optional)
     info = elt.split('@')
     if len(info) > 1:
@@ -1095,7 +1111,7 @@ def split_host(elt, def_user=None, def_port=None):
 
     # sets 'fqdn', 'key' & possibly 'user' and 'port'
     populate_host(res, def_user=def_user, port=def_port)
-    
+
     return res
 
 
@@ -1137,7 +1153,7 @@ def find_free_port(host, start_port, end_port):
         except:
             pass
         return port
-        
+
 
 def get_myhost(short=False):
     try:
@@ -1145,7 +1161,7 @@ def get_myhost(short=False):
 
     except Exception as e:
         raise remoteObjectError("Can't get my own host name: %s" % str(e))
-    
+
     if not short:
         return myhost
     else:
@@ -1165,7 +1181,7 @@ def get_hosts(svcname, nshost=None, port=nameServicePort,
     tmpns = remoteObjectClient(host=nshost, port=port,
                                transport=ns_transport,
                                auth=auth, secure=secure)
-        
+
     hostports = tmpns.getHosts(svcname)
 
     ro_hosts = []
@@ -1186,7 +1202,7 @@ def get_ro_hosts(nshost=None):
 
     if os.environ.has_key('RO_HOSTS'):
         ro_hosts = os.environ['RO_HOSTS'].strip().split(',')
-        
+
     else:
         if not nshost:
             # Does user have a list of name servers defined?
@@ -1200,14 +1216,14 @@ def get_ro_hosts(nshost=None):
 
         try:
             ro_hosts = get_hosts('names', nshost=nshost)
-            
+
         except remoteObjectError as e:
             #raise NameServiceWarning("Can't connect to name server; assuming remote hosts=%s" % (str(ro_hosts)))
             pass
 
     # Sort so that all hosts have the same view of the list
     ro_hosts.sort()
-    
+
     return ro_hosts
 
 
@@ -1216,7 +1232,7 @@ def addns(host, auth=None, secure=default_secure):
     default_ns = remoteObjectProxy('names', host=host, port=nameServicePort,
                                    transport=ns_transport,
                                    auth=auth, secure=secure)
-        
+
 def make_robunch(name, hostports=None, auth=None, secure=default_secure,
                  ns=None):
     """Creates a bunch with handles to all of the individual services running
@@ -1233,7 +1249,7 @@ def make_robunch(name, hostports=None, auth=None, secure=default_secure,
         else:
             # TODO: raise an exception?
             hostports = []
-        
+
     sp = servicePack()
     bunch = Bunch.Bunch()
     for (host, port) in hostports:
@@ -1262,7 +1278,7 @@ def getms(hosts=None, auth=None, secure=default_secure):
         hosts = get_ro_hosts()
 
     return make_mspack(hosts, auth=auth, secure=secure)
-    
+
 def make_nspack(hosts, auth=None, secure=default_secure):
     sp = servicePack(auth=auth, secure=secure)
     for host in hosts:
@@ -1279,7 +1295,7 @@ def getns(hosts=None, auth=None, secure=default_secure):
         hosts = get_ro_hosts()
 
     return make_nspack(hosts, auth=auth, secure=secure)
-    
+
 
 def init(ro_hosts=None,
          allowNSfailure=True, allowMSfailure=True,
@@ -1316,7 +1332,7 @@ def init(ro_hosts=None,
 
     # ro.init() sets the default module security
     default_secure = secure
-    
+
 
 def addlogopts(optprs):
     """Add special options used in remoteObjects applications."""

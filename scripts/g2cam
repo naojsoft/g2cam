@@ -64,10 +64,11 @@ def main(options, args):
     except ro.remoteObjectError, e:
         logger.error("Cannot initialize remote objects: %s" % str(e))
         sys.exit(1)
-    
+
     frameint = ro.remoteObjectProxy(options.framesvc)
     statusint = ro.remoteObjectProxy(options.statussvc)
     archiveint = ro.remoteObjectProxy(options.archivesvc)
+    viewerint = ro.remoteObjectProxy(options.viewersvc)
 
     # Create process-wide thread pool for autonomous tasks
     threadPool = Task.ThreadPool(logger=logger, ev_quit=ev_quit,
@@ -77,19 +78,20 @@ def main(options, args):
     monitor = Monitor.Monitor('%s.mon' % svcname, logger,
                               ev_quit=ev_quit, threadPool=threadPool)
     cmdchannel = 'INSint%d' % options.obcpnum
-    
+
     # Create the instrument object
     caminst = Instrument(logger, threadPool, monitor,
-                         [cmdchannel], ev_quit=ev_quit, 
+                         [cmdchannel], ev_quit=ev_quit,
                          archiveint=archiveint, frameint=frameint,
-                         statusint=statusint, obcpnum=options.obcpnum)
-    
+                         statusint=statusint, viewerint=viewerint,
+                         obcpnum=options.obcpnum)
+
     # Load the personalities.  User can specify several cams to be loaded
     # on the command line.  Also, cams can be given aliases.
     for (alias, cam) in camlist:
         caminst.loadPersonality(cam, alias=alias)
 
-    channels = [cmdchannel, 'frames', 'sound']
+    channels = [cmdchannel, 'sound']
     if options.monitor:
         # Publish our channels to the specified monitor
         monitor.publish_to(options.monitor, channels, {})
@@ -97,20 +99,21 @@ def main(options, args):
         # and subscribe to information about tasks
         taskch = [options.taskmgr, 'g2task']
         monitor.subscribe_cb(caminst.arr_taskinfo, taskch)
-        monitor.subscribe_remote(options.monitor, taskch, {})
+        # Not unless needed--this causes a lot of network traffic
+        #monitor.subscribe_remote(options.monitor, taskch, {})
 
     try:
         try:
             logger.debug("Starting threadPool ...")
             threadPool.startall(wait=True)
-            
+
             logger.debug("Starting monitor ...")
             monitor.start(wait=True)
             monitor.start_server(wait=True)
 
             logger.info("Starting instrument %s ..." % maincam)
             caminst.start()
-            
+
             # Run off and do my UI here...
             caminst.ui(main_alias, options, args, ev_quit)
 
@@ -134,7 +137,7 @@ def main(options, args):
 
         logger.debug("Stopping threadPool ...")
         threadPool.stopall(wait=True)
-            
+
 
 if __name__ == '__main__':
 
@@ -143,7 +146,7 @@ if __name__ == '__main__':
 
     usage = "usage: %prog [options]"
     optprs = OptionParser(usage=usage, version=('%%prog %s' % version.version))
-    
+
     optprs.add_option("--archivesvc", dest="archivesvc", metavar="NAME",
                       default='archiver',
                       help="Lookup archive service by NAME")
@@ -180,6 +183,9 @@ if __name__ == '__main__':
     optprs.add_option("--taskmgr", dest="taskmgr", metavar="NAME",
                       default='taskmgr0',
                       help="Connect to TaskManager with name NAME")
+    optprs.add_option("--viewersvc", dest="viewersvc", metavar="NAME",
+                      default='fitsview',
+                      help="Lookup viewer service by NAME")
     ssdlog.addlogopts(optprs)
 
     (options, args) = optprs.parse_args(sys.argv[1:])
