@@ -4,9 +4,7 @@
 # See http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/52308
 # Description:
 #
-# TODO: make these true subclasses of dict
-#
-# Eric Jeschke (eric@naoj.org)
+# TODO: make these true subclasses of dict?
 #
 import threading
 
@@ -19,7 +17,7 @@ class caselessDict(object):
         """Constructor: takes conventional dictionary as input (or nothing)
         """
         self.dict = {}
-        if inDict != None:
+        if inDict is not None:
             self.update(inDict)
 
     def lower(self, key):
@@ -48,21 +46,21 @@ class caselessDict(object):
 
     def fetchDict(self, keyDict):
         res = {}
-        for key in keyDict.keys():
+        for key in keyDict:
             res[key] = self.dict[key]
         return res
 
     def fetch(self, keyDict):
         """Like update(), but for retrieving values.
         """
-        for key in keyDict.keys():
+        for key in keyDict:
             keyDict[key] = self.dict[key]
 
     def clear(self):
         self.dict.clear()
 
     def setdefault(self, key, val):
-        if self.has_key(key):
+        if key in self:
             return self.__getitem__(key)
         else:
             self.__setitem__(key, val)
@@ -70,15 +68,18 @@ class caselessDict(object):
 
     def __iter__(self):
         self.iterPosition = 0
-        self.keyList = self.dict.keys()
+        self.keyList = list(self.dict.keys())
         return(self)
 
-    def next(self):
+    def __next__(self):
         if self.iterPosition >= len(self.keyList):
             raise StopIteration
         x = self.dict[self.keyList[self.iterPosition]][0]
         self.iterPosition += 1
         return x
+
+    def next(self):
+        return self.__next__()
 
     def iteritems(self):
         return iter(self.items())
@@ -103,14 +104,14 @@ class caselessDict(object):
 
     def has_key(self, key):
         k = self.lower(key)
-        return self.dict.has_key(k)
+        return k in self.dict
 
     def canonicalKey(self, key):
         k = self.lower(key)
         return self.dict[k][0]
 
     def get(self, key, alt=None):
-        if self.has_key(key):
+        if key in self:
             return self.__getitem__(key)
         return alt
 
@@ -127,7 +128,7 @@ class caselessDict(object):
         return self.dict.values()
 
     def __contains__(self, item):
-        return self.dict.has_key(item.lower())
+        return item.lower() in self.dict
 
     def __repr__(self):
         items = ", ".join([("%r: %r" % (k,v)) for k,v in self.items()])
@@ -177,7 +178,7 @@ class Bunch(object):
             self.tbl = caselessDict(inDict=inDict)
         else:
             self.tbl = {}
-            if inDict != None:
+            if inDict is not None:
                 self.tbl.update(inDict)
 
         self.tbl.update(kwdargs)
@@ -220,12 +221,12 @@ class Bunch(object):
 
         # this test allows attributes to be set in the __init__ method
         # (self.__dict__[_Bunch__initialised] same as self.__initialized)
-        if not self.__dict__.has_key('_Bunch__initialised'):
+        if '_Bunch__initialised' not in self.__dict__:
             self.__dict__[attr] = value
 
         else:
             # Any normal attributes are handled normally
-            if self.__dict__.has_key(attr):
+            if attr in self.__dict__:
                 self.__dict__[attr] = value
             # Others are entries in the table
             else:
@@ -248,25 +249,10 @@ class Bunch(object):
         self.tbl = eval(pickled_state)
 
     def __iter__(self):
-        self.iterPosition = 0
-        self.keyList = self.tbl.keys()
-        return(self)
+        return iter(self.tbl.keys())
 
-    def next(self):
-        if self.iterPosition >= len(self.keyList):
-            raise StopIteration
-        x = self.tbl[self.keyList[self.iterPosition]][0]
-        self.iterPosition += 1
-        return x
-
-    def iteritems(self):
-        return iter(self.items())
-
-    def iterkeys(self):
-        return iter(self.keys())
-
-    def itervalues(self):
-        return iter(self.values())
+    def __contains__(self, key):
+        return key in self.tbl
 
     def update(self, dict2):
         return self.tbl.update(dict2)
@@ -300,15 +286,15 @@ class Bunch(object):
         return self.tbl.keys()
 
     def has_key(self, key):
-        return self.tbl.has_key(key)
+        return key in self.tbl
 
     def get(self, key, alt=None):
-        if self.has_key(key):
+        if key in self:
             return self.__getitem__(key)
         return alt
 
     def setdefault(self, key, val):
-        if self.has_key(key):
+        if key in self:
             return self.__getitem__(key)
         else:
             self.__setitem__(key, val)
@@ -336,7 +322,7 @@ class threadSafeBunch(object):
             self.tbl = caselessDict(inDict=inDict)
         else:
             self.tbl = {}
-            if inDict != None:
+            if inDict is not None:
                 self.tbl.update(inDict)
 
         self.tbl.update(kwdargs)
@@ -368,12 +354,8 @@ class threadSafeBunch(object):
         """Maps dictionary keys to values.
         Called for dictionary style access of this object.
         """
-        self.lock.acquire()
-        try:
+        with self.lock:
             return self.tbl[key]
-
-        finally:
-            self.lock.release()
 
 
     def __getitem__(self, key):
@@ -383,51 +365,35 @@ class threadSafeBunch(object):
     def fetch(self, keyDict):
         """Like update(), but for retrieving values.
         """
-        self.lock.acquire()
-        try:
+        with self.lock:
             for key in keyDict.keys():
                 keyDict[key] = self.tbl[key]
 
-        finally:
-            self.lock.release()
-
 
     def fetchDict(self, keyDict):
-        self.lock.acquire()
-        try:
+        with self.lock:
             res = {}
             for key in keyDict.keys():
                 res[key] = self.tbl[key]
 
             return res
 
-        finally:
-            self.lock.release()
-
 
     def fetchList(self, keySeq):
-        self.lock.acquire()
-        try:
+        with self.lock:
             res = []
             for key in keySeq:
                 res.append(self.tbl[key])
 
             return res
 
-        finally:
-            self.lock.release()
-
 
     def setitem(self, key, value):
         """Maps dictionary keys to values for assignment.  Called for
         dictionary style access with assignment.
         """
-        self.lock.acquire()
-        try:
+        with self.lock:
             self.tbl[key] = value
-
-        finally:
-            self.lock.release()
 
 
     def __setitem__(self, key, value):
@@ -441,13 +407,12 @@ class threadSafeBunch(object):
     def delitem(self, key):
         """Deletes key/value pairs from object.
         """
-        self.lock.acquire()
-        try:
+        with self.lock:
             del self.tbl[key]
 
-        finally:
-            self.lock.release()
-
+    def __contains__(self, key):
+        with self.lock:
+            return key in self.tbl
 
     def __delitem__(self, key):
         return self.delitem(key)
@@ -469,71 +434,45 @@ class threadSafeBunch(object):
         # this test allows attributes to be set in the __init__ method
         # (self.__dict__[_threadSafeBunch__initialised] same as
         #   self.__initialized)
-        if not self.__dict__.has_key('_threadSafeBunch__initialised'):
+        if '_threadSafeBunch__initialised' not in self.__dict__:
             self.__dict__[key] = value
 
         else:
-            self.lock.acquire()
-            try:
+            with self.lock:
                 # Any normal attributes are handled normally
-                if self.__dict__.has_key(key):
+                if key in self.__dict__:
                     self.__dict__[key] = value
                 # Others are entries in the table
                 else:
                     self.tbl[key] = value
 
-            finally:
-                self.lock.release()
-
 
     def __delattr__(self, key):
         """Deletes key/value pairs from object.
         """
-        self.lock.acquire()
-        try:
+        with self.lock:
             del self.tbl[key]
-
-        finally:
-            self.lock.release()
 
 
     def __str__(self):
-        self.lock.acquire()
-        try:
+        with self.lock:
             return self.tbl.__str__()
-
-        finally:
-            self.lock.release()
 
 
     def __len__(self):
-        self.lock.acquire()
-        try:
+        with self.lock:
             return len(self.tbl)
-
-        finally:
-            self.lock.release()
 
 
     def __repr__(self):
-        self.lock.acquire()
-        try:
+        with self.lock:
             return self.tbl.__repr__()
-
-        finally:
-            self.lock.release()
-
 
     def clear(self):
         """Clears all key/value pairs.
         """
-        self.lock.acquire()
-        try:
+        with self.lock:
             self.tbl.clear()
-
-        finally:
-            self.lock.release()
-
 
     ##############################################################
     # the following methods are inherited by subclasses
@@ -542,74 +481,49 @@ class threadSafeBunch(object):
     def has_key(self, key):
         """Checks for membership of dictionary key.
         """
-        self.lock.acquire()
-        try:
-            return self.tbl.has_key(key)
-
-        finally:
-            self.lock.release()
+        with self.lock:
+            return key in self.tbl
 
 
     def keys(self):
         """Returns list of keys.
         """
-        self.lock.acquire()
-        try:
+        with self.lock:
             return self.tbl.keys()
-
-        finally:
-            self.lock.release()
 
 
     def values(self):
         """Returns list of values.
         """
-        self.lock.acquire()
-        try:
+        with self.lock:
             return self.tbl.values()
-
-        finally:
-            self.lock.release()
-
 
     def update(self, updict):
         """Updates key/value pairs in dictionary from _updict_.
         """
 
-        self.lock.acquire()
-        try:
+        with self.lock:
             for (key, value) in updict.items():
                 self.setitem(key, value)
-
-        finally:
-            self.lock.release()
 
 
     def items(self):
         """Returns list of items.
         """
-        self.lock.acquire()
-        try:
+        with self.lock:
             return self.tbl.items()
-
-        finally:
-            self.lock.release()
 
 
     def get(self, key, alt=None):
         """If dictionary contains _key_ return the associated value,
         otherwise return _alt_.
         """
-        self.lock.acquire()
-        try:
-            if self.has_key(key):
+        with self.lock:
+            if key in self:
                 return self.getitem(key)
 
             else:
                 return alt
-
-        finally:
-            self.lock.release()
 
 
     def setdefault(self, key, value):
@@ -617,18 +531,13 @@ class threadSafeBunch(object):
         at _key_, but only if _key_ does not already exist in the dictionary.
         Returns the old value found or the new value.
         """
-        self.lock.acquire()
-        try:
-            if self.has_key(key):
+        with self.lock:
+            if key in self:
                 return self.getitem(key)
 
             else:
                 self.setitem(key, value)
                 return value
-
-        finally:
-            self.lock.release()
-
 
     def getsetitem(self, key, klass, args=None, kwdargs=None):
         """This is similar to setdefault(), except that the new value is
@@ -637,9 +546,8 @@ class threadSafeBunch(object):
         there is already a dictionary item of that type.
         """
 
-        self.lock.acquire()
-        try:
-            if self.has_key(key):
+        with self.lock:
+            if key in self:
                 return self.getitem(key)
 
             # Instantiate value.
@@ -651,9 +559,6 @@ class threadSafeBunch(object):
 
             self.setitem(key, value)
             return value
-
-        finally:
-            self.lock.release()
 
 
 # Undoubtedly there are more dictionary interface methods ...
@@ -669,32 +574,17 @@ class threadSafeList(object):
 
 
     def append(self, item):
-        self.lock.acquire()
-        try:
+        with self.lock:
             self.list.append(item)
 
-        finally:
-            self.lock.release()
-
-
     def extend(self, list2):
-        self.lock.acquire()
-        try:
+        with self.lock:
             self.list.extend(list2)
 
-        finally:
-            self.lock.release()
-
-
     def prepend(self, item):
-        self.lock.acquire()
-        try:
+        with self.lock:
             self.list = [item].extend(self.list)
             return self.list
-
-        finally:
-            self.lock.release()
-
 
     def cons(self, item):
         return self.prepend(item)

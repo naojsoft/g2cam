@@ -1,19 +1,13 @@
 #
-# Task.py
-#
-# Basic command pattern and thread pool implementation.
+# Task.py -- Basic command pattern and thread pool implementation.
 #
 # Eric Jeschke (eric@naoj.org)
-#  Last edit by Bruce Bon:  2007-10-04
 #
-import sys, time, os
-import types
+from __future__ import print_function
+
+import sys, time
 import thread
 import threading, Queue
-# needed by thread mods:
-import inspect, types, ctypes
-import bisect
-import random
 import traceback
 
 
@@ -76,10 +70,9 @@ class Task(object):
             # a task can cause it's children to have values available to them
             # without passing them explicitly.
             for var in taskParent.shares:
-                if override and override.has_key(var):
+                if override and var in override:
                     self.__dict__[var] = override[var]
                 else:
-                    #print "COPYING VAR FROM PARENT: %s(%s)" % (var, str(taskParent.__dict__[var]))
                     self.__dict__[var] = taskParent.__dict__[var]
 
         else:
@@ -179,7 +172,7 @@ class Task(object):
         # --> self.result is set
         # If it is an exception, then raise it in this waiter
         if isinstance(self.result, Exception):
-            raise(self.result)
+            raise self.result
 
         # Release waiters and perform callbacks
         # done() has already been called, because of self.ev_done check
@@ -249,7 +242,7 @@ class Task(object):
         called when a task terminates.
         Subclass should probably not override this method.
         """
-        if args == None:
+        if args is None:
             args = []
 
         if callable(fn):
@@ -282,6 +275,9 @@ class Task(object):
         Subclass can override this method if desired.
         """
         return str(self.tag)
+
+    def __lt__(self, other):
+        return False
 
     def getExecutionTime(self):
         return self.totaltime
@@ -323,7 +319,7 @@ class printTask(Task):
         super(printTask, self).__init__()
 
     def execute(self):
-        print self.msg
+        print(self.msg)
 
 class sleepTask(Task):
     """Simple task that sleeps for delay seconds."""
@@ -365,7 +361,7 @@ class FuncTask(Task):
                 self.logger.debug("Function returned %s" % (
                     str(res)))
 
-        except Exception, e:
+        except Exception as e:
             if self.logger:
                 self.logger.error("Task '%s' terminated with exception: %s" % \
                                   (str(self), str(e)))
@@ -411,7 +407,7 @@ def make_tasker(func):
                     self.logger.debug("Done executing fn %s" % func)
                     return val
 
-                except Exception, e:
+                except Exception as e:
                     # Log error message and re-raise exception.
                     self.logger.error("fn %s raised exception: %s" % (
                         func, str(e)))
@@ -475,7 +471,7 @@ class SequentialTaskset(Task):
         try:
             self.task.stop()
 
-        except TaskError, e:
+        except TaskError as e:
             self.logger.error("Error cancelling child task: %s" % (str(e)))
 
 
@@ -569,7 +565,7 @@ class oldConcurrentAndTaskset(Task):
             try:
                 task.stop()
 
-            except TaskError, e:
+            except TaskError as e:
                 # Task does not have a way to stop it.
                 # TODO: notify who?
                 pass
@@ -627,7 +623,7 @@ class newConcurrentAndTaskset(Task):
 
             self.check_state()
 
-            for i in xrange(num_tasks):
+            for i in range(num_tasks):
                 try:
                     try:
                         task = self.getTask(i)
@@ -645,8 +641,8 @@ class newConcurrentAndTaskset(Task):
                 except TaskTimeout:
                     continue
 
-                except Exception, e:
-                    #self.logger.warn("Subtask propagated exception: %s" % str(e))
+                except Exception as e:
+                    #self.logger.warning("Subtask propagated exception: %s" % str(e))
                     self.child_done(e, task)
                     continue
 
@@ -687,7 +683,7 @@ class newConcurrentAndTaskset(Task):
                 try:
                     task.stop()
 
-                except TaskError, e:
+                except TaskError as e:
                     # Task does not have a way to stop it.
                     # TODO: notify who?
                     pass
@@ -762,7 +758,7 @@ class QueueTaskset(Task):
             if self.task:
                 self.task.stop()
 
-        except TaskError, e:
+        except TaskError as e:
             #self.logger.error("Error cancelling child task: %s" % (str(e)))
             pass
 
@@ -777,7 +773,7 @@ class QueueTaskset(Task):
             if self.task:
                 self.task.stop()
 
-        except TaskError, e:
+        except TaskError as e:
             #self.logger.error("Error cancelling child task: %s" % (str(e)))
             pass
 
@@ -814,7 +810,7 @@ class QueueTaskset(Task):
 
                         self.logger.debug("Task %s terminated with result %s" % (
                                           (str(task), str(res))))
-                except Exception, e:
+                except Exception as e:
                     self.logger.error("Task '%s' terminated with exception: %s" % \
                                       (str(task), str(e)))
                     try:
@@ -827,7 +823,7 @@ class QueueTaskset(Task):
                         # module
                         tb = None
 
-                    except Exception, e:
+                    except Exception as e:
                         self.logger.debug("Traceback information unavailable.")
 
                     # If task raised exception then it didn't call done,
@@ -879,7 +875,7 @@ class WorkerThread(object):
     """
 
     def __init__(self, queue, logger=None, ev_quit=None,
-                 timeout=1.0, tpool=None):
+                 timeout=0.2, tpool=None):
 
         self.queue = queue
         self.logger = logger
@@ -926,10 +922,10 @@ class WorkerThread(object):
             try:
                 res = task.execute()
 
-            except UserTaskException, e:
+            except UserTaskException as e:
                 res = e
 
-            except Exception, e:
+            except Exception as e:
                 self.logger.error("Task '%s' raised exception: %s" % \
                                   (str(task), str(e)))
                 res = e
@@ -943,7 +939,7 @@ class WorkerThread(object):
                     # module
                     tb = None
 
-                except Exception, e:
+                except Exception as e:
                     self.logger.debug("Traceback information unavailable.")
 
         finally:
@@ -987,7 +983,7 @@ class WorkerThread(object):
                 except _WorkerReset:
                     self.logger.info("Worker reset!")
 
-                except Queue.Empty, e:
+                except Queue.Empty as e:
                     # Reach here when we time out waiting for a task
                     pass
 
@@ -1000,30 +996,14 @@ class WorkerThread(object):
             self.setstatus('stopped')
 
 
-#    def start(self, args=[], **kwdargs):
-#        self.thread = Thread(target=self.taskloop, args=args,
-#                                       kwdargs=kwdargs)
     def start(self):
-        self.thread = Thread(target=self.taskloop, args=[])
+        self.thread = threading.Thread(target=self.taskloop, args=[])
         self.thread.start()
 
     def stop(self):
         # Put termination sentinal on queue
         self.queue.put((priority, task))
         self.ev_quit.set()
-
-    def reset(self):
-        self.raise_exc(_WorkerReset)
-
-    def kill(self):
-        """Terminates the thread with prejudice."""
-        # requires threading hack (see Thread class below)
-        self.thread.terminate()
-
-    def raise_exc(self, exc_class):
-        """Force a worker thread to exit a task via an exception."""
-        # requires threading hack (see Thread class below)
-        self.thread.raise_exc(exc_class)
 
 # ------------ THREAD POOL ------------
 
@@ -1090,7 +1070,7 @@ class ThreadPool(object):
 
             # Start all worker threads
             self.logger.debug("starting threads in thread pool")
-            for i in xrange(self.numthreads):
+            for i in range(self.numthreads):
                 t = self.workerClass(self.queue, logger=self.logger,
                                      ev_quit=self.ev_quit, tpool=tpool,
                                      **kwdargs)
@@ -1112,7 +1092,7 @@ class ThreadPool(object):
             # Start all worker threads
             self.logger.debug("adding %d threads to thread pool" % (
                 numthreads))
-            for i in xrange(numthreads):
+            for i in range(numthreads):
                 t = self.workerClass(self.queue, logger=self.logger,
                                      ev_quit=self.ev_quit, tpool=self.tpool,
                                      **kwdargs)
@@ -1130,7 +1110,7 @@ class ThreadPool(object):
             while self.status != 'up':
                 if self.status in ('stop', 'down') or self.ev_quit.isSet():
                     # For now, silently abandon additional request to stop
-                    self.logger.warn("ignoring duplicate request to stop thread pool.")
+                    self.logger.warning("ignoring duplicate request to stop thread pool.")
                     return
 
                 self.logger.debug("waiting for threads: count=%d" % \
@@ -1154,15 +1134,8 @@ class ThreadPool(object):
 
 
     def workerStatus(self):
-        return map(lambda t: t.getstatus(), self.workers)
+        return list(map(lambda t: t.getstatus(), self.workers))
 
-    def reset(self):
-        for t in self.workers:
-            t.reset()
-
-    def killall(self):
-        for t in self.workers:
-            t.kill()
 
     def addTask(self, task, priority=0):
         """Add a task to the queue of tasks.
@@ -1217,55 +1190,6 @@ class ThreadPool(object):
                 self.status = 'down'
             self.regcond.notify()
 
-# ------------ THREADING MODS ------------
-
-def _async_raise(tid, exctype):
-    """raises the exception, performs cleanup if needed"""
-    if not inspect.isclass(exctype):
-        raise TypeError("Only types can be raised (not instances)")
-
-    ## res = ctypes.pythonapi.PyThreadState_SetAsyncExc(tid,
-    ##                                                  ctypes.py_object(exctype))
-    res = ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(tid),
-                                                     #None)
-                                                     ctypes.py_object(exctype))
-    if res == 0:
-        raise ValueError("invalid thread id")
-
-    elif res != 1:
-        # """if it returns a number greater than one, you're in trouble,
-        # and you should call it again with exc=NULL to revert the effect"""
-        ctypes.pythonapi.PyThreadState_SetAsyncExc(tid, 0)
-        raise SystemError("PyThreadState_SetAsyncExc failed")
-
-
-class Thread(threading.Thread):
-
-    def _get_my_tid(self):
-        """determines this (self's) thread id"""
-        if not self.isAlive():
-            raise threading.ThreadError("the thread is not active")
-
-        # do we have it cached?
-        if hasattr(self, "_thread_id"):
-            return self._thread_id
-
-        # no, look for it in the _active dict
-        for tid, tobj in threading._active.items():
-            if tobj is self:
-                self._thread_id = tid
-                return tid
-
-        raise AssertionError("could not determine the thread's id")
-
-    def raise_exc(self, exctype):
-        """raises the given exception type in the context of this thread"""
-        _async_raise(self._get_my_tid(), exctype)
-
-    def terminate(self):
-        """raises SystemExit in the context of the given thread, which should
-        cause the thread to exit silently (unless caught)"""
-        self.raise_exc(SystemExit)
 
 # ------------ SUPPORT FUNCTIONS ------------
 
@@ -1286,4 +1210,4 @@ def get_tag(taskParent):
     return tag
 
 
-#END Task.py
+#END

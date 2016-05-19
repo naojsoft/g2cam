@@ -254,7 +254,7 @@ class Instrument(object):
         pass
 
 
-    def start(self, wait=True):
+    def start(self, portbase=None, wait=True):
 
         # Start the instrument(s)
         for cam in self.cams.keys():
@@ -262,15 +262,21 @@ class Instrument(object):
 
         # start the command servers
         self.ro_svc = {}
+        i = 0
         for cam in self.cams.keys():
+            port = None
+            if portbase is not None:
+                port = portbase + i
             self.ro_svc[cam] = ro.remoteObjectServer(cam,
                                                      obj=self,
                                                      logger=self.logger,
+                                                     port=port,
                                                      method_list=['executeCmd',
                                                                   'reload_module'],
                                                      usethread=True,
                                                      threadPool=self.threadPool)
             self.ro_svc[cam].ro_start(wait=True)
+            i += 1
 
     def stop(self, wait=True):
 
@@ -983,7 +989,7 @@ class Instrument(object):
             # Seems to be needed otherwise we sometimes get "unparsable card"
             # errors for broken FITS files
             in_f.verify('fix')
-            
+
             hdu = in_f[num_hdu]
             return self.view_hdu(hdu, imname, chname=chname,
                                  compress=compress, header=header,

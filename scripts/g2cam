@@ -109,10 +109,10 @@ def main(options, args):
 
             logger.debug("Starting monitor ...")
             monitor.start(wait=True)
-            monitor.start_server(wait=True)
+            monitor.start_server(port=options.monport, wait=True)
 
             logger.info("Starting instrument %s ..." % maincam)
-            caminst.start()
+            caminst.start(portbase=options.port)
 
             # Run off and do my UI here...
             caminst.ui(main_alias, options, args, ev_quit)
@@ -133,7 +133,7 @@ def main(options, args):
 
         logger.debug("Stopping monitor ...")
         monitor.stop_server(wait=True)
-        monitor.start(wait=True)
+        monitor.stop(wait=True)
 
         logger.debug("Stopping threadPool ...")
         threadPool.stopall(wait=True)
@@ -165,12 +165,18 @@ if __name__ == '__main__':
     optprs.add_option("--monitorsvc", dest="monitor", metavar="NAME",
                       default='monitor',
                       help="Publish events to external monitor NAME")
+    optprs.add_option("--monport", dest="monport", type="int",
+                      default=9080, metavar="NUM",
+                      help="Use port number NUM for monitor connections")
     optprs.add_option("-n", "--obcpnum", dest="obcpnum", type="int",
                       default=9,
                       help="Use NUM as the OBCP number", metavar="NUM")
     optprs.add_option("--numthreads", dest="numthreads", type="int",
                       default=200,
                       help="Use NUM threads in thread pool", metavar="NUM")
+    optprs.add_option("--port", dest="port", type="int",
+                      default=9081, metavar="NUM",
+                      help="Use port number NUM for command connections")
     optprs.add_option("--profile", dest="profile", action="store_true",
                       default=False,
                       help="Run the profiler on main()")
