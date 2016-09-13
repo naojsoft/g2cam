@@ -1,13 +1,32 @@
 #
 # Task.py -- Basic command pattern and thread pool implementation.
 #
-# Eric Jeschke (eric@naoj.org)
+# This is open-source software licensed under a BSD license.
+# Please see the file LICENSE.txt for details.
 #
-from __future__ import print_function
+from __future__ import absolute_import, print_function
+from . import six
+from .six.moves import map, zip
 
-import sys, time
-import thread
-import threading, Queue
+import sys
+import time
+import os
+
+if six.PY2:
+    import thread
+    import Queue
+else:
+    import _thread as thread
+    import queue as Queue
+
+    # NOTE: See http://bugs.python.org/issue7946
+    # we cannot effectively use threading for loading files/network/etc.
+    # without setting the switchinterval down on python 3 due to the new
+    # GIL implementation
+    _swival = 0.000001
+    sys.setswitchinterval(_swival)
+
+import threading
 import traceback
 
 
@@ -73,6 +92,7 @@ class Task(object):
                 if override and var in override:
                     self.__dict__[var] = override[var]
                 else:
+                    #print "COPYING VAR FROM PARENT: %s(%s)" % (var, str(taskParent.__dict__[var]))
                     self.__dict__[var] = taskParent.__dict__[var]
 
         else:
@@ -856,10 +876,12 @@ class QueueTaskset(Task):
     def addTask(self, task):
         self.queue.put(task)
 
+
 # ------------ PRIORITY QUEUES ------------
 
 class PriorityQueue(Queue.PriorityQueue):
     pass
+
 
 # ------------ WORKER THREADS ------------
 
@@ -1077,13 +1099,17 @@ class ThreadPool(object):
                 self.workers.append(t)
                 t.start()
 
+            # if started with wait=True, then expect that threads will register
+            # themselves and last one up will set status to "up"
             if wait:
                 # Threads are on the way up.  Wait until last one starts.
                 while self.status != 'up' and not self.ev_quit.isSet():
                     self.logger.debug("waiting for threads: count=%d" % \
                                       self.runningcount)
                     self.regcond.wait()
-
+            else:
+                # otherwise, we just assume the pool is up
+                self.status = 'up'
             self.logger.debug("startall done")
 
 

@@ -24,6 +24,8 @@ myproc.
            unless one was passed in, in which case this is null
 
 """
+from __future__ import print_function
+from g2base import six
 
 import os, sys, time
 
@@ -66,7 +68,7 @@ def exec_cmd(cmd, env=None, addenv=False, close_fds=False):
 
     # If cmd is a list, then that's the list for execv, otherwise
     # user probably wants a shell to run the command
-    if isinstance(cmd, basestring):
+    if isinstance(cmd, six.string_types):
         shell = os.environ['SHELL']
         if not shell:
             shell = default_shell
@@ -111,7 +113,7 @@ def write_pidfile(filepath, pid):
         pid_f.write("%d\n" % pid)
         pid_f.close()
 
-    except IOError, e:
+    except IOError as e:
         raise myprocError("Failed to open/write pid file: %s" % str(filepath))
 
 
@@ -123,14 +125,14 @@ def read_pidfile(filepath):
 
         return pid
 
-    except IOError, e:
+    except IOError as e:
         raise myprocError("Failed to open/read pid file: %s" % str(filepath))
 
 
 def testloop():
     import time
     while True:
-        print "Yessir!"
+        print("Yessir!")
         time.sleep(1.0)
 
 
@@ -199,14 +201,14 @@ class myproc(object):
                                 # reap possible dead child
                                 childpid, exitcode = os.waitpid(pid, os.WNOHANG)
 
-                            except Exception, e:
+                            except Exception as e:
                                 sys.stderr.write ("(%d) first child error: %s\n" % \
                                                   (os.getpid(), str(e)))
                                 sys.stderr.write ("(%d) first child exit.\n" % \
                                                   (os.getpid()))
                                 sys.exit(exitcode) # Exit second parent.
 
-                    except OSError, e:
+                    except OSError as e:
                         sys.stderr.write ("(%d) fork #2 failed: (%d) %s\n" % \
                                           (os.getpid(), e.errno, e.strerror))
                         try:
@@ -216,7 +218,7 @@ class myproc(object):
                         finally:
                             sys.exit(1)
 
-                    except Exception, e:
+                    except Exception as e:
                         sys.stderr.write ("(%d) fork #2 failed: %s\n" % \
                                           (os.getpid(), str(e)))
                         try:
@@ -301,7 +303,7 @@ class myproc(object):
                         exec_cmd(fn, env=env, addenv=addenv,
                                  close_fds=close_fds)
 
-                    except OSError, e:
+                    except OSError as e:
                         exitcode = e.errno
                         sys.stderr.write("Failed to exec '%s'\n" % str(fn))
 
@@ -494,7 +496,7 @@ class myproc(object):
 
             self.__update_status()
 
-        except OSError, e:
+        except OSError as e:
             raise myprocError(str(e))
 
 
@@ -513,7 +515,7 @@ class myproc(object):
 
             self.__update_status()
 
-        except OSError, e:
+        except OSError as e:
             raise myprocError(str(e))
 
 
@@ -578,7 +580,7 @@ class myproc(object):
         try:
             pid, status = os.waitpid(self.pid, waitarg)
 
-        except OSError, e:
+        except OSError as e:
             self.dead = True
             self.exitcode = 0
             self.stat = 'exited-unknown'
@@ -624,7 +626,7 @@ class myproc(object):
 
             return 'running'
 
-        except OSError, e:
+        except OSError as e:
             errmsg = "[Errno 10] No child processes"
             if errmsg == str(e):
                 #print "NO CHILDREN"

@@ -12,6 +12,8 @@
 The names of the "top-level" services along with the startup commands are
 registered in a configuration file.  This service starts those processes.
 '''
+from __future__ import print_function
+from __future__ import print_function
 import sys, socket, os
 import threading
 import time, signal
@@ -154,7 +156,7 @@ class processObj(object):
 
                         stop_proc.kill()
 
-                    except myproc.myprocError, e:
+                    except myproc.myprocError as e:
                         pass
 
                 self.logger.info("Sending SIGTERM to top process associated with '%s'..." % \
@@ -170,7 +172,7 @@ class processObj(object):
                     #     self.proc = None
                     #     return ro.OK
 
-                except myproc.myprocError, e:
+                except myproc.myprocError as e:
                     self.logger.error("Error sending SIGTERM to process: %s" % str(e))
 
                 # Just to be sure we've cleaned up any mess, send SIGKILL
@@ -186,7 +188,7 @@ class processObj(object):
                         self.proc = None
                         return ro.OK
 
-                except myproc.myprocError, e:
+                except myproc.myprocError as e:
                     pass
 
                 # Last sanity check
@@ -202,7 +204,7 @@ class processObj(object):
     def restart(self):
         try:
             self.stop()
-        except Exception, e:
+        except Exception as e:
             pass
 
         # Manual restarts reset the stopcount
@@ -353,7 +355,7 @@ class remoteObjectManagerService(ro.remoteObjectServer):
                 self.logger.info("Using STDOUT for default output")
                 self.stdout = sys.stdout
 
-        except IOError, e:
+        except IOError as e:
             self.logger.info("Using /dev/null for default output")
             self.stdout = open("/dev/null", "a")
             
@@ -386,7 +388,7 @@ class remoteObjectManagerService(ro.remoteObjectServer):
         with self.lock:
             try:
                 return self.map[name]
-            except KeyError, e:
+            except KeyError as e:
                 raise managerSvcError("there is no process associated with '%s'" % name)
                 
 
@@ -402,7 +404,7 @@ class remoteObjectManagerService(ro.remoteObjectServer):
         with self.lock:
             # If there is an existing process object with this name, then
             # just reset its command line
-            if self.map.has_key(name):
+            if name in self.map:
                 self.logger.info("reloading info for '%s'" % name)
                 self.map[name].update(cmdDict)
 
@@ -440,7 +442,7 @@ class remoteObjectManagerService(ro.remoteObjectServer):
         try:
             self.stop(name)
 
-        except Exception, e:
+        except Exception as e:
             self.logger.warn("Error stopping process associated with '%s': %s" % \
                                (name, str(e)))
         
@@ -630,7 +632,7 @@ def main(options, args):
     try:
         myhost = ro.get_myhost(short=True)
 
-    except Exception, e:
+    except Exception as e:
         raise managerSvcError("Can't get my own hostname: %s" % str(e))
 
     authDict = {}
@@ -734,7 +736,7 @@ if __name__ == '__main__':
 
 
     if options.detach:
-        print "Detaching from this process..."
+        print("Detaching from this process...")
         sys.stdout.flush()
         try:
             child = myproc.myproc(main, args=[options, args],
@@ -755,7 +757,7 @@ if __name__ == '__main__':
     elif options.profile:
         import profile
 
-        print "%s profile:" % sys.argv[0]
+        print("%s profile:" % sys.argv[0])
         profile.run('main(options, args)')
 
     else:

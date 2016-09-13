@@ -20,7 +20,7 @@ They differ from the more generic PubSub class in the following ways:
 
 - For Minimon objects, the local store has synchronization that allows
   readers to block efficiently until data becomes available.
-  
+
 
 Important definitions:
     path        A dot-separated string of the form t0.t1.t2 ... .tN, that
@@ -47,25 +47,33 @@ Important definitions:
                 reflect the changes to their storage spaces.
 
 Main issues to think about/resolve:
-   
+
   [X] Deleting data (esp. wrt. bidirectional subscriptions)
+  [ ] Preserving ordering of updates (e.g. use a queue or sequence number)
+       is it even necessary (or desirable)?
+  [ ] Clumping updates together to improve network efficiency (i.e. caching)
 """
+from __future__ import print_function
 import sys, re
 import time
 import string
 import threading
-import Queue
 import logging
+from g2base import six
+if six.PY2:
+    import Queue
+else:
+    import queue as Queue
 
-from g2base import Task, Bunch, ssdlog
-from g2base.remoteObjects import remoteObjects as ro
-
-import PubSub as ps
-import NestedBunch
+from g2base import Task, Bunch
+from g2base import ssdlog
+from . import NestedBunch
+from . import remoteObjects as ro
+from . import PubSub as ps
 
 serviceName = 'monitor'
 
-version = '20140323.0'
+version = '20100128.0'
 
 
 class MonitorError(ps.PubSubError):
@@ -88,25 +96,25 @@ class EventError(MonitorError):
 
 def unpack_payload(payload):
     # Skip packets that are not in Monitor format
-    if not isinstance(payload, dict) or (not payload.has_key('msg')):
+    if not isinstance(payload, dict) or ('msg' not in payload):
         raise MonitorError("PubSub value is not a Monitor payload: %s" % (
                 str(payload)))
-            
+
     return Bunch.Bunch(payload)
 
 
 def has_keys(valDict, keys):
     """Check whether dictionary _valDict_ has all the keys in _keys_."""
     for key in keys:
-        if not valDict.has_key(key):
+        if key not in valDict:
             return False
     return True
-    
+
 
 class Monitor(ps.PubSub):
 
     def __init__(self, name, logger, dbpath=None, useSync=False,
-                 ev_quit=None, threadPool=None, numthreads=20):
+                 ev_quit=None, threadPool=None, numthreads=30):
 
         self._store = NestedBunch.NestedBunch(dbpath=dbpath)
         self.defaultChannels = [name]
@@ -122,13 +130,13 @@ class Monitor(ps.PubSub):
 #                                      ev_quit=None, threadPool=None,
                                       ev_quit=ev_quit, threadPool=threadPool,
                                       numthreads=numthreads)
-            
+
         # number of seconds after which a delivery to a subscriber is
         # considered "late"
         self.update_limit = 10.0
 
     # INTERNAL INTERFACE
-    
+
     def do_update(self, path, value):
         # Update items in our store
         with self.lock:
@@ -140,24 +148,24 @@ class Monitor(ps.PubSub):
             self._store.delitem(path)
 
     # CALLED BY MONITOR USERS TO SAVE/RESTORE THEIR STATE
-    
+
     def save(self):
         with self.lock:
             self._store.save()
-        
+
     def restore(self):
         with self.lock:
             self._store.restore()
 
     # PUBSUB INTERFACE
-    
+
     def monitor_update(self, payload, names, channels):
         """method called by PubSub to notify us with items.
         """
         bnch = unpack_payload(payload)
 
         # Check for late delivery of monitor messages
-        if bnch.has_key('time_pack'):
+        if 'time_pack' in bnch:
             elapsed = time.time() - bnch.time_pack
             if elapsed > self.update_limit:
                 self.logger.warn("delivery time (%f) exceeded limit (%f); names=%s" % (
@@ -170,7 +178,7 @@ class Monitor(ps.PubSub):
 
         elif msg == 'delete':
             self.do_delete(bnch.path)
-                
+
         else:
             raise MonitorError("Unrecognized 'msg' field: %s" % (msg))
 
@@ -186,10 +194,10 @@ class Monitor(ps.PubSub):
         """
         # TODO: should this all be in a critical section?
         self.do_update(path, value)
-        
+
         payload = dict(msg='update', path=path, value=value,
                        time_pack=time.time())
-        
+
         return self.notify(payload, channels)
 
 
@@ -206,18 +214,18 @@ class Monitor(ps.PubSub):
 
         payload = dict(msg='delete', path=path,
                        time_pack=time.time())
-        
+
         return self.notify(payload, channels)
 
     ###########################################################
-    
+
 
     def setvals(self, channels, path, **values):
         """Similar method to update(), but uses keyword arguments as the
         value (a dict) to store.
         """
         return self.update(path, values, channels)
-    
+
 
     def get_nowait(self, pfx, key):
         """Try to get a status value associated with the path formed by
@@ -226,13 +234,13 @@ class Monitor(ps.PubSub):
         if there was no value present.
         """
         path = '.'.join((pfx, key))
-        
+
         with self.lock:
             try:
                 val = self.getitem(path)
                 return (True, val)
-        
-            except KeyError, e:
+
+            except KeyError as e:
                 return (False, e)
 
     # DELEGATE OBJECT METHODS, with locking
@@ -244,13 +252,13 @@ class Monitor(ps.PubSub):
         with self.lock:
             return self._store.getitem(path)
 
-    
+
     def getitems(self, path):
         """Get the status values associated with this path in the table.
         If successful, then return a dictionary of the items found, otherwise
         return an error code.
         """
-        
+
         with self.lock:
             try:
                 return self._store.getitems(path)
@@ -264,7 +272,7 @@ class Monitor(ps.PubSub):
         If successful, then return a dictionary of the items found, otherwise
         return an error code.
         """
-        
+
         with self.lock:
             try:
                 return self._store.getitems_suffixOnly(path)
@@ -278,17 +286,17 @@ class Monitor(ps.PubSub):
         If successful, then return a dictionary of the items found, otherwise
         return an error code.
         """
-        
+
         with self.lock:
             try:
                 return self._store.getTree(path)
 
             except KeyError:
                 return ro.ERROR
-        
+
 
     def get_node(self, path, create=False):
-        """Get the leaf dict for dotted path _path_. 
+        """Get the leaf dict for dotted path _path_.
         """
         with self.lock:
             return self._store.get_node(path, create=create)
@@ -313,12 +321,12 @@ class Monitor(ps.PubSub):
 
     def has_key(self, path):
         with self.lock:
-            return self._store.has_key(path)
+            return path in self._store
 
 
     def has_val(self, path, key):
         with self.lock:
-            return self._store.has_key('%s.%s' % (path, key))
+            return '%s.%s' % (path, key) in self._store
 
 
     def isLeaf(self, path):
@@ -346,20 +354,20 @@ class Monitor(ps.PubSub):
                     t = Task.FuncTask2(hdlr.process_queue, self.ev_quit)
                     t.init_and_start(self)
 
-        except Exception, e:
+        except Exception as e:
             logger.error("Error attaching monitor to logging handler: %s" % (
                 str(e)))
-        
+
 ##     def setvals(self, channels, path, **values):
 ##         if not channels:
 ##             channels = self.defaultChannels
-            
+
 ##         return self.update(path, values, channels)
-    
+
 
     # Get deprecate these item interface methods if we remove dict-style
     # uses of these objects
-    
+
     def __getitem__(self, path):
         """Called for dictionary style access of this object.
         """
@@ -370,7 +378,7 @@ class Monitor(ps.PubSub):
         """Called for dictionary style access with assignment.
         """
         return self.update(path, value, self.defaultChannels)
-        
+
 
     def __delitem__(self, path):
         """Deletes key/value pairs from object.
@@ -385,8 +393,8 @@ class Minimon(Monitor):
     TODO: how many of these methods can we deprecate
     """
 
-    def __init__(self, name, logger, dbpath=None, useSync=False, 
-                 ev_quit=None, threadPool=None, numthreads=20):
+    def __init__(self, name, logger, dbpath=None, useSync=False,
+                 ev_quit=None, threadPool=None, numthreads=30):
 
         # dictionary of lists of condition variables for synchronization
         self.syncd = {}
@@ -398,25 +406,25 @@ class Minimon(Monitor):
                                       ev_quit=ev_quit,
                                       threadPool=threadPool,
                                       numthreads=numthreads)
-            
+
     def getitem(self, path, block=True, timeout=None):
         with self.lock:
             try:
                 return self._store.getitem(path)
 
-            except KeyError, e:
+            except KeyError as e:
                 if not block:
                     raise e
 
                 d = self.getitem_any([path], timeout=timeout)
                 return d.values()[0]
-        
-    
+
+
     def get_wait(self, pfx, key, timeout=None):
 
         return self.getitem('%s.%s' % (pfx, key), timeout=timeout)
 
-    
+
     def release(self, path, has_value=False):
         with self.lock:
             self.logger.debug("RELEASING on %s" % (path))
@@ -424,7 +432,7 @@ class Minimon(Monitor):
                 l = self.syncd[path]
 
                 # release any waiters on this path
-                for i in xrange(len(l)):
+                for i in range(len(l)):
                     (ev_store, cond) = l.pop(0)
                     # Set flag to true if a value was stored
                     if has_value:
@@ -435,14 +443,14 @@ class Minimon(Monitor):
                 del self.syncd[path]
             except KeyError:
                 pass
-                        
+
             return ro.OK
-    
+
     def releaseAll(self, has_value=False):
         with self.lock:
             for path in self.syncd.keys():
                 self.release(path, has_value=has_value)
-                
+
             return ro.OK
 
     def _getitems_list(self, tags):
@@ -452,12 +460,12 @@ class Minimon(Monitor):
             try:
                 res[path] = self._store.getitem(path)
 
-            except KeyError, e:
+            except KeyError as e:
                 # Store does not contain item.
                 continue
 
         return res
-        
+
 
     def getitem_any(self, tags, timeout=None, eventlist=None):
 
@@ -468,7 +476,7 @@ class Minimon(Monitor):
             if len(res) > 0:
                 return res
 
-            # Quick check on timeout to avoid a lot of work 
+            # Quick check on timeout to avoid a lot of work
             if (timeout != None) and (time.time() - start_time >= timeout):
                 raise TimeoutError("Timed out waiting for keys: %s" % (
                     str(tags)))
@@ -491,7 +499,7 @@ class Minimon(Monitor):
 
             if timeout != None:
                 deadline = start_time + timeout
-                
+
             while not ev_store.isSet():
                 # Check for interruption
                 for evt in eventlist:
@@ -508,7 +516,7 @@ class Minimon(Monitor):
                             str(tags)))
                     else:
                         wait_time = min(wait_time, time_left)
-                
+
                 # wait for someone to release us for one of these tags
                 cond.wait(timeout=wait_time)
 
@@ -520,7 +528,7 @@ class Minimon(Monitor):
 
             raise EventError("Awakened without finding a value!")
 
-            
+
     def getitem_all(self, tags, timeout=None, eventlist=None):
 
         start_time = time.time()
@@ -587,7 +595,7 @@ class MonitorHandler(logging.Handler):
         self.buflimit = buflimit
         # the buffer
         self.buffer = []
-        
+
         # time of the last transmission
         self.lastsend = time.time()
         # time delta (sec) beyond which the buffer is sent regardless
@@ -661,15 +669,15 @@ class MonitorHandler(logging.Handler):
             if (self.bufsize > 0) and \
                     (time.time() - self.lastsend > self.interval):
                 self._sendbuf()
-        
-        
+
+
     def handleError(self, record):
         """Called when there is an error emitting."""
 
         # Format the log record and write to stderr
         logstr = self.format(record)
         sys.stderr.write(logstr + '\n')
-        
+
 
 def config_monitor(monitor, channels, aggregates):
     """Configure the given monitor with the default base channels and
@@ -682,7 +690,7 @@ def config_monitor(monitor, channels, aggregates):
     for name in aggregates.keys():
         monitor.aggregate(name, aggregates[name])
 
-        
+
 def addlogopts(optprs):
     """Add special options used in Monitor applications."""
     optprs.add_option("--monitor", dest="monitor",
@@ -703,7 +711,7 @@ def main(options, args):
     try:
         ro.init()
 
-    except ro.remoteObjectError, e:
+    except ro.remoteObjectError as e:
         logger.error("Error initializing remote objects subsystem: %s" % str(e))
         sys.exit(1)
 
@@ -711,7 +719,7 @@ def main(options, args):
     usethread=False
 
     # Create our monitor and start it
-    monitor = Monitor(options.svcname, logger, 
+    monitor = Monitor(options.svcname, logger,
                       numthreads=options.numthreads)
     #config_monitor(monitor)
 
@@ -719,9 +727,9 @@ def main(options, args):
     monitor.start()
     try:
         try:
-            monitor.start_server(port=options.port, wait=True, 
+            monitor.start_server(port=options.port, wait=True,
                                  usethread=usethread)
-        
+
         except KeyboardInterrupt:
             logger.error("Caught keyboard interrupt!")
 
@@ -730,8 +738,8 @@ def main(options, args):
         if usethread:
             monitor.stop_server(wait=True)
         monitor.stop()
-    
-    
+
+
 if __name__ == '__main__':
 
     # Parse command line options with nifty new optparse module
@@ -739,13 +747,13 @@ if __name__ == '__main__':
 
     usage = "usage: %prog [options]"
     optprs = OptionParser(usage=usage, version=('%%prog %s' % version))
-    
+
     optprs.add_option("--db", dest="dbpath", metavar="FILE",
                       help="Use FILE as the monitor database")
     optprs.add_option("--debug", dest="debug", default=False, action="store_true",
                       help="Enter the pdb debugger on main()")
     optprs.add_option("--numthreads", dest="numthreads", type="int",
-                      default=20,
+                      default=30,
                       help="Use NUM threads", metavar="NUM")
     optprs.add_option("--port", dest="port", type="int", default=None,
                       help="Register using PORT", metavar="PORT")
@@ -773,7 +781,7 @@ if __name__ == '__main__':
     elif options.profile:
         import profile
 
-        print "%s profile:" % sys.argv[0]
+        print("%s profile:" % sys.argv[0])
         profile.run('main(options, args)')
 
     else:

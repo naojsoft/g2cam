@@ -5,6 +5,7 @@
 #
 """This file implements a simulator for a simulated instrument (SIMCAM).
 """
+from __future__ import print_function
 import sys, os, time
 import re
 import threading
@@ -15,11 +16,7 @@ try:
     import astropy.io.fits as pyfits
     have_pyfits = True
 except ImportError:
-    try:
-        import pyfits
-        have_pyfits = True
-    except ImportError:
-        print "Can't import pyfits/astropy: certain commands will not work!"
+    print("Can't import astropy.io.fits: certain commands will not work!")
 
 # gen2 base imports
 from g2base import Bunch, Task
@@ -171,7 +168,7 @@ class SIMCAM(BASECAM):
             # Try to look up the named method
             method = getattr(self, cmdName)
 
-        except AttributeError, e:
+        except AttributeError as e:
             result = "ERROR: No such method in subsystem: %s" % (cmdName)
             self.logger.error(result)
             raise CamCommandError(result)
@@ -217,7 +214,7 @@ class SIMCAM(BASECAM):
 
 
     def obcp_mode(self, motor='OFF', mode=None, tag=None):
-	"""One of the commands that are in the SOSSALL.cd
+        """One of the commands that are in the SOSSALL.cd
         """
         self.mode = mode
 
@@ -239,10 +236,9 @@ class SIMCAM(BASECAM):
             res = self.ocs.requestOCSstatus(statusDict)
             self.logger.debug("Status returned: %s" % (str(statusDict)))
 
-        except SIMCAMError, e:
+        except SIMCAMError as e:
             return (1, "Failed to fetch status: %s" % (str(e)))
 
-        #cgi_str = "http://dbs1:30000/dss1_subaru?ra=%(ra)s&dec=%(dec)s&mime-type=application/x-fits&x=%(x)s&y=%(y)s"
         cgi_str = "http://archive.eso.org/dss/dss?ra=%(ra)s&dec=%(dec)s&x=%(x)s&y=%(y)s&mime-type=application/x-fits"
 
         if not ra:
@@ -296,7 +292,7 @@ class SIMCAM(BASECAM):
             self.logger.info("closing")
             py_f.close(output_verify='ignore')
 
-        except Exception, e:
+        except Exception as e:
             return (1, "Failed to open/update returned DSS file: %s" % (
                 str(e)))
 
@@ -312,20 +308,20 @@ class SIMCAM(BASECAM):
 
     def fits_file(self, motor='OFF', frame_no=None, template=None, delay=0,
                   tag=None):
-	"""One of the commands that are in the SOSSALL.cd.
+        """One of the commands that are in the SOSSALL.cd.
         """
 
         if not have_pyfits:
             raise SIMCAMError("Can't execute this command because pyfits is not available")
         self.logger.info("fits_file called...")
 
-	if not frame_no:
-	    return 1
+        if not frame_no:
+            return 1
 
         # TODO: make this return multiple fits files
-	if ':' in frame_no:
-	    (frame_no, num_frames) = frame_no.split(':')
-	    num_frames = int(num_frames)
+        if ':' in frame_no:
+            (frame_no, num_frames) = frame_no.split(':')
+            num_frames = int(num_frames)
         else:
             num_frames = 1
 
@@ -334,12 +330,12 @@ class SIMCAM(BASECAM):
         if not match:
             raise SIMCAMError("Error in frame_no: '%s'" % frame_no)
 
-	inst_code = match.group(1)
-	frame_type = match.group(2)
+        inst_code = match.group(1)
+        frame_type = match.group(2)
         # Convert number to an integer
         try:
             frame_cnt = int(match.group(3))
-        except ValueError, e:
+        except ValueError as e:
             raise SIMCAMError("Error in frame_no: '%s'" % frame_no)
 
         statusDict = {
@@ -351,7 +347,7 @@ class SIMCAM(BASECAM):
             res = self.ocs.requestOCSstatus(statusDict)
             self.logger.debug("Status returned: %s" % (str(statusDict)))
 
-        except SIMCAMError, e:
+        except SIMCAMError as e:
             return (1, "Failed to fetch status: %s" % (str(e)))
 
         # Iterate over number of frames, creating fits files
@@ -417,89 +413,12 @@ class SIMCAM(BASECAM):
         self.ocs.archive_framelist(framelist)
 
 
-#     def copy_file(self, motor='OFF', frame_no=None):
-# 	"""One of the commands that are in the SOSSALL.cd.
-#         """
-
-#         self.logger.info("fits_file called...")
-
-# 	if not frame_no:
-#             raise SIMCAMError("No frame_no specified!")
-
-#         # TODO: make this return multiple fits files
-# 	if ':' in frame_no:
-# 	    (frame_no, num_frames) = frame_no.split(':')
-# 	    num_frames = int(num_frames)
-#         else:
-#             num_frames = 1
-
-#         # Check frame_no
-#         match = re.match('^(\w{3})(\w)(\d{8})$', frame_no)
-#         if not match:
-#             raise SIMCAMError("Error in frame_no: '%s'" % frame_no)
-
-# 	inst_code = match.group(1)
-# 	frame_type = match.group(2)
-#         # Convert number to an integer
-#         try:
-#             frame_cnt = int(match.group(3))
-#         except ValueError, e:
-#             raise SIMCAMError("Error in frame_no: '%s'" % frame_no)
-
-#         # Iterate over number of frames, creating fits files
-#         frame_end = frame_cnt + num_frames
-#         framelist = []
-
-#         while frame_cnt < frame_end:
-#             # Construct frame_no and fits file
-#             frame_no = '%3.3s%1.1s%08.8d' % (inst_code, frame_type, frame_cnt)
-#             #fitsfile = '%s/%s.fits' % (self.env.INST_PATH, frame_no)
-#             fitsfile = '%s/%s.fits' % ("/tmp", frame_no)
-
-#             # take exposure
-#             hdrkwds = { #'prop-id': self.env.proposal,
-#                 'frameid': frame_no,
-#                 'obcpmode': self.mode,
-#                 }
-# 	    try:
-# 		os.system('cp %s/data/SIMCAM-4M.fits %s' % (self.mydir,
-#                                                           fitsfile))
-# 	    except OSError, e:
-# 		raise SIMCAMError("Error making FITS file: %s" % str(e))
-
-#             # Add it to framelist
-#             framelist.append((frame_no, fitsfile))
-
-#             frame_cnt += 1
-
-#         self.logger.debug("done exposing...")
-
-#         # If there was a non-negligible delay specified, then queue up
-#         # a task for later archiving of the file and terminate this command.
-#         if delay:
-#             if type(delay) == type(""):
-#                 delay = float(delay)
-#             if delay > 0.1:
-#                 # Add a task to delay and then archive_framelist
-#                 self.logger.info("Adding delay task with '%s'" % \
-#                                  str(framelist))
-#                 t = common_task.DelayedSendTask(self.ocs, delay, framelist)
-#                 t.initialize(self)
-#                 self.threadPool.addTask(t)
-#                 return (0, "OK")
-
-#         # If no delay specified, then just try to archive the file
-#         # before terminating the command.
-#         self.logger.info("Submitting framelist '%s'" % str(framelist))
-#         self.ocs.archive_framelist(framelist)
-
-
     def putstatus(self, target="ALL"):
         """Forced export of our status.
         """
-	# Bump our status send count and time
-	self.stattbl1.count += 1
-	self.stattbl1.time = time.strftime("%4Y%2m%2d %2H%2M%2S",
+        # Bump our status send count and time
+        self.stattbl1.count += 1
+        self.stattbl1.time = time.strftime("%4Y%2m%2d %2H%2M%2S",
                                            time.localtime())
 
         self.ocs.exportStatus()
@@ -508,7 +427,7 @@ class SIMCAM(BASECAM):
     def getstatus(self, target="ALL"):
         """Forced import of our status using the normal status interface.
         """
-	ra, dec, focusinfo, focusinfo2 = self.ocs.requestOCSstatusList2List(['STATS.RA',
+        ra, dec, focusinfo, focusinfo2 = self.ocs.requestOCSstatusList2List(['STATS.RA',
                                                       'STATS.DEC',
                                                       'TSCV.FOCUSINFO',
                                                       'TSCV.FOCUSINFO2'])
@@ -519,7 +438,7 @@ class SIMCAM(BASECAM):
     def getstatus2(self, target="ALL"):
         """Forced import of our status using the 'fast' status interface.
         """
-	ra, dec = self.ocs.getOCSstatusList2List(['STATS.RA',
+        ra, dec = self.ocs.getOCSstatusList2List(['STATS.RA',
                                                   'STATS.DEC'])
 
         self.logger.info("Status returned: ra=%s dec=%s" % (ra, dec))
@@ -548,7 +467,7 @@ class SIMCAM(BASECAM):
 
 
     def kablooie(self, motor='OFF'):
-	"""Generate an exception no matter what.
+        """Generate an exception no matter what.
         """
         raise SIMCAMError("KA-BLOOIE!!!")
 
@@ -567,7 +486,7 @@ class SIMCAM(BASECAM):
         res = unimplemented_res
         self.logger.info("Result is %d\n" % res)
 
-	return res
+        return res
 
 
     def power_off(self, upstime=None):
@@ -582,7 +501,7 @@ class SIMCAM(BASECAM):
             self.logger.info("!!! POWERING DOWN !!!")
             #res = os.system('/usr/sbin/shutdown -h 60')
 
-        except OSError, e:
+        except OSError as e:
             self.logger.error("Error issuing shutdown: %s" % str(e))
 
         self.stop()
@@ -590,4 +509,4 @@ class SIMCAM(BASECAM):
         self.ocs.shutdown(res)
 
 
-#END SIMCAM.py
+#END

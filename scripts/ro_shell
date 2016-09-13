@@ -13,6 +13,7 @@ Example use:
 $ ro_shell.py
 names>getNames()
 """
+from __future__ import print_function
 
 import sys, os
 import socket, time
@@ -22,7 +23,7 @@ import traceback
 
 from g2base import remoteObjects as ro
 
-    
+
 version = '20080130.0'
 
 # History file for ro_sh
@@ -51,16 +52,16 @@ class Shell(object):
     def builtin(self, cmdstr):
         """Execute a built in command."""
         try:
-            print eval('self.rosh_' + cmdstr)
+            print(eval('self.rosh_' + cmdstr))
 
-        except Exception, e:
-            print str(e)
+        except Exception as e:
+            print(str(e))
             (type, value, tb) = sys.exc_info()
             tb_str = ("Traceback:\n%s" % \
                       "".join(traceback.format_tb(tb)))
-            print tb_str
+            print(tb_str)
 
-        
+
     def rosh_conn(self, svcname, auth=None):
         """Connect to remote object service (svcname)"""
 
@@ -71,11 +72,11 @@ class Shell(object):
             self.cursor = svcname
             return svcname
 
-        except ro.remoteObjectError, e:
-            print str(e)
+        except ro.remoteObjectError as e:
+            print(str(e))
             return None
-        
-        
+
+
     def rosh_sw(self, svcname):
         """Switch cursor to remote object service (svcname)"""
 
@@ -85,36 +86,36 @@ class Shell(object):
             return svcname
 
         except KeyError:
-            print "No such connection: %s; please use @conn()" % svcname
+            print("No such connection: %s; please use @conn()" % svcname)
             return None
-        
-        
+
+
     def rosh_help(self):
         """Built in help command"""
-        print """Built-in Commands:
-        
+        print("""Built-in Commands:
+
 @conn(svcname) -- get a RO connection to service with name svcname
 @sw(svcname)   -- switch to an existing connection to svcname
 @help()        -- generate this help message
 
 Any other method is considered to be a method call on the remote service.
-"""
-        
-        
+""")
+
+
     def execute(self, cmdstr):
         """Execute a method on a remote object."""
         try:
-            print eval("self.svc['%s'].%s" % (self.cursor, cmdstr))
+            print(eval("self.svc['%s'].%s" % (self.cursor, cmdstr)))
 
-        except Exception, e:
-            print str(e)
+        except Exception as e:
+            print(str(e))
             (type, value, tb) = sys.exc_info()
             tb_str = ("Traceback:\n%s" % \
                       "".join(traceback.format_tb(tb)))
-            print tb_str
-            print "\nUse @help() for help with ro_shell.py"
+            print(tb_str)
+            print("\nUse @help() for help with ro_shell.py")
 
-        
+
     def shell(self):
         """Execute a read-eval-print loop."""
 
@@ -131,7 +132,7 @@ Any other method is considered to be a method call on the remote service.
         # Command processing loop.  Iterate until a ^C or ^D
         while True:
 
-            # Prompt user using current svc name 
+            # Prompt user using current svc name
             prompt = (prompt_templ % self.cursor)
             cmdstr = raw_input(prompt)
             if len(cmdstr) == 0:
@@ -179,7 +180,7 @@ def main(options, args):
                 ro_sh.shell()
 
             except (EOFError, KeyboardInterrupt):
-                print ""
+                print("")
                 if not options.confirm:
                     quit = True
                 else:
@@ -189,13 +190,13 @@ def main(options, args):
                         if (ans == 'Y') or (ans == 'YES'):
                             quit = True
                     except (EOFError, KeyboardInterrupt):
-                        print ""
+                        print("")
                         quit = True
-                    
-        
+
+
     sys.exit(0)
 
-    
+
 if __name__ == '__main__':
 
     # Parse command line options
@@ -203,7 +204,7 @@ if __name__ == '__main__':
 
     usage = "usage: %prog [options] command [args]"
     parser = OptionParser(usage=usage, version=('%%prog %s' % version))
-    
+
     parser.add_option('-y', "--confirm", dest="confirm", default=False,
                       action="store_true",
                       help="Confirm certain actions")
@@ -231,7 +232,7 @@ if __name__ == '__main__':
     elif options.profile:
         import profile
 
-        print "%s profile:" % sys.argv[0]
+        print("%s profile:" % sys.argv[0])
         profile.run('main(options, args)')
 
     else:

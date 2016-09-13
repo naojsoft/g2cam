@@ -80,7 +80,7 @@ class NestedBunch(object):
         sb = self.sb
         for key in path.split(self.pathsep):
 
-            if not sb.has_key(key):
+            if key not in sb:
                 if not create:
                     raise KeyError("No such key: '%s'" % path)
 
@@ -195,7 +195,7 @@ class NestedBunch(object):
         # If we are adding a dict at the end then extend path by a dict
         # otherwise just store leaf value.
         if isinstance(value, dict) or isinstance(value, Klass):
-            if not sb.has_key(key):
+            if key not in sb:
                 sub_sb = Klass()
                 sub_sb.update(value)
                 sb[key] = sub_sb
@@ -226,7 +226,7 @@ class NestedBunch(object):
         
         for key in path.split(self.pathsep):
             sb = sub_sb
-            if not sb.has_key(key):
+            if key not in sb:
                 raise KeyError("No such key: '%s'" % path)
                 
             else:
@@ -356,6 +356,6 @@ class NestedBunch(object):
 
     def has_val(self, path, key):
         pkey = self.pathsep.join((path, key))
-        return self.has_key(pkey)
+        return pkey in self
 
 

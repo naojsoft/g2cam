@@ -4,11 +4,14 @@
 #
 # Eric Jeschke (eric@naoj.org)
 #
+from __future__ import print_function
+
 # stdlib imports
 import sys, os
 import signal
 import threading
 import logging
+import traceback
 # profile imported below (if needed)
 # pdb imported below (if needed)
 # optparse imported below (if needed)
@@ -61,7 +64,7 @@ def main(options, args):
     try:
         ro.init([options.gen2host])
 
-    except ro.remoteObjectError, e:
+    except ro.remoteObjectError as e:
         logger.error("Cannot initialize remote objects: %s" % str(e))
         sys.exit(1)
 
@@ -120,8 +123,16 @@ def main(options, args):
         except KeyboardInterrupt:
             logger.error("Keyboard interrupt!")
 
-        except Exception, e:
+        except Exception as e:
             logger.error("Exception starting instrument: %s" % str(e))
+            try:
+                (type, value, tb) = sys.exc_info()
+                tb_str = "\n".join(traceback.format_tb(tb))
+
+            except Exception:
+                tb_str = "Traceback information unavailable."
+
+            logger.error("Traceback:\n%s" % (tb_str))
 
     finally:
         if options.seppuku:
@@ -213,7 +224,7 @@ if __name__ == '__main__':
     elif options.profile:
         import profile
 
-        print "%s profile:" % sys.argv[0]
+        print("%s profile:" % sys.argv[0])
         profile.run('main(options, args)')
 
     else:

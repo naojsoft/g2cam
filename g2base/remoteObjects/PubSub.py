@@ -7,23 +7,30 @@
 
 """
 Main issues to think about/resolve:
-   
+
   [ ] Bidirectional channel subscriptions
   [X] Local subscriber callbacks
   [X] Ability to set up ad-hoc channels based on aggregate channels;
         e.g. TaskManager needs to pull combined feed
   [ ] Permissions/access issues
 """
+from __future__ import print_function
 
-import sys, time
-import threading, Queue
+import sys, os, time
+import threading
+from collections import deque as Deque
+from g2base import six
+if six.PY2:
+    import Queue
+else:
+    import queue as Queue
 
 from g2base import Bunch, Task, ssdlog
-from g2base.remoteObjects import remoteObjects as ro
+from . import remoteObjects as ro
+from . import Timer
+from .ro_config import *
 
-from ro_config import *
-
-version = '20140322.0'
+version = '20160330.0'
 
 # Subscriber options
 TWO_WAY = 'bidirectional'
@@ -40,10 +47,10 @@ class PubSubBase(object):
     """
 
     ######## INTERNAL METHODS ########
-    
-    def __init__(self, name, logger,  
-                 ev_quit=None, threadPool=None, numthreads=15,
-                 outlimit=5):
+
+    def __init__(self, name, logger,
+                 ev_quit=None, threadPool=None, numthreads=30,
+                 outlimit=6, inlimit=12):
         """
         Constructor for the PubSubBase class.
             name        pubsub name
@@ -58,7 +65,10 @@ class PubSubBase(object):
         self.logger = logger
         self.name = name
         self.numthreads = numthreads
+        # this limits the number of incoming and outgoing connections
         self.outlimit = outlimit
+        self.inlimit = inlimit
+        self.outqueue = Queue.PriorityQueue()
 
         # Handles to subscriber remote proxies
         self._partner = {}
@@ -69,7 +79,7 @@ class PubSubBase(object):
         if not ev_quit:
             ev_quit = threading.Event()
         self.ev_quit = ev_quit
-        
+
         # If we were passed in a thread pool, then use it.  If not,
         # make one.  Record whether we made our own or not.
         if threadPool != None:
@@ -81,43 +91,59 @@ class PubSubBase(object):
                                               ev_quit=self.ev_quit,
                                               numthreads=self.numthreads)
             self.mythreadpool = True
-            
+
+        # used for delaying redeliveries
+        self.tfact = Timer.TimerFactory(ev_quit=self.ev_quit)
+
         # For task inheritance:
         self.tag = 'PubSub'
         self.shares = ['logger', 'threadPool']
 
-        # For handling subscriber info 
+        # For handling subscriber info
         self._lock = threading.RLock()
+        self._proxy_lock = threading.RLock()
         self._sub_info = {}
 
         # number of seconds to wait before unsubscribing a subscriber
         # who is unresponsive
-        self.failure_limit = 60.0
+        self.failure_limit = 30.0
+        # initial delay assigned after a delivery failure
+        self.redelivery_delay = 0.001
+        # delay is increased by this factor with each subsequent failure
+        self.redelivery_increase_factor = 2.0
+        # delay is decreased by this factor with each subsequent success
+        self.redelivery_decrease_factor = 0.6666
+        # this is the maximum delivery delay
+        self.max_delivery_delay = 1.0
+
+        # warn us when the outgoing queue size exceeds this
+        self.qlen_warn_limit = 100
+        # but don't warn us more often than this interval
+        self.qlen_warn_interval = 10.0
 
         self.cb_subscr_cnt = 0
-        self.outbound_sem = threading.BoundedSemaphore(self.outlimit)
-        
+
 
     def get_threadPool(self):
         return self.threadPool
 
-    
+
     def add_channel(self, channelName):
         with self._lock:
             self._get_channelInfo(channelName, create=True)
-                
-    
+
+
     def add_channels(self, channelNames):
         with self._lock:
             for channelName in channelNames:
                 self._get_channelInfo(channelName, create=True)
-                
-    
+
+
     def get_channels(self):
         with self._lock:
             return self._sub_info.keys()
-                
-    
+
+
     def loadConfig(self, moduleName):
         with self._lock:
             try:
@@ -125,7 +151,7 @@ class PubSubBase(object):
                         moduleName))
                 cfg = my_import(moduleName)
 
-            except ImportError, e:
+            except ImportError as e:
                 raise PubSubError("Can't load configuration '%s': %s" % (
                         moduleName, str(e)))
 
@@ -141,7 +167,7 @@ class PubSubBase(object):
     def _get_channelInfo(self, channelName, create=True):
         # Should only get called from within a lock!
 
-        if self._sub_info.has_key(channelName):
+        if channelName in self._sub_info:
             return self._sub_info[channelName]
 
         elif create:
@@ -155,8 +181,8 @@ class PubSubBase(object):
 
         else:
             raise PubSubError("No such channel exists: '%s'" % channelName)
-                
-    
+
+
     def _subscribe(self, subscriber, proxy_obj, channels, options):
         """Add a subscriber (named by _subscriber_ and accessible via
         object _proxy_obj_) to channel (or list of channels) _channels_
@@ -171,23 +197,39 @@ class PubSubBase(object):
         if isinstance(options, dict):
             # Does subscriber allow us to unsubscribe them if they are
             # unreachable?  Default=True
-            if options.has_key('unsub'):
+            if 'unsub' in options:
                 can_unsubscribe = options['unsub']
 
         with self._lock:
-            # Record proxy in _partner table
-            self._partner[subscriber] = Bunch.Bunch(proxy=proxy_obj,
-                                                    time_failure=None,
-                                                    can_unsubscribe=can_unsubscribe)
+            try:
+                partner = self._partner[subscriber]
+                if partner is None:
+                    raise KeyError("Partner for subscriber '%s' is None" % (
+                        subscriber))
+                partner.proxy = proxy_obj
+
+            except KeyError:
+                # Record proxy in _partner table
+                partner = Bunch.Bunch(proxy=proxy_obj,
+                                      subscribe_options=options,
+                                      #lock=threading.RLock(),
+                                      time_failure=None,
+                                      delivery_delay=self.redelivery_delay,
+                                      timer=self.tfact.timer(),
+                                      backlog=Deque(maxlen=1000),
+                                      can_unsubscribe=can_unsubscribe)
+                partner.timer.add_callback('expired',
+                                           self._timer_cb, subscriber, partner)
+                self._partner[subscriber] = partner
 
             for channel in channels:
                 bunch = self._get_channelInfo(channel, create=True)
                 bunch.subscribers.add(subscriber)
-                
+
             # Compute subscriber relationships
             self.compute_subscribers()
 
-        
+
     def _unsubscribe(self, subscriber, channels, options):
         """Delete a subscriber (named by _subscriber_) to channel (or list
         of channels) described by _channels_.
@@ -266,64 +308,219 @@ class PubSubBase(object):
         else:
             updnames = names[:]
             updnames.append(self.name)
-        
+
         # Update them.  Silently log errors.
         for subscriber in subscribers:
             # Don't update any originators.
             if subscriber in names:
                 continue
 
-            try:
-                # self._individual_update(subscriber, value, updnames,
-                #                         all_channels)
-                # Start a new task to concurrently do the individual update
-                task = Task.FuncTask(self._individual_update,
-                                     (subscriber, value, updnames,
-                                         all_channels, priority), {},
-                                     logger=self.logger)
-                task.init_and_start(self)
+            with self._lock:
+                try:
+                    partner = self._partner[subscriber]
+                    if partner is None:
+                        raise KeyError("Partner for subscriber '%s' is None" % (
+                            subscriber))
 
-            except Exception, e:
-                self.logger.error("cannot update subscriber '%s': %s" % (
-                    subscriber, str(e)))
+                except KeyError:
+                    self.logger.warn("No information for subscriber '%s': dropping them" % (
+                        subscriber))
+                    self.remove_subscriber(subscriber)
+                    continue
+
+                queue_record = (subscriber, value, updnames,
+                                all_channels, priority)
+
+                # If there is a current failure indicated for this subscriber
+                # then add this update to the partner's backlog
+                if partner.time_failure is not None:
+                    partner.backlog.append(queue_record)
+                    continue
+
+            adj_priority = time.time() + priority
+
+            # queue up this update
+            self.outqueue.put((adj_priority, queue_record))
 
 
-    def _individual_update(self, subscriber, value, names, channels,
-                           priority):
+    def _individual_update(self, queue_record):
+        subscriber, value, names, channels, priority = queue_record
         self.logger.debug("attempting to update subscriber '%s' on channels(%s)  with value: %s" % (
             subscriber, str(channels), str(value)))
-        
+
+        partner = None
+        with self._lock:
+            try:
+                partner = self._partner[subscriber]
+                if partner is None:
+                    raise KeyError("Partner for subscriber '%s' is None" % (
+                        subscriber))
+
+            except KeyError:
+                self.logger.warn("No information for subscriber '%s': dropping them" % (
+                    subscriber))
+                self.remove_subscriber(subscriber)
+                return 0
+
+            proxy_obj = partner.proxy
+
+        success = False
         try:
-            bnch = self._partner[subscriber]
-            proxy_obj = bnch.proxy
+            proxy_obj.remote_update(value, names, channels)
+            success = True
 
-            with self.outbound_sem:
-                proxy_obj.remote_update(value, names, channels)
-
-            bnch.time_failure = None
-
-        except Exception, e:
+        except Exception as e:
             # TODO: capture and log traceback
             self.logger.error("cannot update subscriber '%s': %s" % (
                 subscriber, str(e)))
-            if not bnch.time_failure:
-                bnch.time_failure = time.time()
+
+        # failure to deliver update!
+        with self._lock:
+            if success:
+                # successful update
+
+                # decrease future delays by decrease retry factor
+                partner.delivery_delay = max(self.redelivery_delay,
+                                             partner.delivery_delay *
+                                             self.redelivery_decrease_factor)
+
+                backlog_n = len(partner.backlog)
+                if (partner.time_failure is None) and (backlog_n == 0):
+                    # no current outstanding failures
+                    return
+
+                if backlog_n == 0:
+                    partner.time_failure = None
+                    self.logger.info("subscriber '%s' backlog caught up" % (
+                        subscriber))
+                    return
+
+                # <-- there is a backlog and a history of failure
+
+                # partner gets a new lease on life
+                cur_time = time.time()
+                partner.time_failure = cur_time
+
+                try:
+                    queue_record = partner.backlog.popleft()
+
+                except IndexError:
+                    # backlog is empty--this should NOT happen due to test above
+                    partner.time_failure = None
+                    return
+
+                # TODO: we are only releasing one update at a time
+                # and not more to be done in parallel--this could result in
+                # a slow comeback.  BUT, maybe slow is good if the client
+                # is experiencing congestion
+                adj_priority = cur_time
+                self.outqueue.put((adj_priority, queue_record))
+
             else:
-                if (time.time() - bnch.time_failure) > self.failure_limit:
-                    if bnch.can_unsubscribe:
-                        self.remove_subscriber(subscriber)
+                # failure!
+                # add this update to the partner's backlog
+                partner.backlog.append(queue_record)
+
+                delivery_delay = min(self.max_delivery_delay,
+                                     partner.delivery_delay)
+                # increase future delays by increase retry factor
+                partner.delivery_delay = min(self.max_delivery_delay,
+                                             partner.delivery_delay *
+                                             self.redelivery_increase_factor)
+
+                if partner.time_failure is None:
+                    # no existing failure in effect--so no timer running
+                    partner.time_failure = time.time()
+
+                # set up a delay before retrying
+                self.logger.debug("setting timer")
+                partner.timer.cond_set(delivery_delay)
+
+    def _timer_cb(self, timer, subscriber, partner):
+
+        def __requeue(subscriber, partner):
+            # pull an update off of the backlog and requeue it
+            with self._lock:
+                self.logger.debug("timer expired, checking updates for subscriber '%s'" % (subscriber))
+                cur_time = time.time()
+
+                if partner.time_failure is not None:
+                    # already failing--should we give on this subscriber?
+                    failure_interval = cur_time - partner.time_failure
+                    if failure_interval > self.failure_limit:
+                        if partner.can_unsubscribe:
+                            self.logger.warning("subscriber '%s' failure interval has exceeded limit--unsubscribing them" % (
+                                subscriber))
+                            self.remove_subscriber(subscriber)
+                            return
+
+                try:
+                    self.logger.info("backlog for subscriber '%s' is %d" % (
+                        subscriber, len(partner.backlog)))
+                    queue_record = partner.backlog.popleft()
+
+                except IndexError:
+                    # backlog is empty
+                    partner.time_failure = None
+                    return
+
+                # There may be a problem with this partner/proxy:
+                # try to rebuild it
+                self.proxy_error(subscriber, partner)
+
+            adj_priority = cur_time
+
+            self.outqueue.put((adj_priority, queue_record))
+
+        task = Task.FuncTask(__requeue, [subscriber, partner], {},
+                             logger=self.logger)
+        task.init_and_start(self)
+
+    def _delivery_daemon(self, i):
+        last_warn = time.time()
+
+        while not self.ev_quit.isSet():
+            n = self.get_qlen()
+            cur_time = time.time()
+            if ((i == 0) and (n > self.qlen_warn_limit) and
+                (cur_time - last_warn > self.qlen_warn_interval)):
+                self.logger.warn("Queue size %d exceeds limit %d" % (
+                    n, self.qlen_warn_limit))
+                last_warn = cur_time
+
+            try:
+                priority, queue_record = self.outqueue.get(True, 0.25)
+
+                self._individual_update(queue_record)
+
+            except Queue.Empty:
+                continue
+
+    def get_qlen(self):
+        return self.outqueue.qsize()
+
+    def get_qelts(self):
+        res = [ (elt[0], elt[1][0]) for elt in self.outqueue.queue ]
+        return res
 
     ######## PUBLIC METHODS ########
-    
+
     def start(self, wait=True):
         """Start any background threads, etc. used by this pubsub.
         """
 
         #self.ev_quit.clear()
-        
+
         # Start our thread pool (if we created it)
         if self.mythreadpool:
             self.threadPool.startall(wait=wait)
+
+        # Start up the timer factory
+        self.tfact.wind()
+
+        # Start up delivery daemons
+        for i in range(self.outlimit):
+            self.threadPool.addTask(Task.FuncTask2(self._delivery_daemon, i))
 
         self.logger.info("PubSub background tasks started.")
 
@@ -331,14 +528,15 @@ class PubSubBase(object):
     def stop(self, wait=True):
         """Stop any background threads, etc. used by this pubsub.
         """
+        self.tfact.quit()
 
         # Stop our thread pool (if we created it)
         if self.mythreadpool:
             self.threadPool.stopall(wait=wait)
-        
+
         self.logger.info("PubSub background tasks stopped.")
 
-       
+
     def aggregate(self, channel, channels):
         """
         Establish a new aggregate channel (channel) based on a group of
@@ -350,18 +548,18 @@ class PubSubBase(object):
 
             # Update subscriber relationships
             self.compute_subscribers()
-        
+
 
     def deaggregate(self, channel):
         """
-        Delete an aggregate channel (channel). 
+        Delete an aggregate channel (channel).
         """
         with self._lock:
             self.aggregates.delitem(channel)
 
             # Update subscriber relationships
             self.compute_subscribers()
-        
+
 
     def _get_constituents(self, channel, visited):
         """
@@ -373,9 +571,9 @@ class PubSubBase(object):
         with self._lock:
             # Only process this if it is an aggregate channel and we haven't
             # visited it yet
-            if (not self.aggregates.has_key(channel)) or (channel in visited):
+            if (channel not in self.aggregates) or (channel in visited):
                 return res
-            
+
             visited.add(channel)
 
             # For each subchannel in our aggregate set:
@@ -384,7 +582,7 @@ class PubSubBase(object):
             for sub_ch in self.aggregates[channel]:
 
                 res.add(sub_ch)
-                if self.aggregates.has_key(sub_ch):
+                if sub_ch in self.aggregates:
                     res.update(self._get_constituents(sub_ch, visited))
 
             return res
@@ -398,11 +596,11 @@ class PubSubBase(object):
         res = self._get_constituents(channel, set([]))
 
         return list(res)
-    
-        
+
+
     def compute_subscribers(self):
         """
-        Internal helper function used by the subscribe(), unsubscribe(), 
+        Internal helper function used by the subscribe(), unsubscribe(),
         aggregate() and deaggregate(), methods.
         """
 
@@ -450,28 +648,28 @@ class PubSubBase(object):
             #    bunch = self._get_channelInfo(channel)
             #    self.logger.debug("%s --> %s" % (channel,
             #                                     str(list(bunch.computed_subscribers))))
-        
+
     def _get_subscribers(self, channels):
         """Get the list of subscriber names that match subscriptions for
         a given channel or channels AND get the list of all channels that
         this aggregates to.
         """
-        if isinstance(channels, basestring):
+        if isinstance(channels, six.string_types):
             channels = [channels]
         self.logger.debug("channels=%s" % str(channels))
-        
+
         with self._lock:
             # Optomization for case where there is only one channel
             if len(channels) == 1:
                 channel = channels[0]
                 try:
                     bunch = self._sub_info[channel]
-                
+
                     return (bunch.computed_subscribers, bunch.computed_channels)
-                
+
                 except KeyError:
                     return (set([]), set([]))
-            
+
             else:
                 # Otherwise we have to compute the union of all the channels
                 # computed subscribers
@@ -483,7 +681,7 @@ class PubSubBase(object):
                         bunch = self._sub_info[channel]
                         subscribers.update(bunch.computed_subscribers)
                         all_channels.update(bunch.computed_channels)
-                        
+
                     except KeyError:
                         continue
 
@@ -491,7 +689,7 @@ class PubSubBase(object):
                 # because it should have already been done in compute_subscribers)
                 if self.name in subscribers:
                     subscribers.remove(self.name)
-                
+
                 return (subscribers, all_channels)
 
 
@@ -505,14 +703,14 @@ class PubSubBase(object):
 
         return (list(subscribers), list(all_channels))
 
-        
+
     def _monitor_update(self, value, names, channels, priority):
         # update monitor
         self.monitor_update(value, names, channels)
 
         # if successful, update our subscribers
         self._named_update(value, names, channels, priority=priority)
-        
+
 
     def remote_update(self, value, names, channels):
         """method called by another PubSub to update this one
@@ -556,6 +754,8 @@ class PubSubBase(object):
 
         task.init_and_start(self)
 
+    def proxy_error(self, subscriber, partner):
+        pass
 
 class PubSub(PubSubBase):
     """Like a PubSubBase, but adds support for creating and caching
@@ -564,8 +764,8 @@ class PubSub(PubSubBase):
     """
 
     def __init__(self, name, logger,
-                 ev_quit=None, threadPool=None, numthreads=15,
-                 outlimit=5):
+                 ev_quit=None, threadPool=None, numthreads=30,
+                 outlimit=4, inlimit=12):
         """Constructor.
         """
 
@@ -573,8 +773,9 @@ class PubSub(PubSubBase):
                                      ev_quit=ev_quit,
                                      threadPool=threadPool,
                                      numthreads=numthreads,
-                                     outlimit=outlimit)
-        
+                                     outlimit=outlimit,
+                                     inlimit=inlimit)
+
         # Holds proxies to other pubsubs
         self._proxyCache = {}
 
@@ -592,11 +793,19 @@ class PubSub(PubSubBase):
     def clear_proxy_cache(self):
         with self._lock:
             self._proxyCache = {}
-            
+
+    def proxy_error(self, subscriber, partner):
+        self.remove_proxies([subscriber])
+
+        # Try to rebuild this proxy
+        proxy = self._getProxy(subscriber, partner.subscribe_options)
+        with self._lock:
+            partner.proxy = proxy
+
     def remove_proxies(self, nameList):
         """Remove remoteObject proxies to remote pubsubs (subscribers).
         """
-        with self._lock:
+        with self._proxy_lock:
             for name in nameList:
                 try:
                     del self._proxyCache[name]
@@ -610,7 +819,7 @@ class PubSub(PubSubBase):
         """
         try:
             # If we already have a proxy for the _svcname_, return it.
-            with self._lock:
+            with self._proxy_lock:
                 return self._proxyCache[subscriber]
 
         except KeyError:
@@ -619,11 +828,11 @@ class PubSub(PubSubBase):
             # Fill in possible authentication and security params
             kwdargs = { 'timeout': self.remote_timeout }
             #kwdargs = {}
-            if options.has_key('auth'):
+            if 'auth' in options:
                 kwdargs['auth'] = options['auth']
-            if options.has_key('secure'):
+            if 'secure' in options:
                 kwdargs['secure'] = options['secure']
-            if options.has_key('transport'):
+            if 'transport' in options:
                 kwdargs['transport'] = options['transport']
 
             # subscriber can be a service name or a host:port
@@ -633,73 +842,79 @@ class PubSub(PubSubBase):
                 (host, port) = subscriber.split(':')
                 port = int(port)
                 proxy_obj = ro.remoteObjectClient(host, port, **kwdargs)
-                
+
             with self._lock:
                 self._proxyCache[subscriber] = proxy_obj
             self.logger.debug("Created proxy for '%s'" % (subscriber))
 
             return proxy_obj
-            
-        
+
+
     def subscribe(self, subscriber, channels, options):
         """Register a subscriber (named by _subscriber_) for updates on
-        channel(s) _channels_. 
+        channel(s) _channels_.
 
         This call is expected to be called via remoteObjects.
         """
-        self.logger.debug("registering '%s' as a subscriber for '%s'." % (
-            subscriber, channels))
+        def __sub(subscriber, channels, options):
+            self.logger.debug("registering '%s' as a subscriber for '%s'." % (
+                subscriber, channels))
 
-        if not options:
-            options = {}
-            
-        if isinstance(channels, basestring):
-            channels = [channels]
-            
-        try:
-            proxy_obj = self._getProxy(subscriber, options)
-            
-            super(PubSub, self)._subscribe(subscriber, proxy_obj,
-                                            channels, options)
-            self.logger.debug("local registration of '%s' successful." % (
-                subscriber))
+            if not options:
+                options = {}
 
-            return ro.OK
+            if isinstance(channels, six.string_types):
+                channels = [channels]
 
-        except PubSubError, e:
-            self.logger.error("registration of '%s' for '%s' failed: %s" % (
-                subscriber, channels, str(e)))
-            return ro.ERROR
+            try:
+                proxy_obj = self._getProxy(subscriber, options)
+
+                super(PubSub, self)._subscribe(subscriber, proxy_obj,
+                                                channels, options)
+                self.logger.debug("local registration of '%s' successful." % (
+                    subscriber))
+
+            except PubSubError as e:
+                self.logger.error("registration of '%s' for '%s' failed: %s" % (
+                    subscriber, channels, str(e)))
+
+        task = Task.FuncTask2(__sub, subscriber, channels, options)
+        task.init_and_start(self)
+
+        return ro.OK
 
 
     def unsubscribe(self, subscriber, channels, options):
         """Unregister a subscriber (named by _subscriber_) for updates on
-        channel(s) _channels_. 
+        channel(s) _channels_.
 
         This call is expected to be called via remoteObjects.
         """
-        self.logger.debug("unregistering '%s' as a subscriber for '%s'." % (
-            subscriber, channels))
+        def __unsub(subscriber, channels, options):
+            self.logger.debug("unregistering '%s' as a subscriber for '%s'." % (
+                subscriber, channels))
 
-        if not options:
-            options = {}
-            
-        if isinstance(channels, basestring):
-            channels = [channels]
-            
-        try:
-            #proxy_obj = self._getProxy(subscriber, options)
-            
-            super(PubSub, self)._unsubscribe(subscriber, channels, options)
-            self.logger.debug("local unregistration of '%s' successful." % (
-                subscriber))
+            if not options:
+                options = {}
 
-            return ro.OK
+            if isinstance(channels, six.string_types):
+                channels = [channels]
 
-        except PubSubError, e:
-            self.logger.error("unregistration of '%s' for '%s' failed: %s" % \
-                             (subscriber, str(channels), str(e)))
-            return ro.ERROR
+            try:
+                #proxy_obj = self._getProxy(subscriber, options)
+
+                super(PubSub, self)._unsubscribe(subscriber, channels, options)
+                self.logger.debug("local unregistration of '%s' successful." % (
+                    subscriber))
+
+            except PubSubError as e:
+                self.logger.error("unregistration of '%s' for '%s' failed: %s" % \
+                                 (subscriber, str(channels), str(e)))
+
+        task = Task.FuncTask2(__unsub, subscriber, channels, options)
+        task.init_and_start(self)
+
+        return ro.OK
 
 
     def publish_to(self, subscriber, channels, options):
@@ -711,7 +926,7 @@ class PubSub(PubSubBase):
         """
         options1 = options.copy()
         options1.setdefault('unsub', False)
-            
+
         return self.subscribe(subscriber, channels, options1)
 
 
@@ -721,52 +936,52 @@ class PubSub(PubSubBase):
         try:
             # Fill in possible authentication and security params
             kwdargs = {}
-            if options.has_key('pubauth'):
+            if 'pubauth' in options:
                 kwdargs['auth'] = options['pubauth']
-            if options.has_key('pubsecure'):
+            if 'pubsecure' in options:
                 kwdargs['secure'] = options['pubsecure']
-            if options.has_key('pubtransport'):
+            if 'pubtransport' in options:
                 kwdargs['transport'] = options['pubtransport']
-            if options.has_key('name'):
+            if 'name' in options:
                 name = options['name']
             else:
                 name = self.name
 
             pub_proxy = self._getProxy(publisher, kwdargs)
-            
+
             self.logger.debug("Subscribing %s to %s options=%s" % (
                     name, str(channels), str(options)))
             pub_proxy.subscribe(name, channels, options)
-            
-        except Exception, e:
+
+        except Exception as e:
             self.logger.error("registration via '%s' for '%s' failed: %s" % \
                              (publisher, str(channels), str(e)))
 
-        
+
     def _unsubscribe_remote(self, publisher, channels, options):
         try:
             # Fill in possible authentication and security params
             kwdargs = {}
-            if options.has_key('pubauth'):
+            if 'pubauth' in options:
                 kwdargs['auth'] = options['pubauth']
-            if options.has_key('pubsecure'):
+            if 'pubsecure' in options:
                 kwdargs['secure'] = options['pubsecure']
-            if options.has_key('name'):
+            if 'name' in options:
                 name = options['name']
             else:
                 name = self.name
 
             pub_proxy = self._getProxy(publisher, kwdargs)
-            
+
             self.logger.debug("Unsubscribing %s to %s options=%s" % (
                     name, str(channels), str(options)))
             pub_proxy.unsubscribe(name, channels, options)
-            
-        except Exception, e:
+
+        except Exception as e:
             self.logger.error("unregistration via '%s' for '%s' failed: %s" % \
                              (publisher, str(channels), str(e)))
 
-        
+
     def subscribe_remote(self, publisher, channels, options):
 
         # Necessary to add to a set; list objects are not hashable
@@ -778,15 +993,15 @@ class PubSub(PubSubBase):
 
         if not options:
             options = {}
-            
+
         with self._lock:
             #self._remote_sub_info.add((publisher, channels, options))
             self._remote_sub_info[(publisher, channels)] = (publisher,
                                                             channels, options)
 
             self._subscribe_remote(publisher, channels, options)
-                
-    
+
+
     def unsubscribe_remote(self, publisher, channels, options):
 
         # Necessary to add to a set; list objects are not hashable
@@ -801,7 +1016,7 @@ class PubSub(PubSubBase):
             del self._remote_sub_info[(publisher, channels)]
 
             self._unsubscribe_remote(publisher, channels, options)
-                
+
 
     def subscribe_cb(self, fn_update, channels):
         """Register local subscriber callback (_fn_update_)
@@ -816,7 +1031,7 @@ class PubSub(PubSubBase):
         with self._lock:
             subscriber = fn_update.__name__ + str(self.cb_subscr_cnt)
             self.cb_subscr_cnt += 1
-            
+
         self.logger.debug("registering '%s' as a subscriber for '%s'." % (
             subscriber, channels))
 
@@ -824,7 +1039,7 @@ class PubSub(PubSubBase):
             def __init__(self, update, parent):
                 self.update = update
                 self.parent = parent
-                
+
             def remote_update(self, value, names, channels):
                 try:
                     # This is being called from a thread in the workers
@@ -870,7 +1085,7 @@ class PubSub(PubSubBase):
                      threaded_server=default_threaded_server,
                      authDict=None, default_auth=use_default_auth,
                      secure=default_secure, cert_file=default_cert,
-                     ns=None, 
+                     ns=None,
                      usethread=True, wait=True, timeout=None):
 
         if not svcname:
@@ -882,11 +1097,15 @@ class PubSub(PubSubBase):
                                             port=port, usethread=usethread,
                                             threadPool=self.threadPool,
                                             threaded_server=threaded_server,
+                                            numthreads=self.inlimit,
                                             authDict=authDict, default_auth=default_auth,
                                             secure=secure, cert_file=cert_file)
 
+        self.server.ro_register_stacktraces_dump()
+
         self.logger.info("Starting remote subscriptions update loop...")
-        t = Task.FuncTask(self.update_remote_subscriptions_loop, [], {})
+        t = Task.FuncTask(self.update_remote_subscriptions_loop, [], {},
+                          logger=self.logger)
         t.init_and_start(self)
 
         self.logger.info("Starting server...")
@@ -895,11 +1114,12 @@ class PubSub(PubSubBase):
 
         else:
             # Use one of our threadPool to run the server
-            t = Task.FuncTask(self.server.ro_start, [], {})
+            t = Task.FuncTask(self.server.ro_start, [], {},
+                              logger=self.logger)
             t.init_and_start(self)
             if wait:
                 self.server.ro_wait_start(timeout=timeout)
-            
+
     def stop_server(self, wait=True, timeout=None):
         self.logger.info("Stopping server...")
         #self.server.ro_stop(wait=wait, timeout=timeout)
@@ -915,16 +1135,16 @@ class PubSub(PubSubBase):
             with self._lock:
                 #tups = list(self._remote_sub_info)
                 tups = self._remote_sub_info.values()
-                
+
             self.logger.debug("updating remote subscriptions: %s" % (
                 str(tups)))
             for tup in tups:
                 try:
                     (publisher, channels, options) = tup
-                    
+
                     self._subscribe_remote(publisher, channels, options)
 
-                except Exception, e:
+                except Exception as e:
                     self.logger.error("Error pinging remote subscription %s: %s" % (
                             str(tup), str(e)))
 
@@ -942,6 +1162,7 @@ class PubSub(PubSubBase):
 
             self.logger.debug("End interval wait")
 
+        self.logger.info("exiting remote subscriptions update loop")
 
 def my_import(name):
     mod = __import__(name)
@@ -959,18 +1180,20 @@ def main(options, args):
     # Initialize remote objects subsystem.
     try:
         ro.init()
+        ro.write_pid_file(os.path.join('/tmp', options.svcname + '.pid'))
 
-    except ro.remoteObjectError, e:
+    except ro.remoteObjectError as e:
         logger.error("Error initializing remote objects subsystem: %s" % str(e))
         sys.exit(1)
 
     ev_quit = threading.Event()
     usethread=False
-    
+
     # Create our pubsub and start it
     pubsub = PubSub(options.svcname, logger,
                     numthreads=options.numthreads,
-                    outlimit=options.outlimit)
+                    outlimit=options.outlimit,
+                    inlimit=options.inlimit)
 
     # Load configurations, if any specified
     if options.config:
@@ -980,9 +1203,9 @@ def main(options, args):
     pubsub.start()
     try:
         try:
-            pubsub.start_server(port=options.port, wait=True, 
+            pubsub.start_server(port=options.port, wait=True,
                                  usethread=usethread)
-        
+
         except KeyboardInterrupt:
             logger.error("Caught keyboard interrupt!")
 
@@ -991,8 +1214,8 @@ def main(options, args):
         if usethread:
             pubsub.stop_server(wait=True)
         pubsub.stop()
-    
-    
+
+
 if __name__ == '__main__':
 
     # Parse command line options with nifty new optparse module
@@ -1000,15 +1223,17 @@ if __name__ == '__main__':
 
     usage = "usage: %prog [options]"
     optprs = OptionParser(usage=usage, version=('%%prog %s' % version))
-    
-    optprs.add_option("--config", dest="config", 
+
+    optprs.add_option("--config", dest="config",
                       metavar="FILE",
                       help="Use configuration FILE for setup")
     optprs.add_option("--debug", dest="debug", default=False,
                       action="store_true",
                       help="Enter the pdb debugger on main()")
-    optprs.add_option("--limit", dest="outlimit", type="int", default=20,
+    optprs.add_option("--outlimit", dest="outlimit", type="int", default=6,
                       help="Limit outgoing connections to NUM", metavar="NUM")
+    optprs.add_option("--inlimit", dest="inlimit", type="int", default=20,
+                      help="Limit incoming connections to NUM", metavar="NUM")
     optprs.add_option("--numthreads", dest="numthreads", type="int",
                       default=100,
                       help="Use NUM threads", metavar="NUM")
@@ -1038,7 +1263,7 @@ if __name__ == '__main__':
     elif options.profile:
         import profile
 
-        print "%s profile:" % sys.argv[0]
+        print("%s profile:" % sys.argv[0])
         profile.run('main(options, args)')
 
     else:

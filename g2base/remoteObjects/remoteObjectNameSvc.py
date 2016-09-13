@@ -29,6 +29,7 @@ Updates come in on the channel 'names' and these propagate between the
 name servers.
 
 """
+from __future__ import print_function
 import sys, os, time
 import re
 import threading
@@ -38,6 +39,8 @@ import socket
 from g2base.remoteObjects import remoteObjects as ro
 from g2base.remoteObjects import Monitor
 from g2base import ssdlog
+from six.moves import map
+from six.moves import zip
 
 # Our version
 version = '20100707.0'
@@ -88,7 +91,7 @@ class remoteObjectNameService(object):
                                name.replace('.', '%'),
                                host.replace('.', '%'), port)
 
-        if not self.monitor.has_key(tag):
+        if tag not in self.monitor:
             self.logger.info("Registering remote object service %s:%d under name '%s'" % (
                 host, port, name))
 
@@ -117,7 +120,7 @@ class remoteObjectNameService(object):
                         
             return 1
 
-        except Exception, e:
+        except Exception as e:
             self.logger.error("Failed to register '%s': %s" % (
                 name, str(e)))
             return 0
@@ -151,7 +154,7 @@ class remoteObjectNameService(object):
                                name.replace('.', '%'),
                                host.replace('.', '%'), port)
         
-        if self.monitor.has_key(tag):
+        if tag in self.monitor:
             self.logger.info("Unregistering remote object service %s:%d under name '%s'" % (
                 host, port, name))
             
@@ -161,7 +164,7 @@ class remoteObjectNameService(object):
             
             return 1
 
-        except Exception, e:
+        except Exception as e:
             self.logger.error("Failed to unregister '%s': %s" % (
                 name, str(e)))
             return 0
@@ -179,7 +182,7 @@ class remoteObjectNameService(object):
             
             return 1
 
-        except Exception, e:
+        except Exception as e:
             self.logger.error("Failed to unregister '%s': %s" % (
                 name, str(e)))
             return 0
@@ -203,7 +206,7 @@ class remoteObjectNameService(object):
                           options)
             return 1
 
-        except Exception, e:
+        except Exception as e:
             self.logger.error("Failed to unregister '%s': %s" % (
                 name, str(e)))
             return 0
@@ -242,7 +245,7 @@ class remoteObjectNameService(object):
                                    name.replace('.', '%'),
                                    host.replace('.', '%'), port)
             vals = self.monitor.getitems_suffixOnly(tag)
-            if not vals.has_key('pingtime'):
+            if 'pingtime' not in vals:
                 # No pingtime?  Give `em the boot!
                 self.unregister(name, host, port)
 
@@ -262,7 +265,7 @@ class remoteObjectNameService(object):
             try:
                 self.monitor.delete(tag, self.channels)
             
-            except Exception, e:
+            except Exception as e:
                 self.logger.error("Failed to purge name '%s': %s" % (
                     name, str(e)))
                     
@@ -285,7 +288,7 @@ class remoteObjectNameService(object):
 
             try:
                 self.purgeAll()
-            except Exception, e:
+            except Exception as e:
                 self.logger.error("Purge loop error: %s" % (str(e)))
 
             sleep_time = max(0, time_end - time.time())
@@ -420,7 +423,7 @@ def main(options, args):
     try:
         myhost = ro.get_myhost()
 
-    except Exception, e:
+    except Exception as e:
         raise nameServiceError("Can't get my own hostname: %s" % str(e))
 
     # Create a local monitor
@@ -506,7 +509,7 @@ def main(options, args):
                                                 # improved?
                                                 'name': myaddr,
                                                 'auth': authstr})
-                    except Exception, e:
+                    except Exception as e:
                         logger.error("Error subscribing ourselves to monitor: %s" % (
                             str(e)))
                         # This is ok actually, remote monitor may not yet be up.
@@ -523,7 +526,7 @@ def main(options, args):
                           encoding=ro.ns_encoding)
             nsobj.register('names', myhost, options.port, nsopts)
 
-        except Exception, e:
+        except Exception as e:
             logger.error(str(e))
             raise e
         
@@ -534,7 +537,7 @@ def main(options, args):
         except KeyboardInterrupt:
             logger.error("Received keyboard interrupt!")
 
-        except Exception, e:
+        except Exception as e:
             logger.error(str(e))
 
     finally:
@@ -596,7 +599,7 @@ if __name__ == '__main__':
     elif options.profile:
         import profile
 
-        print "%s profile:" % sys.argv[0]
+        print("%s profile:" % sys.argv[0])
         profile.run('main(options, args)')
 
     else:

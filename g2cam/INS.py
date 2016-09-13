@@ -1,3 +1,6 @@
+from __future__ import print_function
+from __future__ import print_function
+from __future__ import print_function
 #! /usr/bin/env python
 #
 # Instrument configuration file.
@@ -9,6 +12,8 @@ from __future__ import with_statement
 
 import sys, os
 import re
+from six.moves import map
+from six.moves import zip
 
 regex_frameid = re.compile(r'^(\w{3})([AQ])(\d)(\d{7})$')
 
@@ -318,7 +323,7 @@ class INSdata(object):
 
             assert isinstance(info, dict), Exception("argument must be a dict")
             for key in info.keys():
-                if self.nameMap.has_key(key):
+                if key in self.nameMap:
                     self.nameMap[key].update(info[key])
                 else:
                     self.nameMap[key] = info[key]
@@ -544,11 +549,11 @@ def main(options, args):
     for num in ins_list:
         info = ins_data.getOBCPInfoByNumber(num)
         if show == 'all':
-            print info
+            print(info)
 
         else:
             try:
-                print info[show]
+                print(info[show])
             except KeyError:
                 raise Exception("I don't understand --show=%s" % show)
 
@@ -588,7 +593,7 @@ if __name__ == '__main__':
     elif options.profile:
         import profile
 
-        print "%s profile:" % sys.argv[0]
+        print("%s profile:" % sys.argv[0])
         profile.run('main(options, args)')
 
     else:

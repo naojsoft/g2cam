@@ -33,8 +33,16 @@ Using SSL encryption + authentication:
    (client) ./ro_example.py --secure --auth=bob:foo
 
 """
+from __future__ import print_function
+from __future__ import print_function
+from __future__ import print_function
+from __future__ import print_function
+from __future__ import print_function
+from __future__ import print_function
+from __future__ import print_function
+from __future__ import print_function
 import sys, time
-import remoteObjects as ro
+from . import remoteObjects as ro
 
 
 class MyRemoteService(ro.remoteObjectServer):
@@ -55,16 +63,16 @@ class MyRemoteService(ro.remoteObjectServer):
                                        cert_file=cert_file)
 
     def _dispatch(self, methodName, params, kwdargs, auth, client_addr):
-        print "calling %s%s auth=%s client=%s" % (methodName, str(params),
-                                                  str(auth), str(client_addr))
+        print("calling %s%s auth=%s client=%s" % (methodName, str(params),
+                                                  str(auth), str(client_addr)))
         method = getattr(self, methodName)
         return method(*params, **kwdargs)
 
 
     def search(self, ra, dec, radius, mag):
         self.count += 1
-        print "(%5d) ra: %f  dec: %f  radius: %f  mag: %f" % \
-              (self.count, ra, dec, radius, mag)
+        print("(%5d) ra: %f  dec: %f  radius: %f  mag: %f" % \
+              (self.count, ra, dec, radius, mag))
 
         # Make up some simple result to show we got and
         # manipulated parameters
@@ -89,7 +97,7 @@ def main(options, args):
         if auth:
             authDict[auth[0]] = auth[1]
 
-        print "Starting '%s' service..." % svcname
+        print("Starting '%s' service..." % svcname)
         svc = MyRemoteService(svcname, usethread=False, authDict=authDict,
                               secure=options.secure, cert_file=options.cert,
                               default_auth=False)
@@ -101,7 +109,7 @@ def main(options, args):
             svc.ro_start()
 
         except KeyboardInterrupt:
-            print "Shutting down '%s' ..." % svcname
+            print("Shutting down '%s' ..." % svcname)
 
     else:
         # Create proxy object for service
@@ -113,17 +121,17 @@ def main(options, args):
                 # Call remote method on service
                 try:
                     res = svc.search(1.0, 2.0, 3.0, 4.0)
-                    print "(%5d)  res=%s" % (i, str(res))
+                    print("(%5d)  res=%s" % (i, str(res)))
 
-                except ro.remoteObjectError, e:
-                    print "Call error: %s" % (str(e))
+                except ro.remoteObjectError as e:
+                    print("Call error: %s" % (str(e)))
 
                 i -= 1
                 if i > 0:
                     time.sleep(options.interval)
 
         except KeyboardInterrupt:
-            print "Keyboard interrupt received!"
+            print("Keyboard interrupt received!")
 
 
 if __name__ == '__main__':
@@ -178,7 +186,7 @@ if __name__ == '__main__':
     elif options.profile:
         import profile
 
-        print "%s profile:" % sys.argv[0]
+        print("%s profile:" % sys.argv[0])
         profile.run('main(options, args)')
 
     else:
