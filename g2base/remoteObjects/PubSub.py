@@ -26,9 +26,9 @@ else:
     import queue as Queue
 
 from g2base import Bunch, Task, ssdlog
-from . import remoteObjects as ro
-from . import Timer
-from .ro_config import *
+from g2base.remoteObjects import remoteObjects as ro
+from g2base.remoteObjects import Timer
+from g2base.remoteObjects.ro_config import *
 
 version = '20160330.0'
 
@@ -141,7 +141,7 @@ class PubSubBase(object):
 
     def get_channels(self):
         with self._lock:
-            return self._sub_info.keys()
+            return list(self._sub_info.keys())
 
 
     def loadConfig(self, moduleName):

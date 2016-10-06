@@ -21,7 +21,8 @@ import socket, time
 import atexit, readline
 import traceback
 
-from g2base import remoteObjects as ro
+from g2base.six.moves import input
+from g2base.remoteObjects import remoteObjects as ro
 
 
 version = '20080130.0'
@@ -134,7 +135,7 @@ Any other method is considered to be a method call on the remote service.
 
             # Prompt user using current svc name
             prompt = (prompt_templ % self.cursor)
-            cmdstr = raw_input(prompt)
+            cmdstr = input(prompt)
             if len(cmdstr) == 0:
                 continue
 
@@ -185,7 +186,7 @@ def main(options, args):
                     quit = True
                 else:
                     try:
-                        ans = raw_input("Really quit? ")
+                        ans = input("Really quit? ")
                         ans = ans.upper()
                         if (ans == 'Y') or (ans == 'YES'):
                             quit = True

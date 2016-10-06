@@ -39,8 +39,7 @@ import socket
 from g2base.remoteObjects import remoteObjects as ro
 from g2base.remoteObjects import Monitor
 from g2base import ssdlog
-from six.moves import map
-from six.moves import zip
+from six.moves import map, zip
 
 # Our version
 version = '20100707.0'
@@ -111,20 +110,20 @@ class remoteObjectNameService(object):
                 str(flags)))
 
         keep = options.get('keep', False)
-        
+
         # Notify monitor
         try:
             self.monitor.setvals(self.channels, tag, secure=secure,
                                  transport=transport, encoding=encoding,
                                  pingtime=hosttime, keep=keep)
-                        
+
             return 1
 
         except Exception as e:
             self.logger.error("Failed to register '%s': %s" % (
                 name, str(e)))
             return 0
-    
+
 
     def register(self, name, host, port, options, replace=True):
         """Register a new name at a certain host and port."""
@@ -143,43 +142,43 @@ class remoteObjectNameService(object):
 
         return self._register(name, host, port, options, hosttime)
 
-        
+
     def unregister(self, name, host, port):
         """Unregister a new name at a certain host and port."""
-        
+
         # Create monitor path for this name:
         #   mon.names.<svcname>.<host>:<port>
         # service name and host name have to be escaped for '.'
         tag = '%s.%s.%s:%d' % (self.tagpfx,
                                name.replace('.', '%'),
                                host.replace('.', '%'), port)
-        
+
         if tag in self.monitor:
             self.logger.info("Unregistering remote object service %s:%d under name '%s'" % (
                 host, port, name))
-            
+
         # Notify monitor
         try:
             self.monitor.delete(tag, self.channels)
-            
+
             return 1
 
         except Exception as e:
             self.logger.error("Failed to unregister '%s': %s" % (
                 name, str(e)))
             return 0
-        
+
 
     def clearName(self, name):
         """Clear all registrations associated with _name_."""
-        
+
         # mon.names.<svcname>
         # service name has to be escaped for '.'
         tag = '%s.%s' % (self.tagpfx, name.replace('.', '%'))
 
         try:
             self.monitor.delete(tag, self.channels)
-            
+
             return 1
 
         except Exception as e:
@@ -187,14 +186,14 @@ class remoteObjectNameService(object):
                 name, str(e)))
             return 0
 
-        
+
     def clearAll(self):
         """Clear all name registrations."""
 
         # Notify monitor
         try:
             self.monitor.delete(self.tagpfx, self.channels)
-            
+
             # TODO: PROBLEM: above call removes 'names' from the local cache
             # which is needed to set a name server in remoteObjects.py
             options = dict(secure=ro.default_secure,
@@ -211,7 +210,7 @@ class remoteObjectNameService(object):
                 name, str(e)))
             return 0
 
-        
+
     def getNames(self):
         """Return a list of all registered names."""
 
@@ -223,23 +222,23 @@ class remoteObjectNameService(object):
             res.append(name.replace('%', '.'))
         return res
 
-        
+
     def getNamesSorted(self):
         """Returns a sorted list of all registered names."""
 
         res = self.getNames()
         res.sort()
-        
+
         return res
 
-        
+
     def purgeDead(self, name):
         """Purge all registered instances of _name_ that haven't been heard
         from in purge_delta seconds."""
-        
+
         hostlist = self.getHosts(name)
         anyleft = False
-        
+
         for (host, port) in self.getHosts(name):
             tag = '%s.%s.%s:%d' % (self.tagpfx,
                                    name.replace('.', '%'),
@@ -264,23 +263,23 @@ class remoteObjectNameService(object):
             tag = '%s.%s' % (self.tagpfx, name.replace('.', '%'))
             try:
                 self.monitor.delete(tag, self.channels)
-            
+
             except Exception as e:
                 self.logger.error("Failed to purge name '%s': %s" % (
                     name, str(e)))
-                    
+
 
     def purgeAll(self):
         """Iterate over all known registrations and perform a purge
         operation from those we haven't heard from lately."""
-        
+
         for name in self.getNames():
             # TEMP HACK UNTIL WE GET BUMP OUR OWN PING TIME
             if name in ('names',):
                 continue
             self.purgeDead(name)
 
-        
+
     def purgeLoop(self, interval):
         """Loop invoked to periodically purge data from """
         while True:
@@ -293,13 +292,13 @@ class remoteObjectNameService(object):
 
             sleep_time = max(0, time_end - time.time())
             time.sleep(sleep_time)
-        
-        
+
+
     def getHosts(self, name):
         """Return a list of all (host, port) pairs associated with
         a registered name.
         TO BE DEPRECATED--DO NOT USE.  USE getInfo() INSTEAD."""
-        
+
         # mon.names.<svcname>
         # service name has to be escaped for '.'
         tag = '%s.%s' % (self.tagpfx, name.replace('.', '%'))
@@ -318,12 +317,12 @@ class remoteObjectNameService(object):
 
         return res
 
-        
+
     def getInfo(self, name):
         """Return a list of dicts of service info associated with
         a registered name.  This should be used in preference to
         getHosts for most applications."""
-        
+
         # mon.names.<svcname>
         # service name has to be escaped for '.'
         tag = '%s.%s' % (self.tagpfx, name.replace('.', '%'))
@@ -348,7 +347,7 @@ class remoteObjectNameService(object):
                          'pingtime': pingtime })
 
         return res
-        
+
 
     def _getInfoPred(self, pred_fn):
         """Return a list of info (dicts) for any services that match
@@ -382,12 +381,12 @@ class remoteObjectNameService(object):
                         'encoding': d['encoding'],
                         },
                       d['pingtime'])
-    
+
     def syncInfoSelf(self):
         """Ping any services that registered with us."""
         self._syncInfoPred(lambda d: d['host'] == self.myhost)
-        
-                    
+
+
 ##     # called if new data becomes available via publish/subscribe
 ##     #
 ##     def ps_update(self, payload, name, channels):
@@ -411,7 +410,7 @@ class remoteObjectNameService(object):
 ##             print host, port, bnch.value
 
 
-    
+
 #------------------------------------------------------------------
 # MAIN PROGRAM
 #
@@ -431,7 +430,7 @@ def main(options, args):
                                      options.monport)
     mymon = Monitor.Monitor(myMonName, logger, numthreads=options.numthreads)
     mymon.add_channels(['names'])
-    
+
     authstr = options.monauth
     if not authstr:
         authstr = "%s:%s" % (myMonName, myMonName)
@@ -448,12 +447,12 @@ def main(options, args):
 
     nsobj = remoteObjectNameService(mymon, logger, myhost,
                                     purge_delta=options.purge_delta)
-    
+
     # Hack to use our local object as the name server for our local monitor
     ro.default_ns = nsobj
 
     threadPool = mymon.get_threadPool()
-    
+
     # Create remote object server for this object.
     # svcname to None temporarily because we get into infinite loop
     # try to register ourselves.
@@ -465,12 +464,12 @@ def main(options, args):
                                   authDict=authDict,
                                   secure=options.secure,
                                   cert_file=options.cert)
-    
+
     # Subscribe our callback functions to the local monitor
     #mymon.subscribe_cb(nsobj.ps_update, ['names'])
 
     server_started = False
-    
+
     try:
         try:
             logger.info("Starting monitor...")
@@ -496,7 +495,7 @@ def main(options, args):
                 monhost = options.monitor.split(':')[0]
                 monhost_s = monhost.split('.')[0]
                 myhost_s  = myhost.split('.')[0]
-                
+
                 if monhost_s != myhost_s:
                     logger.info("Handling monitor subscriptions..")
                     myaddr = myhost + ':' + str(options.monport)
@@ -529,11 +528,11 @@ def main(options, args):
         except Exception as e:
             logger.error(str(e))
             raise e
-        
+
         logger.info("Entering main loop..")
         try:
             nsobj.purgeLoop(options.purge_interval)
-            
+
         except KeyboardInterrupt:
             logger.error("Received keyboard interrupt!")
 
@@ -545,12 +544,12 @@ def main(options, args):
         if server_started:
             mymon.stop_server(wait=True)
         mymon.stop(wait=True)
-    
+
     logger.info("Exiting remote objects name service...")
     #ev_quit.set()
     sys.exit(0)
 
-    
+
 if __name__ == '__main__':
 
     # Parse command line options with nifty new optparse module
@@ -558,7 +557,7 @@ if __name__ == '__main__':
 
     usage = "usage: %prog [options]"
     optprs = OptionParser(usage=usage, version=('%%prog %s' % version))
-    
+
     optprs.add_option("--debug", dest="debug", default=False,
                       action="store_true",
                       help="Enter the pdb debugger on main()")
@@ -604,7 +603,6 @@ if __name__ == '__main__':
 
     else:
         main(options, args)
-       
+
 
 # END
-

@@ -257,8 +257,13 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
                 self.threadPool.addTask(task)
 
     def stop(self):
+        # use another thread to call shutdown because if we happen to
+        # be in the same thread as server_forever() it will deadlock
+        thread = threading.Thread(target=self.shutdown)
+        thread.start()
+
         self.ev_quit.set()
-        self.server_close()
+        #self.server_close()
 
     def worker(self, i, queue):
 
@@ -274,7 +279,8 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
                                     len(tup)))
                 request, client_address = tup
                 if request == None:
-                    # Termination sentinal
+                    # Put termination sentinal back on the queue for other
+                    # workers to discover and terminate
                     queue.put(tup)
                     break
 

@@ -73,7 +73,7 @@ from . import PubSub as ps
 
 serviceName = 'monitor'
 
-version = '20100128.0'
+version = '20161005.0'
 
 
 class MonitorError(ps.PubSubError):
@@ -571,7 +571,7 @@ class Minimon(Monitor):
 
             # release all waiters
             if isinstance(value, dict):
-                for key in value.keys():
+                for key in value:
                     self.release('%s.%s' % (path, key), has_value=True)
             ## else:
             ##     # ??!
