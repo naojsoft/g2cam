@@ -5,6 +5,9 @@
 #
 """
 """
+from __future__ import print_function
+from __future__ import print_function
+from __future__ import print_function
 import sys, os, time
 import threading
 import Queue
@@ -18,7 +21,8 @@ from zmq import ZMQError
 
 from g2base import Task
 
-import ro_codec
+from . import ro_codec
+import six
 
 # Timeout value for ZMQ-RPC sockets
 socket_timeout = 0.25
@@ -224,7 +228,7 @@ class ZMQRPCServer(object):
             return False
         username, password = req.auth
 
-        if not self.authDict.has_key(username):
+        if username not in self.authDict:
             return False
 
         # TODO: handle encrypted passwords
@@ -447,9 +451,9 @@ class ZMQRPCServer(object):
                     have_responses = True
                     while have_responses:
                         try:
-                            print "checking responses"
+                            print("checking responses")
                             (_id, resp) = queue.get(block=True, timeout=1.0)
-                            print "got response"
+                            print("got response")
                             self.logger.debug("Sending response...")
                             backend.send(_id, zmq.SNDMORE)
                             backend.send('', zmq.SNDMORE)  # separator
@@ -457,7 +461,7 @@ class ZMQRPCServer(object):
                             self.logger.debug("sent response: %s" % resp)
 
                         except Queue.Empty:
-                            print "no responses"
+                            print("no responses")
                             have_responses = False
 
                 except ZMQError as e:
@@ -493,7 +497,7 @@ class ZMQRPCServer(object):
             self._num_threads))
 
         if not self.useThread:
-            for i in xrange(self._num_threads):
+            for i in range(self._num_threads):
                 if self.threadPool == None:
                     thread = threading.Thread(target=self.worker,
                                               name="RPC-Worker-%d" % (i+1),
@@ -567,7 +571,7 @@ class ZMQRPCServer(object):
     
     def _serviceListReq(self):
         services = []
-        for name, v in self.services.iteritems():
+        for name, v in six.iteritems(self.services):
             services.append({'service' : name, 'format' : v['format'], 'doc' : v['doc']})
         return services
     

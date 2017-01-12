@@ -62,7 +62,7 @@ class IntervalTask(Task.Task):
             try:
                 self.fn(*self.args, **self.kwdargs)
 
-            except Exception, e:
+            except Exception as e:
                 self.logger.error("Error invoking fn: %s" % str(e))
 
             # Sleep for remainder of desired interval.  We sleep in
@@ -163,7 +163,7 @@ class PowerMonTask(IntervalTask):
                 else:
                     self._power_up()
 
-        except (ValueError, CamError), e:
+        except (ValueError, CamError) as e:
             self.logger.error("Error checking power status: %s" % str(e))
 
 

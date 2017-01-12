@@ -3,7 +3,7 @@
 #
 # Eric Jeschke (eric@naoj.org)
 #
-import ro_config
+from . import ro_config
 
 encoding = ro_config.default_encoding.lower()
 

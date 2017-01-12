@@ -8,7 +8,12 @@ import re, string
 import time
 import logging, logging.handlers
 import socket
-import threading, Queue
+import threading
+from g2base import six
+if six.PY2:
+    import Queue
+else:
+    import queue as Queue
 
 if sys.hexversion < 0x02050000:
     STD_FORMAT = '%(asctime)s | %(levelname)1.1s | %(filename)s:%(lineno)d | %(message)s'
@@ -395,7 +400,7 @@ def parse_logspec(spec, options):
                 unit = unit.lower()
                 val = int(val)
                 rotopts[unit] = val
-            except IndexError, ValueError:
+            except IndexError as ValueError:
                 raise LoggingError("Bad time rotation spec: '%s'" % (options.logtime))
 
     return (name, level, options.logsize, options.logbackups, rotopts)
@@ -438,7 +443,7 @@ def make_logger(logname, options, format=STD_FORMAT):
     #     logger.addHandler(queueHdlr)
 
     if options.logmon:
-        from remoteObjects.Monitor import MonitorHandler
+        from .remoteObjects.Monitor import MonitorHandler
         # logging via publish/subscribe.  Application must later call set_monitor()
         monHdlr = MonitorHandler(None,
                                  'mon.log.%s' % logname,

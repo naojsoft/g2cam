@@ -14,7 +14,8 @@ import select
 import Queue
 
 from g2base import Task
-import ro_codec
+from . import ro_codec
+import six
 
 # Timeout value for RPC sockets
 socket_timeout = 0.25
@@ -271,7 +272,7 @@ class SocketRPCServer(object):
             return False
         username, password = req.auth
 
-        if not self.authDict.has_key(username):
+        if username not in self.authDict:
             return False
 
         # TODO: handle encrypted passwords
@@ -443,7 +444,7 @@ class SocketRPCServer(object):
         # Threaded server.  Start N workers either as new threads or using
         # the thread pool, if we have one.
         if self.threaded:
-            for i in xrange(self._num_threads):
+            for i in range(self._num_threads):
                 if self.threadPool == None:
                     thread = threading.Thread(target=self.worker,
                                               name="RPC-Worker-%d" % (i+1),
@@ -519,7 +520,7 @@ class SocketRPCServer(object):
     
     def _serviceListReq(self):
         services = []
-        for name, v in self.services.iteritems():
+        for name, v in six.iteritems(self.services):
             services.append({'service' : name, 'format' : v['format'], 'doc' : v['doc']})
         return services
     
@@ -614,7 +615,7 @@ class ClientProxy(object):
 
                     req.send(self._sender)
                     #print "request sent"
-                except Exception, e:
+                except Exception as e:
                     #print "Error sending request: %s" % (str(e))
                     self.logger.error("Error sending request: %s" % (
                         str(e)))

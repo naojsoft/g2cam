@@ -1,3 +1,4 @@
+from __future__ import print_function
 #
 # g2Instrument.py -- generic base class for an instrument (BASECAM) and
 #   a framework for interfacing with the OCS (Instrument)
@@ -14,6 +15,8 @@ from g2base.Bunch import Bunch, threadSafeBunch
 from g2base.remoteObjects import remoteObjects as ro
 import g2base.remoteObjects.Monitor as Monitor
 from g2cam.INS import INSdata as INSconfig
+from six.moves import map
+from six.moves import zip
 
 
 class CamError(Exception):
@@ -52,7 +55,7 @@ class BASECAM(object):
 
     def ui(self, options, args, ev_quit, logger=None):
         # Placeholder for cam-supplied user interface
-        print "Press ^C to terminate instrument..."
+        print("Press ^C to terminate instrument...")
         while not ev_quit.isSet():
             ev_quit.wait(0.01)
 
@@ -149,7 +152,7 @@ class Instrument(object):
         alias = alias.upper()
 
         try:
-            if self.cams.has_key(alias):
+            if alias in self.cams:
                 camInfo = self.cams[alias]
 
                 self.logger.info("Reloading instrument personality '%s'" % \
@@ -167,7 +170,7 @@ class Instrument(object):
                 camInfo = Bunch(module=module)
                 self.cams[alias] = camInfo
 
-        except ImportError, e:
+        except ImportError as e:
             self.logger.error("Error loading instrument personality '%s': %s" % \
                               (camName, str(e)))
             self.logger.error("sys.path is '%s'" % ':'.join(sys.path))
@@ -178,7 +181,7 @@ class Instrument(object):
             # Get the class constructor for this instrument personality
             classObj = getattr(module, camName)
 
-        except AttributeError, e:
+        except AttributeError as e:
             # Not in this module, keep looking...
             self.logger.error("Cannot find a class corresponding to name '%s'" % \
                               camName)
@@ -229,7 +232,7 @@ class Instrument(object):
 
 
     def startCam(self, camName, wait=True):
-        if not self.cams.has_key(camName):
+        if camName not in self.cams:
             self.logger.warn("No instrument personality '%s' to start" % \
                              camName)
         else:
@@ -238,7 +241,7 @@ class Instrument(object):
             camInfo.cam.start()
 
     def stopCam(self, camName, wait=True):
-        if not self.cams.has_key(camName):
+        if camName not in self.cams:
             self.logger.warn("No instrument personality '%s' to stop" % \
                              camName)
         else:
@@ -342,12 +345,12 @@ class Instrument(object):
                 # Try to look up the named method
                 method = getattr(camInfo.cam, cmdName)
 
-            except AttributeError, e:
+            except AttributeError as e:
                 # Push command name back on argument list as first arg
                 args.insert(0, cmdName)
                 try:
                     method = getattr(camInfo.cam, 'defaultCommand')
-                except AttributeError, e:
+                except AttributeError as e:
                     result = "ERROR: No such method in subsystem: %s" % (cmdName)
                     self.logger.error(result)
                     raise CamError(result)
@@ -360,7 +363,7 @@ class Instrument(object):
                                  logger=self.logger)
             task.init_and_start(self)
 
-        except Exception, e:
+        except Exception as e:
             result = "Error invoking task: %s" % (e)
             self.logger.error(result)
             #del self.cmdHist[tag]
@@ -404,14 +407,14 @@ class Instrument(object):
             else:
                 res = (0, 'OK')
 
-        except CamCommandError, e:
+        except CamCommandError as e:
             # This is the Pythonic way for the instrument to cleanly
             # signal an error
             msg = str(e)
             self.logger.error(msg)
             res = (1, msg)
 
-        except Exception, e:
+        except Exception as e:
             msg = "ERROR: Command terminated with exception: %s" % \
                   (str(e))
             try:
@@ -423,7 +426,7 @@ class Instrument(object):
                 # problems for GC--see Python library doc for sys module
                 tb = None
 
-            except Exception, e:
+            except Exception as e:
                 self.logger.error("Traceback information unavailable.")
 
             res = (1, msg)
@@ -452,12 +455,12 @@ class Instrument(object):
                 str(payload), str(e)))
             return
 
-        if not bnch.has_key('value'):
+        if 'value' not in bnch:
             # delete (vaccuum) packet
             return
         vals = bnch.value
 
-        if vals.has_key('task_code'):
+        if 'task_code' in vals:
             res = vals['task_code']
             # Interpret task results:
             #   task_code == 0 --> OK   task_code != 0 --> ERROR
@@ -498,7 +501,7 @@ class Instrument(object):
         a valid table that exists on the OCS side, and has been added
         with addStatusTable().
         """
-        if not self._mystatus.has_key(tableName):
+        if tableName not in self._mystatus:
             errmsg = "No such table defined -- name=%s" % tableName
             #self.logger.error(errmsg)
             raise CamError("Error exporting status: %s" % errmsg)
@@ -518,7 +521,7 @@ class Instrument(object):
         try:
             self.statusint.store(statusDict)
 
-        except ro.remoteObjectError, e:
+        except ro.remoteObjectError as e:
             raise CamInterfaceError(e)
 
         self.logger.debug("Sending status finished.")
@@ -569,7 +572,7 @@ class Instrument(object):
         try:
             tableBunch = self._mystatus[tableName]
 
-        except KeyError, e:
+        except KeyError as e:
             raise CamError("No such table defined: '%s'" % (tableName))
 
         return tableBunch
@@ -647,7 +650,7 @@ class Instrument(object):
             statusDict.update(resDict)
             self.logger.debug("result=%s" % (str(statusDict)))
 
-        except ro.remoteObjectError, e:
+        except ro.remoteObjectError as e:
             raise CamInterfaceError(e)
 
         return 0
@@ -738,7 +741,7 @@ class Instrument(object):
         try:
             statbuf = os.stat(fitspath)
 
-        except OSError, e:
+        except OSError as e:
             raise CamInterfaceError("Cannot stat file '%s': %s" % \
                                     (fitspath, str(e)))
 
@@ -768,7 +771,7 @@ class Instrument(object):
             self.archiveint.archive_framelist(host, transfermethod,
                                               framelist)
 
-        except ro.remoteObjectError, e:
+        except ro.remoteObjectError as e:
             raise CamInterfaceError(e)
 
         return 0
@@ -870,7 +873,7 @@ class Instrument(object):
 
             return framelist
 
-        except ro.remoteObjectError, e:
+        except ro.remoteObjectError as e:
             raise CamInterfaceError(e)
 
 

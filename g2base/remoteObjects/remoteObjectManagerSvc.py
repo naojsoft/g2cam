@@ -12,6 +12,7 @@
 The names of the "top-level" services along with the startup commands are
 registered in a configuration file.  This service starts those processes.
 '''
+from __future__ import print_function
 import sys, socket, os
 import threading
 import time, signal
@@ -35,8 +36,8 @@ def getLoadAvg(bnch):
     bnch.la1min = tup[0]
     bnch.la5min = tup[1]
     bnch.la15min = tup[2]
-    
-    
+
+
 def getProcInfo(pid):
     """Utility function to read information about a process from the /proc
     directory.  TODO: does this work on Solaris 10?
@@ -59,15 +60,15 @@ def getProcInfo(pid):
                 # Replace tabs in values
                 if '\t' in val:
                     val = val.replace('\t', ' ')
-                    
+
                 res[key] = val
-                
+
             except ValueError:
                 continue
 
     return res
 
-            
+
 class processObj(object):
 
     def __init__(self, name, start_cmd, stop_cmd=None, logger=None,
@@ -154,7 +155,7 @@ class processObj(object):
 
                         stop_proc.kill()
 
-                    except myproc.myprocError, e:
+                    except myproc.myprocError as e:
                         pass
 
                 self.logger.info("Sending SIGTERM to top process associated with '%s'..." % \
@@ -170,7 +171,7 @@ class processObj(object):
                     #     self.proc = None
                     #     return ro.OK
 
-                except myproc.myprocError, e:
+                except myproc.myprocError as e:
                     self.logger.error("Error sending SIGTERM to process: %s" % str(e))
 
                 # Just to be sure we've cleaned up any mess, send SIGKILL
@@ -186,14 +187,14 @@ class processObj(object):
                         self.proc = None
                         return ro.OK
 
-                except myproc.myprocError, e:
+                except myproc.myprocError as e:
                     pass
 
                 # Last sanity check
                 if self.proc.statuspg() == 'exited':
                     self.proc = None
                     return ro.OK
-                
+
                 self.logger.info("Sorry, could not terminate '%s'." % \
                          self.name)
                 return ro.ERROR
@@ -202,27 +203,27 @@ class processObj(object):
     def restart(self):
         try:
             self.stop()
-        except Exception, e:
+        except Exception as e:
             pass
 
         # Manual restarts reset the stopcount
         self.reset_stopcount()
-        
+
         self.start()
-            
+
 
     def reset_stopcount(self):
         """Resets the stopcount=startcount so that automatic restarts get
         a fresh number of failure tries before supressing autorestart.
         """
-        
+
         with self.lock:
             self.logger.info("Resetting stopcount associated with '%s'..." % \
                              self.name)
             self.stopcount = self.startcount
             self.restart_interval = self.restart_interval_init
-            
-        
+
+
     def getpid(self):
         """Returns the pid associated with this process object.  If the
         process is not running, -1 is returned.
@@ -244,10 +245,10 @@ class processObj(object):
                 pid = self.proc.getpid()
 
                 return getProcInfo(pid)
-            
+
             else:
                 return -1
-            
+
 
     def update(self, cmdDict):
         """Setter for the command data.
@@ -255,15 +256,15 @@ class processObj(object):
         with self.lock:
             self.start_cmd = cmdDict['start']
             self.stop_cmd = cmdDict.get('stop', None)
-            
+
 
     def setRestartParams(self, autorestart, restart_threshold,
                          restart_interval):
         self.autorestart = autorestart
         self.restart_threshold = restart_threshold
         self.restart_interval = restart_interval
-        
-        
+
+
     def get_runningtime(self):
         """Returns the running time associated with this process object.
         If the process is not running, 0 is returned.
@@ -280,13 +281,13 @@ class processObj(object):
                 return 0.0
 
             return time.time() - self.timestart
-            
+
 
     def check(self):
         with self.lock:
             self.logger.debug("checking '%s'..." % self.name)
             self.timecheck = time.time()
-        
+
             if not self.proc:
                 # No process started
                 self.logger.debug("No process attached to '%s'" % self.name)
@@ -301,7 +302,7 @@ class processObj(object):
                     self.logger.warn("Intentional stop (stopcount=%d, startcount=%d); not restarting" % \
                                        (self.stopcount, self.startcount))
                     return
-                
+
                 # Check to see if the process has had to be auto-restarted
                 # excessively.  If so, don't restart unless our threshold
                 # has passed.
@@ -317,20 +318,20 @@ class processObj(object):
                                     self.restart_interval))
                 if ((self.timecheck - self.timestart) < self.restart_interval):
                     return
-                
+
                 self.logger.warn("'%s' process seems to have died; attempting restart" % \
                                    self.name)
 
                 # Exponential backoff on restarts
                 self.restart_interval *= 2
-                
+
                 self.start()
-                
+
             else:
                 # Reset exponential backoff
                 self.restart_interval = self.restart_interval_init
-        
-        
+
+
 class remoteObjectManagerService(ro.remoteObjectServer):
 
     def __init__(self, name='', host=None, port=None, usethread=False,
@@ -353,10 +354,10 @@ class remoteObjectManagerService(ro.remoteObjectServer):
                 self.logger.info("Using STDOUT for default output")
                 self.stdout = sys.stdout
 
-        except IOError, e:
+        except IOError as e:
             self.logger.info("Using /dev/null for default output")
             self.stdout = open("/dev/null", "a")
-            
+
         if not ev_quit:
             self.ev_quit = threading.Event()
         else:
@@ -386,9 +387,9 @@ class remoteObjectManagerService(ro.remoteObjectServer):
         with self.lock:
             try:
                 return self.map[name]
-            except KeyError, e:
+            except KeyError as e:
                 raise managerSvcError("there is no process associated with '%s'" % name)
-                
+
 
     def add_with_output(self, name, cmdDict):
 
@@ -402,7 +403,7 @@ class remoteObjectManagerService(ro.remoteObjectServer):
         with self.lock:
             # If there is an existing process object with this name, then
             # just reset its command line
-            if self.map.has_key(name):
+            if name in self.map:
                 self.logger.info("reloading info for '%s'" % name)
                 self.map[name].update(cmdDict)
 
@@ -416,15 +417,15 @@ class remoteObjectManagerService(ro.remoteObjectServer):
 
             return ro.OK
 
-        
+
     def add(self, name, cmd):
         """Old method to be deprecated--use add_with_output instead"""
         d = {}
         d['start'] = cmd
-        
+
         return self.add_with_output(name, d)
 
-        
+
     def set_restart(self, name, autorestart, restart_threshold,
                     restart_interval):
         po = self.__get_po(name)
@@ -440,17 +441,17 @@ class remoteObjectManagerService(ro.remoteObjectServer):
         try:
             self.stop(name)
 
-        except Exception, e:
+        except Exception as e:
             self.logger.warn("Error stopping process associated with '%s': %s" % \
                                (name, str(e)))
-        
+
         with self.lock:
             del self.map[name]
 
             self.count -= 1
             return ro.OK
 
-        
+
     def getpid(self, name):
         # Special case for self
         if name == self.name:
@@ -463,9 +464,9 @@ class remoteObjectManagerService(ro.remoteObjectServer):
 
     def getNames(self):
         with self.lock:
-            return self.map.keys()
+            return list(self.map.keys())
 
-        
+
     def start(self, name):
         po = self.__get_po(name)
 
@@ -504,14 +505,14 @@ class remoteObjectManagerService(ro.remoteObjectServer):
             self.start(name)
         return ro.OK
 
-        
+
     def restartall(self):
         """Restart all processes being monitored.
         """
         self.stopall()
         return self.startall()
 
-        
+
     def shutdown(self):
         """Shutdown all processes and terminate the remoteObjectManagerSvc.
         """
@@ -523,7 +524,7 @@ class remoteObjectManagerService(ro.remoteObjectServer):
 
     def quit(self):
         self.ev_quit.set()
-        
+
         return ro.OK
 
 
@@ -578,7 +579,7 @@ class remoteObjectManagerService(ro.remoteObjectServer):
                      for host in hosts]
         sp = ro.remoteObjectSPAll('mgrsvc', hostports=hostports)
         results = sp.shutdown()
-        
+
 
     # This gets called when a service has stopped responding (however that is
     # defined) and the appropriate action should be taken (e.g. restart, etc.)
@@ -606,7 +607,7 @@ class remoteObjectManagerService(ro.remoteObjectServer):
             #getLoadAvg(self.myldavg)
             #self.logger.debug("Averages: %f %f %f" % (
             #   self.myldavg.la1min, self.myldavg.la5min, self.myldavg.la15min))
-            
+
             # Race condition here with self.count, but it's not critical (!?)
             #time.sleep(self.sleepquantum / max(1, self.count))
             # NOTE: this sleep value needs to be carefully tuned--
@@ -626,11 +627,11 @@ def main(options, args):
 
     # Get the names of the nodes in this cluster and remove our name.  The
     # result is the list of hosts running name servers that we need to
-    # synchronize with. 
+    # synchronize with.
     try:
         myhost = ro.get_myhost(short=True)
 
-    except Exception, e:
+    except Exception as e:
         raise managerSvcError("Can't get my own hostname: %s" % str(e))
 
     authDict = {}
@@ -647,7 +648,7 @@ def main(options, args):
                 stdout = os.path.join(options.logdir, options.stdout)
         else:
             stdout = options.stdout
-            
+
     # Start the manager service
     ms = remoteObjectManagerService(name='mgrsvc', port=options.port,
                                     usethread=True, logger=logger,
@@ -690,9 +691,9 @@ def main(options, args):
         # When we stop, everything we control stops!
         ms.shutdown()
         #ms.ro_stop()
-        
 
-    
+
+
 if __name__ == '__main__':
 
     # Parse command line options with nifty new optparse module
@@ -700,7 +701,7 @@ if __name__ == '__main__':
 
     usage = "usage: %prog [options]"
     optprs = OptionParser(usage=usage, version=('%%prog %s' % version))
-    
+
     optprs.add_option("--auth", dest="auth",
                       help="Use authorization; arg should be user:passwd")
     optprs.add_option("--cert", dest="cert",
@@ -734,7 +735,7 @@ if __name__ == '__main__':
 
 
     if options.detach:
-        print "Detaching from this process..."
+        print("Detaching from this process...")
         sys.stdout.flush()
         try:
             child = myproc.myproc(main, args=[options, args],
@@ -755,10 +756,10 @@ if __name__ == '__main__':
     elif options.profile:
         import profile
 
-        print "%s profile:" % sys.argv[0]
+        print("%s profile:" % sys.argv[0])
         profile.run('main(options, args)')
 
     else:
         main(options, args)
-       
+
 # END

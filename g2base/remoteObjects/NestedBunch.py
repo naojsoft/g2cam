@@ -1,3 +1,4 @@
+
 from g2base import Bunch
 
 # class used for nodes
@@ -20,11 +21,13 @@ class NestedBunch(object):
         super(NestedBunch, self).__init__()
         
 
+
     # Replace this whole block with rsplit in Python 2.4
     def _rsplit(self, path):
         try:
             ri = path.rindex(self.pathsep)
             pfx = path[0:ri]
+
             sfx = path[ri+1:]
 
             return (pfx, sfx)
@@ -80,7 +83,7 @@ class NestedBunch(object):
         sb = self.sb
         for key in path.split(self.pathsep):
 
-            if not sb.has_key(key):
+            if key not in sb:
                 if not create:
                     raise KeyError("No such key: '%s'" % path)
 
@@ -122,7 +125,7 @@ class NestedBunch(object):
             if self.isLeaf(path):
                 resDict[path] = self.getitem(path)
             else:
-                for key in self.keys(path=path):
+                for key in list(self.keys(path=path)):
                     resDict[key] = self.getitem(key)
 
             return resDict
@@ -143,7 +146,7 @@ class NestedBunch(object):
             if self.isLeaf(path):
                 resDict[path] = self.getitem(path)
             else:
-                for key in self.keys(path=path):
+                for key in list(self.keys(path=path)):
                     resDict[key[pathlen:]] = self.getitem(key)
 
             return resDict
@@ -195,7 +198,7 @@ class NestedBunch(object):
         # If we are adding a dict at the end then extend path by a dict
         # otherwise just store leaf value.
         if isinstance(value, dict) or isinstance(value, Klass):
-            if not sb.has_key(key):
+            if key not in sb:
                 sub_sb = Klass()
                 sub_sb.update(value)
                 sb[key] = sub_sb
@@ -226,7 +229,7 @@ class NestedBunch(object):
         
         for key in path.split(self.pathsep):
             sb = sub_sb
-            if not sb.has_key(key):
+            if key not in sb:
                 raise KeyError("No such key: '%s'" % path)
                 
             else:
@@ -255,6 +258,10 @@ class NestedBunch(object):
         return self.delitem(path)
         
 
+    def __contains__(self, path):
+        return self.has_key(path)
+
+
     def __str__(self):
         """Implements the str() operation on a nestedDict.
         """
@@ -277,7 +284,7 @@ class NestedBunch(object):
             sb = self.getitem(path)
 
         keys = []
-        for key in sb.keys():
+        for key in list(sb.keys()):
             if path:
                 pkey = self.pathsep.join((path, key))
             else:
@@ -297,7 +304,7 @@ class NestedBunch(object):
             idx = len(path) + 1
             
         res = []
-        for key in self.keys(path=path):
+        for key in list(self.keys(path=path)):
             res.append(key[idx:])
 
         return res
@@ -329,7 +336,7 @@ class NestedBunch(object):
             sb = self.getitem(path)
 
         keys = []
-        for key in sb.keys():
+        for key in list(sb.keys()):
             if path:
                 pkey = self.pathsep.join((path, key))
             else:
@@ -356,6 +363,6 @@ class NestedBunch(object):
 
     def has_val(self, path, key):
         pkey = self.pathsep.join((path, key))
-        return self.has_key(pkey)
+        return pkey in self
 
 

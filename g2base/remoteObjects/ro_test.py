@@ -1,3 +1,11 @@
+from __future__ import print_function
+from __future__ import print_function
+from __future__ import print_function
+from __future__ import print_function
+from __future__ import print_function
+from __future__ import print_function
+from __future__ import print_function
+from __future__ import print_function
 #!/usr/bin/env python
 #
 # Remote objects tests
@@ -36,13 +44,13 @@ class TestRO(ro.remoteObjectServer):
     def search(self, ra, dec, radius, mag):
         # For testing call overhead time
         # comment out print statement to measure call overhead
-        print "ra=%f dec=%f radius=%f mag=%f" % (ra, dec, radius, mag)
+        print("ra=%f dec=%f radius=%f mag=%f" % (ra, dec, radius, mag))
         return ra
 
 
     def test(self, ra, dec, radius, mag):
         # For testing call overhead time
-        print "ra=%f dec=%f radius=%f mag=%f" % (ra, dec, radius, mag)
+        print("ra=%f dec=%f radius=%f mag=%f" % (ra, dec, radius, mag))
         return ra
 
 def client2(options, logger):
@@ -63,15 +71,15 @@ def client2(options, logger):
 
     time1 = time.time()
 
-    for i in xrange(options.count):
+    for i in range(options.count):
         res = testro.test(1.0, 2.0, 3.0, 4.0)
 
     tottime = time.time() - time1
     time_per_call = tottime / options.count
     calls_per_sec = int(1.0 / time_per_call)
 
-    print "Time taken: %f secs total  %f sec per call  %d calls/sec" % \
-          (tottime, time_per_call, calls_per_sec)
+    print("Time taken: %f secs total  %f sec per call  %d calls/sec" % \
+          (tottime, time_per_call, calls_per_sec))
 
     if datafile:
         # total bytes, count, total time, encode time, avg rate
@@ -99,12 +107,12 @@ def main(options, args):
         testro = TestRO(options, logger, threadPool=threadPool,
                         threaded=True, usethread=False)
 
-        print "Starting TestRO service..."
+        print("Starting TestRO service...")
         try:
             testro.ro_start()
 
         except KeyboardInterrupt:
-            print "Shutting down..."
+            print("Shutting down...")
             testro.ro_stop()
             threadPool.stopall(wait=True)
 
@@ -112,10 +120,10 @@ def main(options, args):
         client2(options, logger)
 
     else:
-        print "I don't know how to do '%s'" % select
+        print("I don't know how to do '%s'" % select)
         sys.exit(1)
 
-    print "Program exit."
+    print("Program exit.")
     sys.exit(0)
             
 if __name__ == '__main__':
@@ -171,7 +179,7 @@ if __name__ == '__main__':
     elif options.profile:
         import profile
 
-        print "%s profile:" % sys.argv[0]
+        print("%s profile:" % sys.argv[0])
         profile.run('main(options, args)')
 
     else:

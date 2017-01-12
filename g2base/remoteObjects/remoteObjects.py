@@ -27,7 +27,12 @@ This will output them both in the same file named server.pem
 
 import sys, os, time
 import socket
-import threading, Queue
+import threading
+from g2base import six
+if six.PY2:
+    import Queue
+else:
+    import queue as Queue
 # binascii encoding/decoding is much faster than xmlrpclib's
 # built-in Binary class
 import binascii
@@ -35,26 +40,28 @@ import zlib
 import warnings
 import traceback
 import inspect
+import signal
 
 from g2base import Bunch, Task, ssdlog
 
-from ro_config import *
 
+from .ro_config import *
 
 # Collect the different transports we can use
 transports = {}
 try:
-    import ro_XMLRPC
+    from . import ro_XMLRPC
     transports['xmlrpc'] = ro_XMLRPC
-except ImportError:
+except ImportError as e:
+    raise e
     pass
 try:
-    import ro_socket
+    from . import ro_socket
     transports['socket'] = ro_socket
 except ImportError:
     pass
 try:
-    import ro_ZMQRPC
+    from . import ro_ZMQRPC
     transports['zmqrpc'] = ro_ZMQRPC
 except ImportError:
     pass
@@ -186,6 +193,7 @@ class remoteObjectServer(object):
             # if no specific name server supplied, use the module default
             ns = default_ns
         self.ns = ns
+        self.__pid = os.getpid()
 
         ro_transport = transports[transport]
         serv_klass = ro_transport.get_serverClass(secure=secure)
@@ -335,6 +343,53 @@ class remoteObjectServer(object):
         return OK
 
 
+    def ro_stacktrace(self, thread_id):
+        code = []
+        stack = sys._current_frames()[thread_id]
+        t = time.localtime(time.time())
+        code.append("# time: %s  ThreadID: %s" % (
+            time.strftime("%Y-%m-%d %H:%M:%S", t), thread_id))
+        for filename, lineno, fnname, srcline in traceback.extract_stack(stack):
+            code.append('File: "%s", line %d, in %s' % (filename, lineno, fnname))
+            if srcline:
+                code.append("  %s" % (srcline.strip()))
+        return "\n".join(code)
+
+    def ro_thread_ids(self):
+        return list(sys._current_frames().keys())
+
+    def ro_stacktraces(self):
+        code = {}
+        for thread_id in self.ro_thread_ids():
+            code[str(thread_id)] = self.ro_stacktrace(thread_id)
+        return code
+
+    def ro_stacktraces_file(self, path):
+        self.logger.warn("Dumping stacktraces to '%s'" % (path))
+        with open(path, 'a') as out_f:
+            for trace in self.ro_stacktraces().values():
+                out_f.write("\n********************************\n")
+                out_f.write(trace)
+                out_f.write("\n")
+        return True
+
+    def ro_stacktraces_dump(self):
+        name = time.strftime("%Y%m%d-%H%M%S-stacktrace",
+                             time.localtime())
+        name += '-' + self.svcname
+        tracefile = os.path.join('/tmp', name)
+        self.ro_stacktraces_file(tracefile)
+
+    def __signal_handler(self, signum, frame):
+        self.logger.error('Received signal %d' % signum)
+        self.ro_stacktraces_dump()
+
+    def ro_register_stacktraces_dump(self):
+        signal.signal(signal.SIGUSR2, self.__signal_handler)
+
+    def ro_get_pid(self):
+        return self.__pid
+
     def __ns_register(self):
         # If a nameserver is defined and we have a servicename, try to
         # register our service
@@ -395,6 +450,8 @@ class remoteObjectServer(object):
 
         # Register expected methods unless they have been overridden
         for name in ['ro_echo', 'ro_list', 'ro_help', 'ro_help_all',
+                     'ro_thread_ids', 'ro_stacktrace', 'ro_stacktraces',
+                     'ro_stacktraces_file', 'ro_stacktraces_dump', 'ro_get_pid',
                      'ro_setLogLevel', 'ro_workerStatus']:
             if not hasattr(self.obj, name):
                 self.server.register_function(getattr(self, name))
@@ -569,11 +626,14 @@ class remoteObjectSP(object):
                  timeout=None):
 
         self.name = name
-        if (not auth) and default_auth:
+        if auth is None and default_auth:
             auth = (name, name)
         elif isinstance(auth, str):
             # user:pass
             auth = auth.split(':')
+        else:
+            raise ValueError("Authorization format not recognized: '%s'" % (
+                str(auth)))
         self.auth = auth
 
         # Logger for logging debug/error messages
@@ -656,7 +716,7 @@ class remoteObjectSPFailover(remoteObjectSP):
 
             # Try the method on each client in the service pack, until one
             # returns with an answer, or we exhaust all possible clients.
-            for i in xrange(num):
+            for i in range(num):
                 client = self.sp[self.clientidx]
 
                 (flag, res) = call_remote(client, attrname, args, kwdargs)
@@ -729,7 +789,7 @@ class remoteObjectProxy(remoteObjectSP):
 
                 # Try the method on each client in the service pack, until one
                 # returns with an answer, or we exhaust all possible clients.
-                for i in xrange(num):
+                for i in range(num):
                     client = self.sp[self.clientidx]
 
                     (flag, res) = call_remote(client, attrname, args, kwdargs)
@@ -774,7 +834,7 @@ class remoteObjectSPFailoverRR(remoteObjectSP):
 
             # Try the method on each client in the service pack, until one
             # returns with an answer, or we exhaust all possible clients.
-            for i in xrange(num):
+            for i in range(num):
                 client = self.sp[self.clientidx]
 
                 (flag, res) = call_remote(client, attrname, args, kwdargs)
@@ -820,16 +880,16 @@ class servicePack(object):
 
     # Allow iteration over a servicePack
     def __getitem__(self, i):
-        key = self.clients.keys()[i]
+        key = list(self.clients.keys())[i]
         return self.clients[key]
 
     def has_key(self, host, port):
         key = (host, port)
-        return self.clients.has_key(key)
+        return key in self.clients
 
     def add(self, client, replace=True):
         key = (client.host, client.port)
-        if self.clients.has_key(key) and not replace:
+        if key in self.clients and not replace:
             return
         self.clients[key] = client
         self.pinginfo[key] = {}
@@ -854,7 +914,7 @@ class servicePack(object):
                                                           transport)
 
         key = (host, port)
-        if self.clients.has_key(key) and not replace:
+        if key in self.clients and not replace:
             return
         if timeout == None:
             timeout = self.timeout
@@ -901,14 +961,14 @@ class servicePack(object):
         # If we have a service provider in our client set that is not in the
         # synclist, then delete them.
         if deleteOrphans:
-            for key in self.clients.keys():
+            for key in list(self.clients.keys()):
                 if not key in hostports:
                     del self.clients[key]
 
     def delHost(self, host, port):
         key = (host, port)
         # If no entry for this service, silently return.
-        if not self.clients.has_key(key):
+        if key not in self.clients:
             return
 
         if self.proxy == self.clients[key]:
@@ -928,14 +988,14 @@ class servicePack(object):
         return len(self.clients)
 
     def showAll(self):
-        return self.clients.keys()
+        return list(self.clients.keys())
 
     def getInfo(self, host, port):
         return self.pinginfo[key]
 
     def getInfoAll(self):
         res = {}
-        for key in self.clients.keys():
+        for key in list(self.clients.keys()):
             res[key] = self.pinginfo[key]
 
         return res
@@ -948,7 +1008,7 @@ class servicePack(object):
 
     def chooseClient(self):
 
-        hosts = self.clients.keys()
+        hosts = list(self.clients.keys())
         for key in hosts:
             client = self.clients[key]
             try:
@@ -967,7 +1027,7 @@ class servicePack(object):
 
     def getLosers(self):
 
-        hostports = self.clients.keys()
+        hostports = list(self.clients.keys())
         echoval = 99
         results = []
 
@@ -989,7 +1049,7 @@ class servicePack(object):
     def purge(self):
 
         goodclient = None
-        hosts = self.clients.keys()
+        hosts = list(self.clients.keys())
 
         for key in hosts:
             client = self.clients[key]
@@ -1057,22 +1117,6 @@ def compress(data):
 def uncompress(buffer):
     return zlib.decompress(buffer)
 
-def cleanse_dict(d):
-    new_d = {}
-    for key, val in d.items():
-        if isinstance(val, float):
-            pass
-        elif isinstance(val, int):
-            pass
-        elif isinstance(val, str):
-            pass
-        else:
-            # convert everything else to a string
-            val = str(val)
-
-        new_d[key] = val
-    return new_d
-
 
 def populate_host(hostbnch, def_user=None, def_port=None):
 
@@ -1136,7 +1180,7 @@ def find_free_port(host, start_port, end_port):
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
     found_port = False
-    for port in xrange(start_port, start_port+15000):
+    for port in range(start_port, start_port+15000):
         try:
             sock.bind((host, port))
             found_port = True
@@ -1200,13 +1244,13 @@ def get_ro_hosts(nshost=None):
     play space.
     """
 
-    if os.environ.has_key('RO_HOSTS'):
+    if 'RO_HOSTS' in os.environ:
         ro_hosts = os.environ['RO_HOSTS'].strip().split(',')
 
     else:
         if not nshost:
             # Does user have a list of name servers defined?
-            if os.environ.has_key('RO_NAMES'):
+            if 'RO_NAMES' in os.environ:
                 ro_hosts = os.environ['RO_NAMES'].strip().split(',')
                 nshost = ro_hosts[0]
             else:
@@ -1295,6 +1339,11 @@ def getns(hosts=None, auth=None, secure=default_secure):
         hosts = get_ro_hosts()
 
     return make_nspack(hosts, auth=auth, secure=secure)
+
+
+def write_pid_file(filepath):
+    with open(filepath, 'w') as out_f:
+        out_f.write(str(os.getpid()))
 
 
 def init(ro_hosts=None,

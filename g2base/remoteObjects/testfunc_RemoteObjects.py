@@ -7,8 +7,8 @@ import time
 import os
 
 import environment
-import remoteObjects as ro
-import remoteObjectNameSvc
+from . import remoteObjects as ro
+from . import remoteObjectNameSvc
 
 
 class TestEnvConfiguredRight(unittest.TestCase):

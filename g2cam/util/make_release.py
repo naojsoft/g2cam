@@ -1,8 +1,9 @@
+from __future__ import print_function
 import os
 import time
 
 major = 2
-minor = 1
+minor = 2
 
 rlfile = 'version.py'
 backup = 'version.py.bak'
@@ -27,4 +28,4 @@ def make_release():
         out_f.write("\n")
 
 if __name__ == "__main__":
-    print make_release()
+    print(make_release())
