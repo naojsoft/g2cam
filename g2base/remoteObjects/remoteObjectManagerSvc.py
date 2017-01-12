@@ -464,7 +464,7 @@ class remoteObjectManagerService(ro.remoteObjectServer):
 
     def getNames(self):
         with self.lock:
-            return self.map.keys()
+            return list(self.map.keys())
 
 
     def start(self, name):

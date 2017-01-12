@@ -618,7 +618,7 @@ class PubSubBase(object):
             # For each *aggregate* channel, get the constituents
             # and add any of the aggregate's subscribers to the non-aggregate
             # channels' computed_subscribers.
-            for agg_channel in self.aggregates.keys():
+            for agg_channel in list(self.aggregates.keys()):
 
                 # Get my subscribers
                 bunch = self._get_channelInfo(agg_channel)

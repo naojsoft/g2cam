@@ -1,3 +1,4 @@
+
 #! /usr/bin/env python
 #
 # remoteObjectNameSvc.py -- remote object name service.
@@ -90,7 +91,7 @@ class remoteObjectNameService(object):
                                name.replace('.', '%'),
                                host.replace('.', '%'), port)
 
-        if tag not in self.monitor:
+        if not tag in self.monitor:
             self.logger.info("Registering remote object service %s:%d under name '%s'" % (
                 host, port, name))
 
@@ -218,7 +219,7 @@ class remoteObjectNameService(object):
         if not isinstance(tree, dict):
             return []
         res = []
-        for name in tree.keys():
+        for name in list(tree.keys()):
             res.append(name.replace('%', '.'))
         return res
 
@@ -308,7 +309,7 @@ class remoteObjectNameService(object):
             return []
 
         res = []
-        for key in tree.keys():
+        for key in list(tree.keys()):
             host, port = key.split(':')
             host = host.replace('%', '.')
             #host = socket.gethostbyname(host)
@@ -332,7 +333,7 @@ class remoteObjectNameService(object):
             return []
 
         res = []
-        for key in tree.keys():
+        for key in list(tree.keys()):
             host, port = key.split(':')
             host = host.replace('%', '.')
             #host = socket.gethostbyname(host)
@@ -411,6 +412,7 @@ class remoteObjectNameService(object):
 
 
 
+
 #------------------------------------------------------------------
 # MAIN PROGRAM
 #
@@ -432,7 +434,7 @@ def main(options, args):
     mymon.add_channels(['names'])
 
     authstr = options.monauth
-    if not authstr:
+    if authstr is None:
         authstr = "%s:%s" % (myMonName, myMonName)
         monAuthDict = { myMonName: myMonName }
     else:
@@ -441,7 +443,7 @@ def main(options, args):
 
     # Get authorization params, if provided for our name service
     authDict = {}
-    if options.auth:
+    if options.auth is not None:
         auth = options.auth.split(':')
         authDict[auth[0]] = auth[1]
 
@@ -469,7 +471,6 @@ def main(options, args):
     #mymon.subscribe_cb(nsobj.ps_update, ['names'])
 
     server_started = False
-
     try:
         try:
             logger.info("Starting monitor...")
@@ -495,6 +496,8 @@ def main(options, args):
                 monhost = options.monitor.split(':')[0]
                 monhost_s = monhost.split('.')[0]
                 myhost_s  = myhost.split('.')[0]
+                logger.info("monhost: '%s'  myhost: '%s'" % (
+                    monhost_s, myhost_s))
 
                 if monhost_s != myhost_s:
                     logger.info("Handling monitor subscriptions..")

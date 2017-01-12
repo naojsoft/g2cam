@@ -1,3 +1,4 @@
+
 from g2base import Bunch
 
 # class used for nodes
@@ -20,11 +21,13 @@ class NestedBunch(object):
         super(NestedBunch, self).__init__()
         
 
+
     # Replace this whole block with rsplit in Python 2.4
     def _rsplit(self, path):
         try:
             ri = path.rindex(self.pathsep)
             pfx = path[0:ri]
+
             sfx = path[ri+1:]
 
             return (pfx, sfx)
@@ -122,7 +125,7 @@ class NestedBunch(object):
             if self.isLeaf(path):
                 resDict[path] = self.getitem(path)
             else:
-                for key in self.keys(path=path):
+                for key in list(self.keys(path=path)):
                     resDict[key] = self.getitem(key)
 
             return resDict
@@ -143,7 +146,7 @@ class NestedBunch(object):
             if self.isLeaf(path):
                 resDict[path] = self.getitem(path)
             else:
-                for key in self.keys(path=path):
+                for key in list(self.keys(path=path)):
                     resDict[key[pathlen:]] = self.getitem(key)
 
             return resDict
@@ -255,6 +258,10 @@ class NestedBunch(object):
         return self.delitem(path)
         
 
+    def __contains__(self, path):
+        return self.has_key(path)
+
+
     def __str__(self):
         """Implements the str() operation on a nestedDict.
         """
@@ -277,7 +284,7 @@ class NestedBunch(object):
             sb = self.getitem(path)
 
         keys = []
-        for key in sb.keys():
+        for key in list(sb.keys()):
             if path:
                 pkey = self.pathsep.join((path, key))
             else:
@@ -297,7 +304,7 @@ class NestedBunch(object):
             idx = len(path) + 1
             
         res = []
-        for key in self.keys(path=path):
+        for key in list(self.keys(path=path)):
             res.append(key[idx:])
 
         return res
@@ -329,7 +336,7 @@ class NestedBunch(object):
             sb = self.getitem(path)
 
         keys = []
-        for key in sb.keys():
+        for key in list(sb.keys()):
             if path:
                 pkey = self.pathsep.join((path, key))
             else:

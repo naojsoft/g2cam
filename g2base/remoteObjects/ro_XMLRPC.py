@@ -13,12 +13,12 @@ if six.PY2:
     from SimpleXMLRPCServer import (SimpleXMLRPCServer,
                                     SimpleXMLRPCRequestHandler,
                                     SimpleXMLRPCDispatcher)
-    from xmlrpclib import ServerProxy
+    from xmlrpclib import ServerProxy, Transport
 else:
     import queue as Queue
     from xmlrpc.server import (SimpleXMLRPCServer, SimpleXMLRPCRequestHandler,
                                SimpleXMLRPCDispatcher)
-    from xmlrpc.client import ServerProxy
+    from xmlrpc.client import ServerProxy, Transport
 try:
     import fcntl
 except ImportError:
@@ -46,11 +46,20 @@ class socketTimeout(Error):
 #
 class ServiceProxy(object):
 
-    def __init__(self, proxy):
-        self.proxy = proxy
+    def __init__(self, url):
+        self.url = url
+        # transport = MyTransport()
+        #self.proxy = ServerProxy(self.url, transport=transport,
+        #                         allow_none=True)
+        self.proxy = ServerProxy(self.url, allow_none=True)
         #self.logger = logger
 
     def call(self, attrname, args, kwdargs):
+
+        #transport = MyTransport()
+        #proxy = ServerProxy(self.url, transport=transport,
+        #                      allow_none=True)
+        #proxy = ServerProxy(self.url, allow_none=True)
         method = eval('self.proxy.%s' % attrname)
         return method(*args, **kwdargs)
 
@@ -75,9 +84,7 @@ def make_serviceProxy(host, port, auth=None, secure=False, timeout=None):
             else:
                 url = 'http://%s:%d/' % (host, port)
 
-        proxy = ServerProxy(url, allow_none=True)
-
-        return ServiceProxy(proxy)
+        return ServiceProxy(url)
 
     except Exception as e:
         raise Error("Can't create proxy to service found on '%s:%d': %s" % (
@@ -87,6 +94,18 @@ def make_serviceProxy(host, port, auth=None, secure=False, timeout=None):
 #
 # ------------------ CLIENT EXTENSIONS ------------------
 #
+class MyTransport(Transport):
+
+    def request(self, host, handler, request_body, verbose=0):
+        try:
+            return self.single_request(host, handler, request_body, verbose)
+
+        finally:
+            try:
+                self.close()
+            except:
+                pass
+
 #
 # ------------------ THREADING EXTENSIONS ------------------
 #
@@ -119,6 +138,8 @@ class ProcessingMixin(object):
         self.finish_request(request, client_address)
         self.shutdown_request(request)
 
+        request.close()
+
 #
 # ------------------ XML-RPC SERVERS ------------------
 #
@@ -127,8 +148,16 @@ class XMLRPCRequestHandler(SimpleXMLRPCRequestHandler):
     """Subclass SimpleXMLRPCRequestHandler to add basic HTTP authentication
     check.
     """
-    #def __init__(self, *args, **kwdargs):
-    #    SimpleXMLRPCRequestHandler.__init__(*args, **kwdargs)
+    # def __init__(self, *args, **kwdargs):
+    #     SimpleXMLRPCRequestHandler.__init__(*args, **kwdargs)
+
+    def setup(self):
+        SimpleXMLRPCRequestHandler.setup(self)
+
+        # *** NOTE: NO KEEP-ALIVE!!! ***
+        # Keep-alive does not play well with multithreaded xml-rpc
+        self.server.close_connection = True
+        self.protocol_version = "HTTP/1.0"
 
     def get_authorization_creds(self):
         auth = self.headers.get("authorization", None)
@@ -139,12 +168,12 @@ class XMLRPCRequestHandler(SimpleXMLRPCRequestHandler):
             try:
                 method, auth = auth.split()
                 if method.lower() == 'basic':
-                    logger.debug("decoding base64...")
+                    #logger.debug("decoding base64...")
                     auth = base64.decodestring(auth.encode()).decode()
-                    logger.debug("splitting...")
+                    #logger.debug("splitting...")
                     username, password = auth.split(':')
-                    #logger.debug("username: '%s', password: '%s'" % (
-                    #    username, password))
+                    logger.debug("username: '%s', password: '%s'" % (
+                        username, password))
                     auth = { 'method': 'basic',
                              'username': username,
                              'password': password,
@@ -314,6 +343,7 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
 
         if not username in self.authDict:
             self.logger.error("No user matching '%s'" % username)
+            self.logger.info("authdict is '%s'" % str(self.authDict))
             # sleep thwarts brute force attacks
             # but also delays applications when there is a legitimate
             # authentication mismatch

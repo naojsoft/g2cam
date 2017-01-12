@@ -123,7 +123,7 @@ class Monitor(ps.PubSub):
 
         # TEMP: to get around an infinite recursion issue for monitor
         # logging
-        logger = ro.nullLogger()
+        #logger = ro.nullLogger()
 
         # Superclass initialization
         super(Monitor, self).__init__(name, logger,
@@ -313,7 +313,7 @@ class Monitor(ps.PubSub):
     def keys(self, path):
         with self.lock:
             try:
-                return self._store.keys(path=path)
+                return list(self._store.keys(path=path))
 
             except KeyError:
                 return ro.ERROR
@@ -386,6 +386,12 @@ class Monitor(ps.PubSub):
         return self.delete(path, self.defaultChannels)
 
 
+    def __contains__(self, path):
+        """Called for dictionary style key test.
+        """
+        return self.has_key(path)
+
+
 class Minimon(Monitor):
     """A Minimon is like a Monitor, but adds support for local
     synchronization of threads.
@@ -448,7 +454,7 @@ class Minimon(Monitor):
 
     def releaseAll(self, has_value=False):
         with self.lock:
-            for path in self.syncd.keys():
+            for path in list(self.syncd.keys()):
                 self.release(path, has_value=has_value)
 
             return ro.OK
@@ -523,7 +529,7 @@ class Minimon(Monitor):
             # Get the items again and see what we found
             res = self._getitems_list(tags)
             if len(res) > 0:
-                self.logger.debug("RELEASED on %s" % (str(res.keys())))
+                self.logger.debug("RELEASED on %s" % (str(list(res.keys()))))
                 return res
 
             raise EventError("Awakened without finding a value!")
@@ -683,11 +689,11 @@ def config_monitor(monitor, channels, aggregates):
     """Configure the given monitor with the default base channels and
     aggregates."""
     # Add all the channels
-    for name in channels.keys():
+    for name in list(channels.keys()):
         monitor.add_channels(channels[name])
 
     # Create aggregations
-    for name in aggregates.keys():
+    for name in list(aggregates.keys()):
         monitor.aggregate(name, aggregates[name])
 
 

@@ -626,11 +626,14 @@ class remoteObjectSP(object):
                  timeout=None):
 
         self.name = name
-        if (not auth) and default_auth:
+        if auth is None and default_auth:
             auth = (name, name)
         elif isinstance(auth, str):
             # user:pass
             auth = auth.split(':')
+        else:
+            raise ValueError("Authorization format not recognized: '%s'" % (
+                str(auth)))
         self.auth = auth
 
         # Logger for logging debug/error messages
@@ -958,7 +961,7 @@ class servicePack(object):
         # If we have a service provider in our client set that is not in the
         # synclist, then delete them.
         if deleteOrphans:
-            for key in self.clients.keys():
+            for key in list(self.clients.keys()):
                 if not key in hostports:
                     del self.clients[key]
 
@@ -992,7 +995,7 @@ class servicePack(object):
 
     def getInfoAll(self):
         res = {}
-        for key in self.clients.keys():
+        for key in list(self.clients.keys()):
             res[key] = self.pinginfo[key]
 
         return res
@@ -1005,7 +1008,7 @@ class servicePack(object):
 
     def chooseClient(self):
 
-        hosts = self.clients.keys()
+        hosts = list(self.clients.keys())
         for key in hosts:
             client = self.clients[key]
             try:
@@ -1024,7 +1027,7 @@ class servicePack(object):
 
     def getLosers(self):
 
-        hostports = self.clients.keys()
+        hostports = list(self.clients.keys())
         echoval = 99
         results = []
 
@@ -1046,7 +1049,7 @@ class servicePack(object):
     def purge(self):
 
         goodclient = None
-        hosts = self.clients.keys()
+        hosts = list(self.clients.keys())
 
         for key in hosts:
             client = self.clients[key]
