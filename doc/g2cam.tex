@@ -15,8 +15,8 @@
 \usepackage{fancyhdr}
 \fancyhead{}
 \fancyfoot{}
-\fancyhead[CO,CE]{---Draft---}
-\fancyhead[LO,RE]{\it The G2CAM Toolkit}
+%\fancyhead[CO,CE]{---Draft---}
+\fancyhead[LO,RE]{\it The G2Cam Toolkit}
 \fancyhead[LE,RO]{\slshape \rightmark}
 \fancyfoot[C]{\thepage}
 %\fancyfoot[LE,RO] {\slshape \rightmark}
@@ -43,6 +43,9 @@
 % for tables with paragraphs
 \usepackage{tabularx}
 
+% for URLs without links
+\usepackage{url}
+  
 % for code listings
 \usepackage{listings}
 \usepackage{color}
@@ -183,6 +186,38 @@ top-level G2CAM module can be written to interface with instrument's
 own internal subsystems in a variety of ways, including Python classes
 and functions, embedded C code, FIFOs, sockets, files, shared memory,
 etc.
+
+\section{Obtaining and Installing G2CAM}
+
+\subsection{Requirements}
+G2CAM will run happily with either python 2.7 or 3.4+.  It doesn't have
+any external requirements other than the Python standard library.
+For some testing purposes, it may be helpful to have {\tt astropy}
+installed.  
+
+\subsection{Getting G2CAM}
+g2cam is publicly available in a {\tt git} repository from the
+\url{GitHub.com} web site.  To fetch it:
+\begin{verbatim}
+  $ git clone http://github.com/naojsoft/g2cam
+\end{verbatim}
+
+\subsection{Installation}
+Install like any other python package:
+\begin{verbatim}
+  $ cd g2cam
+  $ python setup.py install
+\end{verbatim}
+Be sure to use the version of python that you want to run g2cam with
+when you do the install (e.g. if you have both python 2 and python 3
+installed).
+
+If you want to install it to a custom directory, please see the
+{\tt README} file at the top level of the source tree, which describes
+installation for more complicated setups.
+
+For running instructions, please see Chapter \ref{ch:running} or the
+above mentioned {\tt README} for the most current instructions.  
 
 \section{The G2CAM API}
 To interface with the G2CAM framework, a Python module is created which
@@ -1062,13 +1097,14 @@ class MYCAM(BASECAM):
 \end{verbatim}
 
 \chapter{Running G2CAM}
-There is a simple wrapper program called g2cam.py that provides the
+\label{ch:running}
+There is a simple wrapper program called {\tt g2cam} that provides the
 appropriate environment for running a G2CAM module. A typical invocation
 of this program to start the instrument might be as follows: 
 \begin{verbatim}
 
-$ cd $PYHOME/SIMCAM
-$ ./g2cam.py --cam=MYCAM --gen2host=g2ins1 --loglevel=20 \
+$ cd examples
+$ g2cam --cam=MYCAM --gen2host=g2ins1 --loglevel=20 \
      --log=mycam.log --stderr 
 
 \end{verbatim}
@@ -1080,12 +1116,20 @@ loaded from the path ../SkPara/cmd/MYCAM.
 Invoking the program with the --help option will list all options and
 their usage. 
 
+The source code includes an example cam that you can run for testing or
+reference.
+
+It is very helpful to get a companion piece for testing, which is a
+virtual machine containing a simulator of the summit Gen2 system.  Using
+the simulator you can test your developing g2cam in the same way it
+would actually be commanded at the telescope.
+
 \chapter{Appendix A: Considerations for SOSS Compatibility Mode}
 SOSS Compatibility Mode is a mode of operation of Gen2 that maintains a
 level of backward compatibility for legacy observation scripts written
 for SOSS, Subaru's first OCS. This section describes some considerations
-for developing observations that are compatible with either Gen2 or
-SOSS. 
+for developing observations that are compatible with with this mode,
+which is the primary method of observing at Subaru. 
 
 \section{Abstract commands}
 Subaru operators and observers prepare observation plans as OPE
@@ -1098,13 +1142,14 @@ pressing an execute button. These commands are either abstract
 commands. Device-dependent commands are commands that are issued to one
 of the subsystems (such as those described above): telescope,
 instrument, etc. Abstract commands are essentially macros which undergo
-an expansion process known as decoding. 
+an expansion process known as decoding, before being passed to an
+execution environment and executed.
 
 Abstract commands are written using a macro template language and the
 templates are stored as ``skeleton'' files. The macro language includes
 some primitive control structures that implement the equivalent of
 iteration, subroutine calls, etc. Ultimately, the processing of skeleton
-files devolves into sequential or concurrent issuance of device dependent
+files expands into sequential or concurrent issuance of device dependent
 commands to one of the distributed subsystems. In this manner,
 potentially complex patterns of interdependent distributed command
 execution on the four subsystems is realized. 
@@ -1127,7 +1172,7 @@ status can be completely different from the keys used on the G2CAM side
 (or you can choose to keep them in sync, for clarity, if you wish). Such
 aliases on the OCS side are typically the instrument 3-character code as
 prefix, followed by a dot and then an alphanumeric suffix. For example,
-our status value from earlier may be known on the SOSS side as
-MNI.STATUS (assuming that ``MYI'' is the code for ``My New Instrument''). 
+our status value from earlier may be known on the OCS side as MNI.STATUS
+(assuming that ``MYI'' is the code for ``My New Instrument'').  
 
 \end{document} 
