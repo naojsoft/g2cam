@@ -51,7 +51,7 @@ class ServiceProxy(object):
         # transport = MyTransport()
         #self.proxy = ServerProxy(self.url, transport=transport,
         #                         allow_none=True)
-        self.proxy = ServerProxy(self.url, allow_none=True)
+        #self.proxy = ServerProxy(self.url, allow_none=True)
         #self.logger = logger
 
     def call(self, attrname, args, kwdargs):
@@ -59,8 +59,8 @@ class ServiceProxy(object):
         #transport = MyTransport()
         #proxy = ServerProxy(self.url, transport=transport,
         #                      allow_none=True)
-        #proxy = ServerProxy(self.url, allow_none=True)
-        method = eval('self.proxy.%s' % attrname)
+        proxy = ServerProxy(self.url, allow_none=True)
+        method = eval('proxy.%s' % attrname)
         return method(*args, **kwdargs)
 
 def make_serviceProxy(host, port, auth=None, secure=False, timeout=None):
