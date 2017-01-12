@@ -217,8 +217,7 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
         SimpleXMLRPCServer.__init__(self, (host, port),
                                     requestHandler=requestHandler,
                                     logRequests=logRequests,
-                                    allow_none=allow_none, encoding=encoding,
-                                    bind_and_activate=True)
+                                    allow_none=allow_none, encoding=encoding)
 
         ProcessingMixin.__init__(self, threaded=threaded, threadPool=threadPool)
 
