@@ -1,19 +1,13 @@
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
 #! /usr/bin/env python
 #
 # Instrument configuration file.
 #
 # Eric Jeschke (eric@naoj.org)
 #
-# remove once we're certified on python 2.6
-from __future__ import with_statement
-
+from __future__ import print_function
 import sys, os
 import re
 from six.moves import map
-from six.moves import zip
 
 regex_frameid = re.compile(r'^(\w{3})([AQ])(\d)(\d{7})$')
 
@@ -533,15 +527,15 @@ def main(options, args):
         ins_list = ins_list.split(',')
         try:
             # Try interpreting instrument list as numbers
-            ins_list = map(int, ins_list)
+            ins_list = list(map(int, ins_list))
         except ValueError:
             try:
                 # Try interpreting instrument list as names
-                ins_list = map(ins_data.getNumberByName, ins_list)
+                ins_list = list(map(ins_data.getNumberByName, ins_list))
             except KeyError:
                 try:
                     # Try interpreting instrument list as codes
-                    ins_list = map(ins_data.getNumberByCode, ins_list)
+                    ins_list = list(map(ins_data.getNumberByCode, ins_list))
                 except KeyError:
                     raise Exception("I don't understand the type of items in '%s'" % options.ins)
 
