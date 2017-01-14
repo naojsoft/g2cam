@@ -853,8 +853,10 @@ class Instrument(object):
         obcpnum = self.get_obcpnum()
         insname = self.insconfig.getNameByNumber(obcpnum)
 
-        if not frtype in ('A', 'Q'):
-            raise CamError("Frame type (%s) must be 'A' or 'Q'" % str(type))
+        frame_types = ('A', 'Q', 'A9', 'Q9', 'A8', 'Q8', 'A7', 'Q7')
+        if not frtype in frame_types:
+            raise CamError("Frame type (%s) must be one of %s'" % (
+                str(type), str(frame_types)))
 
         try:
             (status, framelist) = self.frameint.getFrames(insname, frtype, num)
