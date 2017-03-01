@@ -7,9 +7,8 @@
 from __future__ import print_function
 import sys, os
 import re
-from six.moves import map
 
-regex_frameid = re.compile(r'^(\w{3})([AQ])(\d)(\d{7})$')
+from astro.frame import Frame as AstroFrame
 
 # NOTE: fov is specified as a RADIUS in DEGREES
 
@@ -21,6 +20,8 @@ insinfo = {
         'active': True,
         'interface': ('daqtk', 1.0),
         'fov': 0.011785,
+        'frametypes': 'AQ',
+        'description': u'Infra Red Camera and Spectrograph',
         },
     'AO': {
         'name': 'AO',
@@ -29,6 +30,8 @@ insinfo = {
         'active': False,
         'interface': ('daqtk', 1.0),
         'fov': 0.007000,
+        'frametypes': 'AQ',
+        'description': u'Subaru 36-elements Adaptive Optics',
         },
     'CIAO': {
         'name': 'CIAO',
@@ -37,6 +40,8 @@ insinfo = {
         'active': False,
         'interface': ('daqtk', 1.0),
         'fov': 0.007000,
+        'frametypes': 'AQ',
+        'description': u'Coronagraphic Imager with Adaptive Optics',
         },
     'OHS': {
         'name': 'OHS',
@@ -45,6 +50,8 @@ insinfo = {
         'active': False,
         'interface': ('daqtk', 1.0),
         'fov': 0.016667,
+        'frametypes': 'AQ',
+        'description': u'Cooled Infrared Spectrograph and Camera for OHS',
         },
     'FOCAS': {
         'name': 'FOCAS',
@@ -53,6 +60,8 @@ insinfo = {
         'active': True,
         'interface': ('daqtk', 1.0),
         'fov': 0.05,
+        'frametypes': 'AQ',
+        'description': u'Faint Object Camera And Spectrograph',
         },
     'HDS': {
         'name': 'HDS',
@@ -61,6 +70,8 @@ insinfo = {
         'active': True,
         'interface': ('daqtk', 1.0),
         'fov': 0.002778,
+        'frametypes': 'AQ',
+        'description': u'High Dispersion Spectrograph',
         },
     'COMICS': {
         'name': 'COMICS',
@@ -68,7 +79,9 @@ insinfo = {
         'code': 'COM',
         'active': True,
         'interface': ('daqtk', 1.0),
-        'fov': 0.007000,
+        'fov': 0.007,
+        'frametypes': 'AQ',
+        'description': u'Cooled Mid-Infrared Camera and Spectrograph',
         },
     'SPCAM': {
         'name': 'SPCAM',
@@ -77,14 +90,18 @@ insinfo = {
         'active': True,
         'interface': ('daqtk', 1.0),
         'fov': 0.22433,
+        'frametypes': 'AQ',
+        'description': u'Subaru Prime Focus Camera',
         },
     'SUKA': {
         'name': 'SUKA',
         'number': 9,
         'code': 'SUK',
         'active': True,
-        'interface': ('daqtk', 1.0),
+        'interface': ('g2cam', 1.0),
         'fov': 0.004222,
+        'frametypes': 'AQ',
+        'description': u'Simulation Instrument',
         },
     'MIRTOS': {
         'name': 'MIRTOS',
@@ -93,6 +110,8 @@ insinfo = {
         'active': False,  #???
         'interface': ('daqtk', 1.0),
         'fov': 0.004222,
+        'frametypes': 'AQ',
+        'description': u'',
         },
     'VTOS': {
         'name': 'VTOS',
@@ -101,6 +120,8 @@ insinfo = {
         'active': False,  #???
         'interface': ('daqtk', 1.0),
         'fov': 0.004222,
+        'frametypes': 'AQ',
+        'description': u'',
         },
     'CAC': {
         'name': 'CAC',
@@ -109,6 +130,8 @@ insinfo = {
         'active': False,
         'interface': ('daqtk', 1.0),
         'fov': 0.011785,
+        'frametypes': 'AQ',
+        'description': u'Commissioning instrument',
         },
     'SKYMON': {
         'name': 'SKYMON',
@@ -117,6 +140,8 @@ insinfo = {
         'active': False,
         'interface': ('daqtk', 1.0),
         'fov': 0.023570,
+        'frametypes': 'AQ',
+        'description': u'Original Sky Monitor',
         },
     'PI1': {
         'name': 'PI1',
@@ -125,6 +150,8 @@ insinfo = {
         'active': False,  #???
         'interface': ('daqtk', 1.0),
         'fov': 0.023570,
+        'frametypes': 'AQ',
+        'description': u'',
         },
     'K3D': {
         'name': 'K3D',
@@ -133,6 +160,8 @@ insinfo = {
         'active': True,
         'interface': ('daqtk', 1.0),
         'fov': 0.023570,
+        'frametypes': 'AQ',
+        'description': u'',
         },
     'SCEXAO': {
         'name': 'SCEXAO',
@@ -141,14 +170,18 @@ insinfo = {
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.045,
+        'frametypes': 'AQ',
+        'description': u'Subaru Coronagraphic Extreme Adaptive Optics',
         },
     'MOIRCS': {
         'name': 'MOIRCS',
         'number': 17,
         'code': 'MCS',
         'active': True,
-        'interface': ('daqtk', 1.0),
+        'interface': ('g2cam', 1.0),
         'fov': 0.033333,
+        'frametypes': 'AQ',
+        'description': u'Multi-Object Infra-Red Camera and Spectrograph',
         },
     'FMOS': {
         'name': 'FMOS',
@@ -157,6 +190,8 @@ insinfo = {
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.22433,
+        'frametypes': 'AQ',
+        'description': u'Fiber Multi-Object Spectrograph',
         },
     'FLDMON': {
         'name': 'FLDMON',
@@ -165,6 +200,8 @@ insinfo = {
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
+        'frametypes': 'AQ',
+        'description': u'High Intensity Field Imager',
         },
     'AO188': {
         'name': 'AO188',
@@ -173,6 +210,8 @@ insinfo = {
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.045,
+        'frametypes': 'AQ',
+        'description': u'Adaptive Optics 188',
         },
     'HICIAO': {
         'name': 'HICIAO',
@@ -181,6 +220,8 @@ insinfo = {
         'active': True,
         'interface': ('daqtk', 1.0),
         'fov': 0.023570,
+        'frametypes': 'AQ',
+        'description': u'High Contrast Instrument for the Subaru Next Generation Adaptive Optics',
         },
     'WAVEPLAT': {
         'name': 'WAVEPLAT',
@@ -189,6 +230,8 @@ insinfo = {
         'active': True,
         'interface': ('daqtk', 1.0),
         'fov': 0.023570,
+        'frametypes': 'AQ',
+        'description': u'Nasmyth Waveplate Unit for IR',
         },
     'LGS': {
         'name': 'LGS',
@@ -197,6 +240,8 @@ insinfo = {
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
+        'frametypes': 'AQ',
+        'description': u'Laser Guide Star Control',
         },
     'HSC': {
         'name': 'HSC',
@@ -205,6 +250,8 @@ insinfo = {
         'active': True,
         'fov': 0.83,
         'interface': ('g2cam', 1.0),
+        'frametypes': 'AQ',
+        'description': u'Hyper-Suprime Cam',
         },
     'K3C': {
         'name': 'K3C',
@@ -213,6 +260,8 @@ insinfo = {
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
+        'frametypes': 'AQ',
+        'description': u'Kyoto 3D 2nd Generation Sensor',
         },
     'CHARIS': {
         'name': 'CHARIS',
@@ -221,6 +270,8 @@ insinfo = {
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
+        'frametypes': 'AQ',
+        'description': u'Coronagraphic High Angular Resolution Imaging Spectrograph',
         },
     'PFS': {
         'name': 'PFS',
@@ -229,6 +280,8 @@ insinfo = {
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
+        'frametypes': 'AQ',
+        'description': u'Prime Focus Spectrograph',
         },
     'IRD': {
         'name': 'IRD',
@@ -237,14 +290,18 @@ insinfo = {
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
+        'frametypes': 'AQ',
+        'description': u'',
         },
-    'SWIMS_B': {
-        'name': 'SWIMS_B',
+    'SWIMS': {
+        'name': 'SWIMS',
         'number': 29,
-        'code': 'SWB',
+        'code': 'SWS',
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
+        'frametypes': 'BCRS',
+        'description': u'',
         },
     'MIMIZUKU': {
         'name': 'MIMIZUKU',
@@ -253,22 +310,28 @@ insinfo = {
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
+        'frametypes': 'AQ',
+        'description': u'',
         },
-    'SWIMS_R': {
-        'name': 'SWIMS_R',
+    'OTHER31': {
+        'name': 'OTHER31',
         'number': 31,
-        'code': 'SWR',
+        'code': 'O31',
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
+        'frametypes': 'AQ',
+        'description': u'',
         },
     'OTHER32': {
         'name': 'OTHER32',
         'number': 32,
         'code': '032',
         'active': False,
-        'interface': ('daqtk', 1.0),
+        'interface': ('g2cam', 1.0),
         'fov': 0.023570,
+        'frametypes': 'AQ',
+        'description': u'',
         },
     'VGW': {
         'name': 'VGW',
@@ -277,14 +340,9 @@ insinfo = {
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
+        'frametypes': 'AQ',
+        'description': u'',
         },
-#     'ANA': {
-#         'name': 'ANA',
-#         'number': 99,
-#         'code': 'ANA',
-#         'active': True,
-#         'interface': ('daqtk', 1.0),
-#         },
     }
 
 
@@ -467,19 +525,16 @@ class INSdata(object):
 
     def getNameByFrameId(self, frameid):
 
-        match = regex_frameid.match(frameid)
-        if not match:
-            raise Exception("Bad format for frameid '%s'" % frameid)
+        fr = AstroFrame()
+        fr.from_frameid(frameid)
 
-        (inscode, frtype, prefix, number) = match.groups()
-
-        insname = self.getNameByCode(inscode)
+        insname = self.getNameByCode(fr.inscode)
         return insname
 
 
     def getFileByFrameId(self, frameid):
 
-        insname = self.getInstrumentByFrameId(frameid)
+        insname = self.getNameByFrameId(frameid)
 
         try:
             datadir = os.environ['DATAHOME']
@@ -487,6 +542,21 @@ class INSdata(object):
             raise Exception("Environment variable 'DATAHOME' not set")
 
         return os.path.join(datadir, insname, frameid + '.fits')
+
+
+    def getFrametypesByName(self, insname):
+        """Get the frame types used for a particular instrument by _insname_.
+        Returns a list.
+        """
+
+        d = self.nameMap[insname]
+        try:
+            types = d['frametypes']
+
+        except KeyError:
+            types = 'AQ'
+
+        return list(types)
 
 
     def getInterfaceByName(self, insname):
@@ -527,15 +597,15 @@ def main(options, args):
         ins_list = ins_list.split(',')
         try:
             # Try interpreting instrument list as numbers
-            ins_list = list(map(int, ins_list))
+            ins_list = map(int, ins_list)
         except ValueError:
             try:
                 # Try interpreting instrument list as names
-                ins_list = list(map(ins_data.getNumberByName, ins_list))
+                ins_list = map(ins_data.getNumberByName, ins_list)
             except KeyError:
                 try:
                     # Try interpreting instrument list as codes
-                    ins_list = list(map(ins_data.getNumberByCode, ins_list))
+                    ins_list = map(ins_data.getNumberByCode, ins_list)
                 except KeyError:
                     raise Exception("I don't understand the type of items in '%s'" % options.ins)
 
