@@ -240,6 +240,11 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
         self.threadPool = threadPool
         self._num_threads = numthreads
 
+        # Create an attribute to hold the Queue object. The actual
+        # Queue object will be created in the start method if this
+        # server is to be run in threaded mode.
+        self.queue = None
+
         # Make XML-RPC sockets not block indefinitely
         #self.socket.settimeout(timeout)
         # Override anemic limit of python's default SocketServer
@@ -285,6 +290,11 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
                 self.threadPool.addTask(task)
 
     def stop(self):
+        # If this server has a Queue, put a message on the queue to
+        # tell the threads to shutdown.
+        if self.queue is not None:
+            self.queue.put((None, None))
+
         # use another thread to call shutdown because if we happen to
         # be in the same thread as server_forever() it will deadlock
         thread = threading.Thread(target=self.shutdown)
