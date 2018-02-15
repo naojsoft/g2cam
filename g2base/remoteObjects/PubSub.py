@@ -42,7 +42,7 @@ class PubSubError(Exception):
     """
     pass
 
-class PubSubBase(object):
+class PubSub(object):
     """Base class for publish/subscribe entities.
     """
 
@@ -50,7 +50,7 @@ class PubSubBase(object):
 
     def __init__(self, name, logger,
                  ev_quit=None, threadPool=None, numthreads=30,
-                 outlimit=6, inlimit=12):
+                 outlimit=4, inlimit=12):
         """
         Constructor for the PubSubBase class.
             name        pubsub name
@@ -60,7 +60,7 @@ class PubSubBase(object):
                           threads to allocate
         """
 
-        super(PubSubBase, self).__init__()
+        super(PubSub, self).__init__()
 
         self.logger = logger
         self.name = name
@@ -103,6 +103,19 @@ class PubSubBase(object):
         self._lock = threading.RLock()
         self._proxy_lock = threading.RLock()
         self._sub_info = {}
+
+        # Holds proxies to other pubsubs
+        self._proxyCache = {}
+
+        # Holds information about remote subscriptions
+        #self._remote_sub_info = set([])
+        self._remote_sub_info = {}
+
+        # Timeout for remote updates
+        self.remote_timeout = 10.0
+
+        # Interval between remote subscription updates
+        self.update_interval = 10.0
 
         # number of seconds to wait before unsubscribing a subscriber
         # who is unresponsive
@@ -757,39 +770,6 @@ class PubSubBase(object):
     def proxy_error(self, subscriber, partner):
         pass
 
-class PubSub(PubSubBase):
-    """Like a PubSubBase, but adds support for creating and caching
-    remote object handles based on service names (i.e. abstract out
-    remoteObjects proxy creation).
-    """
-
-    def __init__(self, name, logger,
-                 ev_quit=None, threadPool=None, numthreads=30,
-                 outlimit=4, inlimit=12):
-        """Constructor.
-        """
-
-        super(PubSub, self).__init__(name, logger,
-                                     ev_quit=ev_quit,
-                                     threadPool=threadPool,
-                                     numthreads=numthreads,
-                                     outlimit=outlimit,
-                                     inlimit=inlimit)
-
-        # Holds proxies to other pubsubs
-        self._proxyCache = {}
-
-        # Holds information about remote subscriptions
-        #self._remote_sub_info = set([])
-        self._remote_sub_info = {}
-
-        # Timeout for remote updates
-        self.remote_timeout = 10.0
-
-        # Interval between remote subscription updates
-        self.update_interval = 10.0
-
-
     def clear_proxy_cache(self):
         with self._lock:
             self._proxyCache = {}
@@ -869,8 +849,7 @@ class PubSub(PubSubBase):
             try:
                 proxy_obj = self._getProxy(subscriber, options)
 
-                super(PubSub, self)._subscribe(subscriber, proxy_obj,
-                                                channels, options)
+                self._subscribe(subscriber, proxy_obj, channels, options)
                 self.logger.debug("local registration of '%s' successful." % (
                     subscriber))
 
@@ -903,7 +882,7 @@ class PubSub(PubSubBase):
             try:
                 #proxy_obj = self._getProxy(subscriber, options)
 
-                super(PubSub, self)._unsubscribe(subscriber, channels, options)
+                self._unsubscribe(subscriber, channels, options)
                 self.logger.debug("local unregistration of '%s' successful." % (
                     subscriber))
 
@@ -1056,8 +1035,7 @@ class PubSub(PubSubBase):
 
         local_obj = anonClass(fn_update, self)
 
-        super(PubSub, self)._subscribe(subscriber, local_obj,
-                                        channels, {})
+        self._subscribe(subscriber, local_obj, channels, {})
         self.logger.debug("local registration of '%s' successful." % (
             subscriber))
 
@@ -1072,7 +1050,7 @@ class PubSub(PubSubBase):
         self.logger.debug("unregistering '%s' as a subscriber for '%s'." % (
             subscriber, channels))
 
-        super(PubSub, self)._unsubscribe(subscriber, channels, {})
+        self._unsubscribe(subscriber, channels, {})
         self.logger.debug("local unregistration of '%s' successful." % (
             subscriber))
 
@@ -1163,6 +1141,7 @@ class PubSub(PubSubBase):
             self.logger.debug("End interval wait")
 
         self.logger.info("exiting remote subscriptions update loop")
+
 
 def my_import(name):
     mod = __import__(name)
