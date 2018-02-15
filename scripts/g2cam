@@ -114,6 +114,10 @@ def main(options, args):
             monitor.start(wait=True)
             monitor.start_server(port=options.monport, wait=True)
 
+            # Configure logger for logging via our monitor
+            if options.logmon:
+                monitor.logmon(logger, options.logmon, ['logs'])
+
             logger.info("Starting instrument %s ..." % maincam)
             caminst.start(portbase=options.port)
 

@@ -609,8 +609,13 @@ class MonitorHandler(logging.Handler):
         self.interval = interval
 
         # Used to strip out bogus characters from log buffers
-        self.deletechars = ''.join(set(string.maketrans('', '')) -
-                                   set(string.printable))
+        if six.PY2:
+            self.deletechars = ''.join(set(string.maketrans('', '')) -
+                                  set(string.printable))
+        else:
+            self.deletechars = ''.join(set(map(chr,
+                                               bytes.maketrans(b'', b''))) -
+                                       set(string.printable))
 
         self.lock = threading.RLock()
         self.queue = Queue.Queue()
