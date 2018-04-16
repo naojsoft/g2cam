@@ -339,7 +339,7 @@ class myproc(object):
                     os.close(woutfd)
 
                 if not stderr:
-                    self.stderr = os.fdopen(rerrfd, 'r', 0)
+                    self.stderr = os.fdopen(rerrfd, 'rb', 0)
                     os.close(werrfd)
 
                 # Find out what happed to child.
