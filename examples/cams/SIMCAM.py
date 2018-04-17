@@ -282,7 +282,7 @@ class SIMCAM(BASECAM):
 
             self.logger.info("updating header")
             for key, val in updDict.items():
-                hdu.header.update(key, val)
+                hdu.header.set(key, val)
 
             self.logger.info("verifying pass #2")
             hdulist = py_f[0:]
@@ -376,7 +376,7 @@ class SIMCAM(BASECAM):
 
             self.logger.info("updating header")
             for key, val in updDict.items():
-                hdu.header.update(key, val)
+                hdu.header.set(key, val)
 
             fitsfile = '/tmp/%s.fits' % frame_no
             try:
