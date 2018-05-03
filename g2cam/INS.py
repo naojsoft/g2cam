@@ -7,7 +7,6 @@
 from __future__ import print_function
 import sys, os
 import re
-from six.moves import map
 
 from g2base.astro.frame import Frame as AstroFrame
 
@@ -92,6 +91,7 @@ insinfo = {
         'interface': ('daqtk', 1.0),
         'fov': 0.22433,
         'frametypes': 'AQ',
+        'frames_per_exp': dict(A=10),
         'description': u'Subaru Prime Focus Camera',
         },
     'SUKA': {
@@ -252,6 +252,7 @@ insinfo = {
         'fov': 0.83,
         'interface': ('g2cam', 1.0),
         'frametypes': 'AQ',
+        'frames_per_exp': dict(A=200),
         'description': u'Hyper-Suprime Cam',
         },
     'K3C': {
@@ -281,7 +282,8 @@ insinfo = {
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
-        'frametypes': 'AQ',
+        'frametypes': 'ABCD',
+        'frames_per_exp': dict(A=100, B=100, C=100, D=100),
         'description': u'Prime Focus Spectrograph',
         },
     'IRD': {
@@ -302,6 +304,7 @@ insinfo = {
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
         'frametypes': 'BCRS',
+        'frames_per_exp': dict(B=10, C=10, R=10, S=10),
         'description': u'',
         },
     'MIMIZUKU': {
@@ -318,7 +321,7 @@ insinfo = {
         'name': 'OTHER31',
         'number': 31,
         'code': 'O31',
-        'active': True,
+        'active': False,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
         'frametypes': 'AQ',
@@ -504,6 +507,8 @@ class INSdata(object):
         Returns a dict or raises a KeyError if the instrument is not found.
         """
 
+        insname = insname.upper()
+
         d = self.nameMap[insname]
 
         res = {}
@@ -549,6 +554,7 @@ class INSdata(object):
         """Get the frame types used for a particular instrument by _insname_.
         Returns a list.
         """
+        insname = insname.upper()
 
         d = self.nameMap[insname]
         try:
@@ -560,11 +566,25 @@ class INSdata(object):
         return list(types)
 
 
+    def getFramesPerExpByName(insname, frtype):
+        insname = insname.upper()
+
+        d = self.nameMap[insname]
+        try:
+            expnum = d['frames_per_exp'][frtype]
+
+        except KeyError:
+            expnum = 1
+
+        return expnum
+
+
     def getInterfaceByName(self, insname):
         """Get the interface used for a particular instrument by
         _insname_.
         Returns a string or raises a KeyError if the instrument is not found.
         """
+        insname = insname.upper()
 
         d = self.nameMap[insname]
         return d['interface']
@@ -576,6 +596,7 @@ class INSdata(object):
         AgAutoSelect.cfg configuration file.
         Returns a float or raises a KeyError if the instrument is not found.
         """
+        insname = insname.upper()
 
         d = self.nameMap[insname]
         return d['fov']
@@ -598,15 +619,17 @@ def main(options, args):
         ins_list = ins_list.split(',')
         try:
             # Try interpreting instrument list as numbers
-            ins_list = list(map(int, ins_list))
+            ins_list = [int(elt) for elt in ins_list]
         except ValueError:
             try:
                 # Try interpreting instrument list as names
-                ins_list = list(map(ins_data.getNumberByName, ins_list))
+                ins_list = [ins_data.getNumberByName(elt)
+                            for elt in ins_list]
             except KeyError:
                 try:
                     # Try interpreting instrument list as codes
-                    ins_list = list(map(ins_data.getNumberByCode, ins_list))
+                    ins_list = [ins_data.getNumberByCode(elt)
+                                for elt in ins_list]
                 except KeyError:
                     raise Exception("I don't understand the type of items in '%s'" % options.ins)
 
