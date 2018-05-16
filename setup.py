@@ -38,6 +38,7 @@ setup(
                 'g2cam.util',
                 # Misc g2base
                 'g2base.astro',
+                'g2base.alarm',
                 'g2base.remoteObjects',
                 ],
     package_data = { #'g2cam.doc': ['manual/*.html'],
