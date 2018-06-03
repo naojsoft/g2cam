@@ -14,17 +14,23 @@ import traceback
 import time
 import threading
 
+from g2base import Bunch, Callback
 from .notifications import SoundNotification
 
 
-class Alarm(object):
+class Alarm(Callback.Callbacks):
     """Base class for alarms."""
 
-    def __init__(self, key, check_fn=None,
-                 priority=10, superceded_by=None):
+    def __init__(self, key, name=None, check_fn=None,
+                 priority=10, description="", superceded_by=None):
         super(Alarm, self).__init__()
+
         # our name, must be unique
         self.key = key
+        if name is None:
+            name = key
+        # readable name
+        self.name = name
         # optional function to call to check alarm triggered
         self.check_fn = check_fn
         if superceded_by is None:
@@ -33,15 +39,22 @@ class Alarm(object):
         self.superceded_by = superceded_by
         # priority of this alarm
         self.priority = priority
+        # more textual information about this alarm
+        self.description = description
+
         # is entire alarm muted?
         self.muted = False
-
+        # for storing externally added items
+        self.extdata = Bunch.Bunch()
         # time we went active
         self.t_active = 0.0
         # alarm level
         self.level = 0
         # notification dict
         self.notifications = {}
+
+        for name in ['changed']:
+            self.enable_callback(name)
 
     def check(self, ap):
         """This function is called to check if an alarm's trigger
@@ -64,11 +77,13 @@ class Alarm(object):
         return nlst
 
 
-class AlarmProcessor(object):
+class AlarmProcessor(Callback.Callbacks):
     """Processes alarms, triggers notifications, handles muting, etc.
     """
 
     def __init__(self, logger):
+        super(AlarmProcessor, self).__init__()
+
         self.logger = logger
 
         self.cur_time = time.time()
@@ -86,6 +101,9 @@ class AlarmProcessor(object):
         self.extras = {}
         # holds status items from status server (set externally)
         self.stat_dict = {}
+
+        for name in ['alarm-changed']:
+            self.enable_callback(name)
 
     def add_alarms(self, alarms, group=None):
         for alarm in alarms:
@@ -127,6 +145,9 @@ class AlarmProcessor(object):
     def check_all_alarms(self):
         self.check_alarms(self.alarm_list)
 
+    def get_active_alarms(self):
+        return [alarm for alarm in self.alarm_list if alarm.level > 0]
+
     def check_alarms(self, alarms):
         """Check alarms in `alarms` and make notifications for ones that
         warrant it.
@@ -142,6 +163,10 @@ class AlarmProcessor(object):
                     alarm.t_active = self.cur_time
                     alarm.level = level
                     p_alarms.append(alarm)
+
+                    self.make_callback('alarm-changed', alarm)
+                    alarm.make_callback('changed')
+
                 elif level > 0:
                     # alarm continues at current level
                     p_alarms.append(alarm)
