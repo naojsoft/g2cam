@@ -43,38 +43,44 @@ class SoundNotification(Notification):
 class Gen2SoundFileNotification(SoundNotification):
     """A notification that plays a sound file."""
 
-    def __init__(self, sound_file=None, volume=0, **kwargs):
+    def __init__(self, sound_file=None, volume=0, dst='all', **kwargs):
         super(Gen2SoundFileNotification, self).__init__(**kwargs)
 
         # sound file to play, full path
         self.sound_file = sound_file
         self.volume = volume
+        self.priority = 20
+        self.dst = dst
 
     def notify(self, ap, alarm):
         if self.sound_file is not None:
             sndtyp = self.sound_file.split('.')[-1].lower()
             # TODO: add volume
             svc_sound = ap.extras['gen2_sound_svc']
-            svc_sound.playFile(self.sound_file, sndtyp)
+            svc_sound.playFile(self.sound_file, sndtyp, True, None,
+                               self.priority, self.dst)
 
 
 class Gen2TTSNotification(SoundNotification):
     """A notification that uses Text To Speech (TTS)."""
 
     def __init__(self, sound_text=None,
-                 voice='slt', volume=12, **kwargs):
+                 voice='slt', volume=12, dst='all', **kwargs):
         super(Gen2TTSNotification, self).__init__(**kwargs)
 
         # sound text to synthesize
         self.sound_text = sound_text
         self.voice = voice
         self.volume = volume
+        self.priority = 20
+        self.dst = dst
 
     def notify(self, ap, alarm):
         if self.sound_text is not None:
             svc_sound = ap.extras['gen2_sound_svc']
             self.svc_sound.playText(self.sound_text, self.voice,
-                                        self.volume)
+                                    self.volume, True, None,
+                                    self.priority, self.dst)
 
 
 class PhoneNotification(Notification):

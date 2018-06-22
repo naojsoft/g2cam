@@ -347,6 +347,16 @@ insinfo = {
         'frametypes': 'AQ',
         'description': u'',
         },
+    'TELSIM': {
+        'name': 'TELSIM',
+        'number': 34,
+        'code': 'TSM',
+        'active': True,
+        'interface': ('g2cam', 1.0),
+        'fov': 0.023570,
+        'frametypes': 'AQ',
+        'description': u'Telescope simulator at the DD command level',
+        },
     }
 
 

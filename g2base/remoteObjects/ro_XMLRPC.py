@@ -8,17 +8,28 @@ import threading
 import traceback
 import base64
 from g2base import six
+
+def dump_int(_, v, w):
+    w("<value><int>%d</int></value>" % (v))
+
 if six.PY2:
     import Queue
     from SimpleXMLRPCServer import (SimpleXMLRPCServer,
                                     SimpleXMLRPCRequestHandler,
                                     SimpleXMLRPCDispatcher)
-    from xmlrpclib import ServerProxy, Transport
+    from xmlrpclib import ServerProxy, Transport, Marshaller
+    Marshaller.dispatch[long] = dump_int
+
 else:
     import queue as Queue
     from xmlrpc.server import (SimpleXMLRPCServer, SimpleXMLRPCRequestHandler,
                                SimpleXMLRPCDispatcher)
-    from xmlrpc.client import ServerProxy, Transport
+    from xmlrpc.client import ServerProxy, Transport, Marshaller
+
+# monkey-patch to allow python xml-rpc not to complain about large
+# integers
+Marshaller.dispatch[int] = dump_int
+
 try:
     import fcntl
 except ImportError:
