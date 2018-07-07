@@ -128,7 +128,7 @@ class caselessDict(object):
         return self.dict.values()
 
     def __contains__(self, item):
-        return item.lower() in self.dict
+        return self.has_key(item)
 
     def __repr__(self):
         items = ", ".join([("%r: %r" % (k,v)) for k,v in self.items()])
