@@ -1,3 +1,4 @@
+from collections import Mapping
 
 from g2base import Bunch
 
