@@ -6,12 +6,9 @@
 """
 """
 from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
 import sys, os, time
 import threading
-import Queue
-from uuid import uuid4 
+from uuid import uuid4
 import inspect
 import logging
 import zlib
@@ -19,10 +16,11 @@ import zlib
 import zmq
 from zmq import ZMQError
 
+from g2base.six.queue import queue as Queue
+from g2base import six
 from g2base import Task
 
 from . import ro_codec
-import six
 
 # Timeout value for ZMQ-RPC sockets
 socket_timeout = 0.25
@@ -64,7 +62,7 @@ class RpcMessage(object):
         hdr = '%s,%s,%d' % (
             self.rpc_version, self.encoding, len(msg))
         return hdr, msg
-        
+
     def decode(self, hdr, msg):
         items = hdr.split(',')
         if self.compress:
@@ -72,7 +70,7 @@ class RpcMessage(object):
         self.encoding = ro_codec.encoding
         d = ro_codec.content_decode(msg)
         self.fromDict(d)
-        
+
     def send(self, socket, flags=0):
         hdr, msg = self.encode()
         socket.send(hdr, flags=zmq.SNDMORE)
@@ -80,12 +78,12 @@ class RpcMessage(object):
 
     def recv(self, socket, flags=0):
         hdr = socket.recv(flags)
-        #print "hdr: ", hdr
+        #print("hdr: ", hdr)
         more = socket.getsockopt(zmq.RCVMORE)
         msg = ''
-        if more:       
+        if more:
             msg = socket.recv(flags)
-        #print "msg: ", msg
+        #print("msg: ", msg)
         self.decode(hdr, msg)
 
     def __repr__(self):
@@ -94,20 +92,20 @@ class RpcMessage(object):
 class RpcRequest(RpcMessage):
     """
     RpcRequest
-    
+
     Represents a request message to be sent out to a host
     with published services. Used by RpcConnection when doing
     calls.
     """
-    
+
     def __init__(self):
         super(RpcRequest, self).__init__()
         self.method = ""
-        self.args   = []
+        self.args = []
         self.kwdargs = {}
         self.auth = []
         self.callback = False
-        self.async = False
+        self.isasync = False
         self.callback_id = uuid4().int
 
     def toDict(self):
@@ -118,20 +116,20 @@ class RpcRequest(RpcMessage):
             'auth': self.auth,
             'id': self.callback_id
             }
-    
+
     def fromDict(self, d):
         self.method = d['method']
         self.args = d['args']
         self.kwdargs = d['kwdargs']
         self.auth = d['auth']
         self.callback_id = d['id']
-    
+
     def __repr__(self):
-        return "<%s: %s (#args:%d, #kwdargs:%d)>" % (self.__class__.__name__, 
-                                                      self.method, 
-                                                      len(self.args), 
+        return "<%s: %s (#args:%d, #kwdargs:%d)>" % (self.__class__.__name__,
+                                                      self.method,
+                                                      len(self.args),
                                                       len(self.kwdargs))
- 
+
     @property
     def id(self):
         return self.callback_id
@@ -139,12 +137,12 @@ class RpcRequest(RpcMessage):
 class RpcResponse(RpcMessage):
     """
     RpcResponse
-    
+
     Represents a response message from a remote call.
     Wraps around the result from the remote call.
     Used by splRpc when replying to a call from RpcConnection.
     """
-    
+
     def __init__(self, result=None, status=-1, error=None):
         super(RpcResponse, self).__init__()
         self.status = status
@@ -157,15 +155,15 @@ class RpcResponse(RpcMessage):
             'result': self.result,
             'error': self.error,
             }
-    
+
     def fromDict(self, d):
         self.status = d['status']
         self.result = d['result']
         self.error = d['error']
-    
+
     def __repr__(self):
         return "<%s: status:%d>" % (self.__class__.__name__, self.status)
-            
+
 
 class ZMQRPCServer(object):
     """
@@ -194,7 +192,7 @@ class ZMQRPCServer(object):
         self.logger = logger
         self.useThread = threaded
         self.threadPool = threadPool
-        
+
         self._context = context or zmq.Context.instance()
 
         # for local processing
@@ -203,7 +201,7 @@ class ZMQRPCServer(object):
         else:
             host = '*'
             self._address = "tcp://%s:%d" % (host, port)
-        
+
         self._services = {}
 
         n = bump_worker_group()
@@ -236,7 +234,7 @@ class ZMQRPCServer(object):
             return True
 
         return False
-        
+
 
     def handle_request(self, req):
         resp = RpcResponse()
@@ -255,7 +253,7 @@ class ZMQRPCServer(object):
             resp.result = None
             resp.status = -1
             resp.error = "Authentication error"
-            
+
         elif service == None:
             resp.result = None
             resp.status = -1
@@ -276,14 +274,14 @@ class ZMQRPCServer(object):
     def worker(self, idx):
         # Wait for server to be ready
         self.device_ready.wait()
-        
+
         sock = self._context.socket(zmq.REP)
         sock.connect(self._worker_url)
         sock.linger = 0
 
         ## poller = zmq.Poller()
         ## poller.register(sock, zmq.POLLIN)
-        
+
         self.logger.debug("Group %s: Worker %d ready to receive" % (
             self.worker_group, idx))
 
@@ -308,7 +306,7 @@ class ZMQRPCServer(object):
                 resp = self.handle_request(req)
                 resp.send(sock)
                 self.logger.debug("sent response: %s" % resp)
-            
+
             except ZMQError as e:
                 if e.errno == zmq.ETERM and self.ev_quit.isSet():
                     break
@@ -358,7 +356,7 @@ class ZMQRPCServer(object):
             self.stop()
 
         self.logger.debug("server exiting.")
-            
+
     def server2(self, queue):
         frontend = self._context.socket(zmq.ROUTER)
         frontend.linger = 0
@@ -387,7 +385,7 @@ class ZMQRPCServer(object):
                         # we have a request!
                         _id = frontend.recv()
                         _sep = frontend.recv()    # ZMQ address separator
-                        #print "recv: ID is %s" % _id
+                        #print("recv: ID is %s" % _id)
                         req = RpcRequest()
                         req.recv(frontend, flags=zmq.NOBLOCK)
                         self.logger.debug("recv: %s" % (str(req)))
@@ -407,9 +405,9 @@ class ZMQRPCServer(object):
                     have_responses = True
                     while have_responses:
                         try:
-                            #print "checking responses"
+                            #print("checking responses")
                             (_id, resp) = queue.get(block=False)
-                            #print "got response"
+                            #print("got response")
                             self.logger.debug("Sending response...")
                             frontend.send(_id, zmq.SNDMORE)
                             frontend.send('', zmq.SNDMORE)  # separator
@@ -417,7 +415,7 @@ class ZMQRPCServer(object):
                             self.logger.debug("sent response: %s" % resp)
 
                         except Queue.Empty:
-                            #print "no responses"
+                            #print("no responses")
                             have_responses = False
 
                     time.sleep(0)
@@ -437,7 +435,7 @@ class ZMQRPCServer(object):
             self.stop()
 
         self.logger.debug("server exiting.")
-            
+
     def server3(self, queue):
         backend = self._context.socket(zmq.DEALER)
         backend.linger = 0
@@ -479,11 +477,11 @@ class ZMQRPCServer(object):
             self.stop()
 
         self.logger.debug("server exiting.")
-            
-     
+
+
     def server(self, queue):
         return self.server3(queue)
-    
+
     def start(self, useThread=False):
         """
         start()
@@ -523,9 +521,9 @@ class ZMQRPCServer(object):
 
 
     def stop(self):
-        """ 
+        """
         stop()
-        
+
         Stop the server thread process
         """
         self.logger.debug("Stop request made for RPC thread loop")
@@ -551,11 +549,11 @@ class ZMQRPCServer(object):
 
     def register_function(self, method):
         self.publishService(method)
-    
+
     def publishService(self, method):
         """
         publishService (object method)
-        
+
         Publishes the given callable, to be made available to
         remote procedure calls.
         """
@@ -566,15 +564,15 @@ class ZMQRPCServer(object):
             spec.append("*%s" % argSpec.varargs)
         if argSpec.keywords:
             spec.append("**%s" % argSpec.keywords)
-        
+
         self._services[name] = {'format' : "%s(%s)" % (name, ', '.join(spec)), 'method' : method, 'doc' : method.__doc__}
-    
+
     def _serviceListReq(self):
         services = []
         for name, v in six.iteritems(self.services):
             services.append({'service' : name, 'format' : v['format'], 'doc' : v['doc']})
         return services
-    
+
     def services(self):
         return self._services
 
@@ -582,23 +580,23 @@ class ZMQRPCServer(object):
 class ClientProxy(object):
     """
         rpc.call("myFunction", callback=processResponse, args=(1, "a"), kwdargs={'flag':True, 'option':"blarg"})
-    """    
-    
+    """
+
     def __init__(self, host, port, auth, logger=None, allow_none=False,
                  context=None, localOnly=False):
-        
+
         self._context = context or zmq.Context.instance()
         if localOnly:
             self._address = "ipc://%s/%d.ipc" % (TEMPDIR, port)
         else:
             self._address = "tcp://%s:%d" % (host, port)
         self.auth = auth
-        self._sender = None 
+        self._sender = None
         self._poller = None
         self.timeout = 1000.0
         self.retries = 3
         self._lock = threading.RLock()
-    
+
         if logger == None:
             logger = logging.getLogger("ZMQRPC")
         self.logger = logger
@@ -618,11 +616,11 @@ class ClientProxy(object):
             pass
         finally:
             self._sender = None
-                
+
     def availableServices(self):
         """
         availableServices() -> RpcResponse
-        
+
         Asks the remote server to tell us what services
         are published.
         Returns an RpcResponse object
@@ -639,32 +637,32 @@ class ClientProxy(object):
         # self._sender.setsockopt(zmq.IDENTITY, "FOO" )
         self._sender.setsockopt(zmq.LINGER, 0)
         self.logger.debug("connecting to %s..." % self._address)
-        self._sender.connect(self._address)  
+        self._sender.connect(self._address)
 
         self._poller = zmq.Poller()
         self._poller.register(self._sender, zmq.POLLIN)
 
 
-    def call(self, method, callback=None, async=False, args=[], kwdargs={}):
+    def call(self, method, callback=None, isasync=False, args=[], kwdargs={}):
         """
-        call(str method, object callback=None, bool async=False, list args=[], dict kwdargs={})
-        
+        call(str method, object callback=None, bool isasync=False, list args=[], dict kwdargs={})
+
         Make a remote call to the given service name, with an optional callback
         and arguments to be used.
         Can be run either blocking or asynchronously.
-        
+
         By default, this method blocks until a response is received.
-        If async=True, returns immediately with an empty RpcResponse. If a callback
+        If isasync=True, returns immediately with an empty RpcResponse. If a callback
         was provided, it will be executed when the remote call returns a result.
         """
-                     
+
         req = RpcRequest()
         req.method = method
         req.args   = args
         req.kwdargs = kwdargs
         req.auth = self.auth
-        req.async  = async
-        
+        req.isasync  = isasync
+
         if self._sender == None:
             self.reset()
 
@@ -705,7 +703,7 @@ class ClientProxy(object):
 
         result = resp
         return result
-    
+
 
 #
 # ------------------ CONVENIENCE FUNCTIONS ------------------
@@ -743,7 +741,7 @@ def make_serviceProxy(host, port, auth=False, secure=False, timeout=None):
         proxy = ClientProxy(host, port, auth, allow_none=True)
 
         return ServiceProxy(proxy)
-    
+
     except Exception as e:
         raise Error("Can't create proxy to service found on '%s:%d': %s" % (
             host, port, str(e)))
