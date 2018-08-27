@@ -1106,7 +1106,7 @@ class nullLogger(object):
 # faster than the one used by xmlrpclib or base64 modules.
 
 def binary_encode(buffer):
-    return binascii.b2a_base64(buffer)
+    return binascii.b2a_base64(buffer).decode('latin1')
 
 def binary_decode(data):
     return binascii.a2b_base64(data)
