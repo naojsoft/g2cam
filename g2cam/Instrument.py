@@ -15,8 +15,6 @@ from g2base.Bunch import Bunch, threadSafeBunch
 from g2base.remoteObjects import remoteObjects as ro
 import g2base.remoteObjects.Monitor as Monitor
 from g2cam.INS import INSdata as INSconfig
-from six.moves import map
-from six.moves import zip
 
 
 class CamError(Exception):
@@ -550,7 +548,7 @@ class Instrument(object):
         # Construct a format string if user did not supply one.
         # TODO (maybe): use StatusAlias.def to construct format string?
         if not formatStr:
-            formatStr = ''.join(map(lambda var: '%%(%s)s' % var, keyOrder))
+            formatStr = ''.join(['%%(%s)s' % var for var in keyOrder])
 
         # If no mapping is passed in, construct a default one
         if mapping == None:
