@@ -1117,6 +1117,21 @@ def compress(data):
 def uncompress(buffer):
     return zlib.decompress(buffer)
 
+def cleanse_dict(d):
+    new_d = {}
+    for key, val in d.items():
+        if isinstance(val, float):
+            pass
+        elif isinstance(val, int):
+            pass
+        elif isinstance(val, str):
+            pass
+        else:
+            # convert everything else to a string
+            val = str(val)
+
+        new_d[key] = val
+    return new_d
 
 def populate_host(hostbnch, def_user=None, def_port=None):
 

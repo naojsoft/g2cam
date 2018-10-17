@@ -413,7 +413,7 @@ class SIMCAM(BASECAM):
         self.ocs.archive_framelist(framelist)
 
 
-    def putstatus(self, target="ALL"):
+    def putstatus(self, target="ALL", tag=None):
         """Forced export of our status.
         """
         # Bump our status send count and time
@@ -424,7 +424,7 @@ class SIMCAM(BASECAM):
         self.ocs.exportStatus()
 
 
-    def getstatus(self, target="ALL"):
+    def getstatus(self, target="ALL", tag=None):
         """Forced import of our status using the normal status interface.
         """
         ra, dec, focusinfo, focusinfo2 = self.ocs.requestOCSstatusList2List(['STATS.RA',
@@ -435,7 +435,7 @@ class SIMCAM(BASECAM):
         self.logger.info("Status returned: ra=%s dec=%s focusinfo=%s focusinfo2=%s" % (ra, dec, focusinfo, focusinfo2))
 
 
-    def getstatus2(self, target="ALL"):
+    def getstatus2(self, target="ALL", tag=None):
         """Forced import of our status using the 'fast' status interface.
         """
         ra, dec = self.ocs.getOCSstatusList2List(['STATS.RA',
@@ -444,10 +444,12 @@ class SIMCAM(BASECAM):
         self.logger.info("Status returned: ra=%s dec=%s" % (ra, dec))
 
 
-    def view_file(self, path=None, num_hdu=0, tag=None):
+    def view_file(self, path=None, num_hdu=0, chname=None, imname=None,
+                  tag=None):
         """View a FITS file in the OCS viewer.
         """
-        self.ocs.view_file(path, num_hdu=num_hdu)
+        self.ocs.view_file(path, num_hdu=num_hdu, chname=chname,
+                           imname=imname)
 
 
     def view_fits(self, path=None, num_hdu=0, tag=None):
@@ -466,7 +468,7 @@ class SIMCAM(BASECAM):
         self.logger.info("framelist: %s" % str(framelist))
 
 
-    def kablooie(self, motor='OFF'):
+    def kablooie(self, motor='OFF', tag=None):
         """Generate an exception no matter what.
         """
         raise SIMCAMError("KA-BLOOIE!!!")
