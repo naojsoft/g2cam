@@ -194,7 +194,7 @@ class myproc(object):
                             try:
                                 # Write pid of *our* child to *our* parent, who will
                                 # read it and put it in the myproc object.
-                                tmp_f = os.fdopen(wdfd, 'w')
+                                tmp_f = os.fdopen(wdfd, 'wb', 0)
                                 tmp_f.write("%d\n" % pid)
                                 tmp_f.close()
 
@@ -212,7 +212,7 @@ class myproc(object):
                         sys.stderr.write ("(%d) fork #2 failed: (%d) %s\n" % \
                                           (os.getpid(), e.errno, e.strerror))
                         try:
-                            tmp_f = os.fdopen(wdfd, 'w')
+                            tmp_f = os.fdopen(wdfd, 'wb', 0)
                             tmp_f.write("%d\n" % os.getpid())
                             tmp_f.close()
                         finally:
@@ -222,7 +222,7 @@ class myproc(object):
                         sys.stderr.write ("(%d) fork #2 failed: %s\n" % \
                                           (os.getpid(), str(e)))
                         try:
-                            tmp_f = os.fdopen(wdfd, 'w')
+                            tmp_f = os.fdopen(wdfd, 'wb', 0)
                             tmp_f.write("%d\n" % os.getpid())
                             tmp_f.close()
                         finally:
@@ -313,7 +313,7 @@ class myproc(object):
                     # Read pid of our child's child, because it was double-forked
                     # as a daemon.
                     os.close(wdfd)
-                    tmp_f = os.fdopen(rdfd, 'r')
+                    tmp_f = os.fdopen(rdfd, 'rb', 0)
                     self.pid = int(tmp_f.read().strip())
                     tmp_f.close()
 
@@ -331,11 +331,11 @@ class myproc(object):
 
                 # Map pipe descriptors to Python file objects
                 if not stdin:
-                    self.stdin = os.fdopen(winfd, 'w')
+                    self.stdin = os.fdopen(winfd, 'wb', 0)
                     os.close(rinfd)
 
                 if not stdout:
-                    self.stdout = os.fdopen(routfd, 'r')
+                    self.stdout = os.fdopen(routfd, 'rb', 0)
                     os.close(woutfd)
 
                 if not stderr:
