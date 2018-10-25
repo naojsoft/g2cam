@@ -222,8 +222,7 @@ above mentioned {\tt README} for the most current instructions.
 \section{The G2CAM API}
 To interface with the G2CAM framework, a Python module is created which
 defines at least one class inheriting from the BASECAM class, which is
-defined in the SIMCAM package\footnote{G2CAM's predecessor was known as
-SIMCAM; that is why the top-level package is named as such.}.
+defined in the g2cam package.
 This inheritance provides the class with some abstract superclass
 methods and attributes that will normally be overridden by the subclass. 
 
@@ -231,7 +230,7 @@ methods and attributes that will normally be overridden by the subclass.
 #
 # My new instrument
 #
-from SIMCAM import BASECAM, CamError, CamCommandError
+from g2cam.Instrument import BASECAM, CamError, CamCommandError
 ...
 
 class MYCAM(BASECAM):
@@ -239,8 +238,8 @@ class MYCAM(BASECAM):
     ....
 
 \end{verbatim}
-There are several example modules included for real instruments that are
-used at Subaru. Examining these example modules you will see what
+There is an example cam (called ``SIMCAM'') included in the ``examples''
+directory of the g2cam package. Examining this module you will see what
 arguments are necessary for the class constructor (also described in the
 section below ``Putting it all together: the G2CAM cam'').
 For methods defined inside the class there are a number of useful
@@ -307,8 +306,8 @@ Although the API methods of the G2CAM framework are thread-safe, it is
 up to the developer to make sure that shared instance 
 state in the subclass is protected via standard thread-safety techniques
 such as semaphores, locks, condition variables, etc. 
-The threading and Queue packages in the standard Python library provides
-many useful classes for this purpose. 
+The {\tt threading} and {\tt queue} packages in the standard Python
+library provide many useful classes for this purpose. 
 
 Although commands are typically driven from the OCS side, an instrument
 can set up it's own autonomous command invocations. 
@@ -343,12 +342,12 @@ it is used:
         ...
         
         # Create a dictionary, whose keys are status aliases we want
-	statusDict = {'STATS.RA': None, 'STATS.DEC': None}
+        statusDict = {'STATS.RA': None, 'STATS.DEC': None}
 
         try:
             self.ocs.requestOCSstatus(statusDict)
 
-        except CamError, e:
+        except CamError as e:
             # Some kind of error occurred--bail out
             raise CamCommandError("Failed to obtain status: %s" % str(e))
 
@@ -364,9 +363,9 @@ it is used:
 There are a couple of things to note about this example. One is the use
 of the logging facility. If the run-time logging level is set to include
 debug, then the information about the ra and dec will be logged. The
-second is the use of Exceptions to catch and signal errors. Note that
-the call to requestOCSstatus() is wrapped in a try/except clause, and
-that we re-raise the error as a CamCommandError if we run into
+second is the use of exceptions to catch and signal errors. Note that
+the call to {\tt requestOCSstatus()} is wrapped in a try/except clause, and
+that we re-raise the error as a {\tt CamCommandError} if we run into
 trouble. We could also simply return an error code, or an error code and
 message, as described in the section on command processing. Thirdly,
 note how we create a dictionary with the keys of the OCS status items
@@ -377,7 +376,7 @@ code in the example cam modules or ask a member of the Subaru OCS
 software team or a Subaru support scientist what the aliases are for the
 status values you need, and what the type of those values are. 
 
-The call to self.ocs.requestOCSstatus() fills in the dictionary with the
+The call to {\tt self.ocs.requestOCSstatus()} fills in the dictionary with the
 values fetched from the OCS. The values are given the appropriate type
 for the kind of status that they are (float, int, string, etc.). In this
 case, the STATS.RA and STATS.DEC values are defined as string values in
@@ -403,7 +402,7 @@ following method (compare to above):
         try:
             self.ocs.requestOCSstatus(statusDict)
 
-        except CamError, e:
+        except CamError as e:
             # Some kind of error occurred--bail out
             raise CamCommandError("Failed to obtain status: %s" % str(e))
 
@@ -411,8 +410,8 @@ following method (compare to above):
         if len(results) > 0:
             self.logger.error("Values are invalid for: %s" % str(results))
             for alias in results:
-            ...
-            ...
+                ...
+                ...
         ...
         ...
 
@@ -432,13 +431,10 @@ OCS system will absorb it, process it and make it available through the
 OCS status system. 
 
 \subsection{Setting up instrument status tables}
-Status distribution is a little more complicated than status requests
-due to the way that status is currently handled in the OCS system (by
-tables that are essentially packed buffers). This underlying buffer
-interface was unfortunately exposed to the API in the first generation
-OCS, which required instruments to pack their own status buffers, and
-exposed the concept of separate status tables. This internal
-representation may change in Gen2. Currently, the interface requires a
+Status can be organized into separate groups (called tables) and you can
+send a group of status at a time (of course you can just lump all status
+into one big group if you prefer).  Each table has a name that has a
+prefix based on the instrument name.  Setting up the tables requires a
 little bit of boilerplate code to set up the linkage between the G2CAM
 status values and what is expected on the OCS side. 
 \begin{verbatim}
@@ -468,21 +464,10 @@ status values and what is expected on the OCS side.
         
         self.statusTblName = ('%3.3sS0001' % self.inscode)
 
-        # Prepare the internal to Gen2 status mapping
-        d = { 'status': '%s.STATUS',
-              'mode':   '%s.MODE',
-              'count':  '%s.COUNT',
-              'last_frame': '%s.LFRAME',
-            }
-        mapping = {}
-        for key, alias in d.items():
-             mapping[key] = alias % self.inscode
-
-        # Register my status items.
+        # Make a table with some status items.
         self.mystatus = self.ocs.addStatusTable(self.statusTblName,
                                                 ['status', 'mode', 'count',
-                                                 'last_frame'],
-                                                 mapping=mapping)
+                                                 'last_frame'])
         
         ...
         ...
@@ -490,7 +475,7 @@ status values and what is expected on the OCS side.
 \end{verbatim}
 This code example shows the initialize method, which is part of the
 standard boilerplate code used in initializing the instrument module
-(see Putting it all together: the G2CAM cam). When called, the
+(see section ``Putting it all together: the MYCAM cam''). When called, the
 parameter ocsint is a handle to the OCS interface delegate object. After
 calling the superclass constructor, the method stores this away in its
 internal state in the variable ocs (you encountered this variable in
@@ -501,12 +486,9 @@ to the interface to accomplish various things. First, it finds out it's
 own OBCP number (all Subaru instruments are enumerated), followed by
 it's code (official 3-letter acronym) and full name (canonical name). 
 
-It then constructs a table name (which must exist on the OCS side; the
-example shows the canonical table name for an instrument), a table
-format (a format string describing how to pack the status values into
-the buffer) and then makes a call to addStatusTable() to create a table,
-containing the listed status elements, and connecting it to the format
-string. 
+It then constructs a table name (the example shows the canonical table
+name for an instrument) and then makes a call to {\tt addStatusTable()}
+to create a table containing the listed status elements. 
 
 \subsection{Getting and setting internal status}
 Beyond the boilerplate code, status values can be set any time, anywhere
@@ -552,12 +534,7 @@ the items dictionary style, or use convenience methods:
 
 \end{verbatim}
 Again, using the convenience methods insures that all the status items
-are fetched as a group, atomically. The goal here is to abstract as much
-as possible the OCS internal representation of status. For Gen2, it is
-likely that the old status interface will be retained for some
-time. However, using this abstraction means that only the boilerplate
-code in initialize will likely need to be changed for an all new Gen2
-status interface. 
+are fetched as a group, atomically. 
 
 \subsection{Transmitting internal status}
 Status is not transmitted (distributed) until an explicit call is made
@@ -576,10 +553,9 @@ to do so. You might define a method to export the status like so:
         return res
 
 \end{verbatim}
-The exportStatus and exportStatusTable delegate methods cause the
-current status table objects (all objects or a specific one,
-respectively) to be collapsed into buffers according to the buffer
-format string and transmitted to the OCS. The putstatus method then
+The {\tt exportStatus} and {\tt exportStatusTable} delegate methods
+cause the current status table objects (all objects or a specific one,
+respectively) to be transmitted to the OCS. The putstatus method then
 becomes a convenience function for the class, that can be called from
 anywhere to push out status, as well as a command that can be invoked
 from the OCS side to test status transfers. 
@@ -616,7 +592,7 @@ already on disk, the following code illustrates the necessary call:
 If the image data is already in memory, there are some other options:
 \begin{verbatim}
 
-    # view astropy.io.fits (pyfits) HDU
+    # view astropy.io.fits HDU
     self.ocs.view_hdu(hdu, name)
 
     # view bare numpy data array 
@@ -630,9 +606,9 @@ If the image data is already in memory, there are some other options:
 When an instrument has a FITS file to archive, it uses the fourth
 interface provided by the framework. This action is also initiated from
 the instrument side by a file transfer request. The OCS responds by
-trying to transfer the file (currently using FTP as the protocol) and
-then responding with a success or error to the instrument. The following
-convenience function illustrates the necessary call: 
+trying to transfer the file (currently using either FTP or SCP as the
+protocol).
+The following convenience function illustrates the necessary call: 
 \begin{verbatim}
 
     def archive_data_file(self, frameid, fitspath):
@@ -682,7 +658,7 @@ such commands will be designed to take the frame id or an initial frame
 id and a count (in the case of generating multiple files). 
 
 In the rare case that your instrument needs to autonomously allocate a
-frame id and archive a file, you can use the getFrame() method to
+frame id and archive a file, you can use the {\tt getFrame()} method to
 allocate a frame. The following example shows how this would be done: 
 \begin{verbatim}
 
@@ -707,7 +683,7 @@ to be archived.
 For many commands, the control flow would work out something like this:
 \begin{itemize}
 \item Command is received from the OCS side, calls the developer's method
-      (e.g. snap, with parameters frameid and itime). 
+      (e.g. {\tt snap()}, with parameters frameid and itime). 
 
 \item Instrument requests and receives status from the OCS, if needed.
 
@@ -722,14 +698,14 @@ you may want to have an asyncronous command that validates its
 parameters and then exits quickly, but which initiates continued
 processing on the instrument side that entails further processing. This
 is often done for long-running commands. For example, suppose we want a
-version of snap() that returns immediately, but initiates an exposure
+version of {\tt snap()} that returns immediately, but initiates an exposure
 operation on the instrument. Later, the instrument will finish the snap
 as previously described and send the finished fits files and update the
 status value to indicate completion of the command. Let's see how we
 might do that. 
 \begin{verbatim}
 
-import SIMCAM.cams.common as common
+from g2cam.util import common_task as common
     ...
     ...
     def snap_async(self, frameid=None, itime=30.0):
@@ -749,7 +725,7 @@ import SIMCAM.cams.common as common
 
 \end{verbatim}
 This command creates a generic function-calling task that will call the
-method snap with no positional arguments and the exact same keyword
+method {\tt snap()} with no positional arguments and the exact same keyword
 arguments that it was called with. Then it initializes and starts the
 task. The function will be called by another thread in the framework's
 thread pool, leaving this thread to exit the current command. 
@@ -764,83 +740,16 @@ return immediately. A second command (e.g. readout) is sent later by the
 OCS to read out the CCD, create the FITS files and archive them. 
 
 There are a few common enough tasks that they have been added as a
-module of common task code that can be used by any G2CAM
-instrument. We'll go over two such examples. 
-
-\subsection{Example: Handling Power Failure}
-The Subaru summit is covered by an extensive UPS system, which is
-designed to protect instruments against power variability. One of the
-requirements of OBCPs is that they monitor the power situation and shut
-down in a timely and orderly fashion when there is a summit power
-outage. The G2CAM framework provides a task for monitoring the power
-and calling a method powerOff() if the power ever goes down. Assuming
-that you implement that method, then it suffices to start up the
-monitoring task when your instrument comes up, and stop it when it goes
-down: 
-\begin{verbatim}
-
-    def start(self, wait=True):
-        super(MYCAM, self).start()
-        ...
-        ...
-
-        # Start task to monitor summit power
-        t = common.PowerCheckTask(self, self.powerOff, self.powerOn,
-                                  interval=10.0)
-        self.power_task = t
-        t.init_and_start(self)
-        ...
-        ...
-
-    def stop(self, wait=True):
-        super(MYCAM, self).stop()
-        
-        ...
-        ...
-        # Terminate power checking task
-        if self.power_task != None:
-            self.power_task.stop()
-
-        self.power_task = None
-
-        ...
-        ...
-
-\end{verbatim}
-This code illustrates two more methods of interest. start is called
-after initialize, and should contain whatever code you need to ``start''
-your instrument. stop is called when the instrument is to be stopped
-(but not terminated). You might then write your powerOff method as: 
-\begin{verbatim}
-
-    def powerOff(self):
-        """
-        This method is called when the summit begins to run on UPS
-        power.  Effect an orderly shutdown.
-        """
-        ...
-        ...
-        
-        self.stop()
-
-        res = os.system('/usr/sbin/shutdown -h 60')
-
-        self.ocs.shutdown(res)
-
-\end{verbatim}
-Here stop() calls your method to stop the things your instrument needs
-to, and shutdown tells the G2CAM framework you wish to terminate the
-program with an exit code of whatever the system shutdown command
-returned. 
+module of common task code that can be used by any g2cam instrument.
 
 \subsection{Example: Sending Periodic Status}
-Our second example is used to illustrate the sending of periodic
-status. The Subaru OCS likes to receive periodic status updates from the
+Our example is used to illustrate the sending of periodic status.
+The Subaru OCS likes to receive periodic status updates from the
 instrument as a kind of heartbeat, to indicate that the instrument is up
 and running. The exact interval is not that important, and instruments
 use anything from 5 seconds to 5 minutes. A reasonable interval might be
-60 seconds. Assuming you have defined a putstatus method as described
-earlier, you can effect that simply by invoking the common task: 
+60 seconds. Assuming you have defined a {\tt putstatus} method as
+described earlier, you can effect that simply by invoking the common task: 
 \begin{verbatim}
 
     def start(self, wait=True):
@@ -852,9 +761,11 @@ earlier, you can effect that simply by invoking the common task:
         t.init_and_start(self)
 
 \end{verbatim}
+The {\tt start()} method is called after initialize, and should contain
+whatever code you need to ``start'' your task. 
 
-The IntervalTask simply runs the given function at the given
-intervals. Stopping it is similar to the power monitoring example. 
+The {\tt IntervalTask} type simply runs the given function at the given
+intervals.
 
 \section{Putting it all together: the MYCAM cam}
 
@@ -863,9 +774,6 @@ Here then, is a ``shell'' of a new camera MYCAM, from top to bottom:
 #
 # MYCAM.py -- shell for a new instrument MYCAM on the G2CAM framework
 #
-#[ Eric Jeschke (eric@naoj.org) --
-#  Last edit: Mon Apr 14 17:18:54 HST 2008
-#]
 #
 """
 This file implements a simulator for a simulated instrument (G2CAM).
@@ -873,8 +781,8 @@ This file implements a simulator for a simulated instrument (G2CAM).
 import sys, os, time
 import threading
 
-from SIMCAM import BASECAM, CamError, CamCommandError
-import SIMCAM.cams.common as common
+from g2cam.Instrument import BASECAM, CamError, CamCommandError
+from g2cam.util import common_task as common
 
 
 class MYCAMError(CamCommandError):
@@ -923,37 +831,21 @@ class MYCAM(BASECAM):
         self.tag = 'mycam'
         self.shares = ['logger', 'ev_quit', 'threadPool']
         
-        # Used to format status buffer (item lengths must match definitions
-        # of status aliases on the OCS side in .../StatusAlias.pro)
-        statfmt = "%(status)-8.8s,%(mode)-8.8s,%(count)8d;"
-
         # Get our 3 letter instrument code and full instrument name
         self.inscode = self.insconfig.getCodeByNumber(self.obcpnum)
         self.insname = self.insconfig.getNameByNumber(self.obcpnum)
         
         self.statusTblName = ('%3.3sS0001' % self.inscode)
 
-        # Prepare the internal to external status mapping
-        d = { 'status': '%s.STATUS',
-              'mode':   '%s.MODE',
-              'count':  '%s.COUNT',
-              'last_frame': '%s.LFRAME',
-            }
-        mapping = {}
-        for key, alias in d.items():
-             mapping[key] = alias % self.inscode
-
         # Register my status table.
         self.mystatus = self.ocs.addStatusTable(self.statusTblName,
-                                                ['status', 'mode', 'count'],
-                                                mapping=mapping)
+                                                ['status', 'mode', 'count'])
         
         # Establish initial status values
         self.mystatus.setvals(status='ALIVE', mode='LOCAL', count=0)
 
         # Handles to periodic tasks
         self.status_task = None
-        self.power_task = None
 
         # Lock for handling mutual exclusion
         self.lock = threading.RLock()
@@ -969,12 +861,6 @@ class MYCAM(BASECAM):
         self.status_task = t
         t.init_and_start(self)
 
-        # Start task to monitor summit power
-        t = common.PowerCheckTask(self, self.powerOff, self.powerOn,
-                                  interval=10.0)
-        self.power_task = t
-        t.init_and_start(self)
-
 
     def stop(self, wait=True):
         super(MYCAM, self).stop()
@@ -984,12 +870,6 @@ class MYCAM(BASECAM):
             self.status_task.stop()
 
         self.status_task = None
-
-        # Terminate power check task
-        if self.power_task != None:
-            self.power_task.stop()
-
-        self.power_task = None
 
         self.logger.info('***** MYCAM STOPPED *****')
 
@@ -1061,7 +941,7 @@ class MYCAM(BASECAM):
         try:
             self.ocs.requestOCSstatus(statusDict)
 
-        except CamError, e:
+        except CamError as e:
             # Some kind of error occurred--bail out
             raise CamCommandError("Failed to obtain status: %s" % str(e))
 
@@ -1070,29 +950,6 @@ class MYCAM(BASECAM):
         self.logger.debug("ra=%s, dec=%s" % (ra, dec))
 
 
-    def powerOff(self):
-        """
-        This method is called when the summit begins to run on UPS
-        power.  Effect an orderly shutdown.
-        """
-        self.stop()
-
-        try:
-            res = os.system('/usr/sbin/shutdown -h 60')
-
-        except OSError, e:
-            self.logger.error("Error issuing shutdown: %s" % str(e))
-
-        self.ocs.shutdown(res)
-
-
-    def powerOn(self):
-        """
-        This method is called when the summit begins to run on line
-        power again.
-        """
-        pass
-    
 #END MYCAM.py
 \end{verbatim}
 
@@ -1104,7 +961,7 @@ of this program to start the instrument might be as follows:
 \begin{verbatim}
 
 $ cd examples
-$ g2cam --cam=MYCAM --gen2host=g2ins1 --loglevel=20 \
+$ g2cam --cam=MYCAM --gen2host=localhost --loglevel=20 \
      --log=mycam.log --stderr 
 
 \end{verbatim}
@@ -1123,6 +980,9 @@ It is very helpful to get a companion piece for testing, which is a
 virtual machine containing a simulator of the summit Gen2 system.  Using
 the simulator you can test your developing g2cam in the same way it
 would actually be commanded at the telescope.
+
+Consult the OCS team at Subaru to get the correct hostname to use for
+connecting to a simulator or summit Gen2 system.
 
 \chapter{Appendix A: Considerations for SOSS Compatibility Mode}
 SOSS Compatibility Mode is a mode of operation of Gen2 that maintains a
