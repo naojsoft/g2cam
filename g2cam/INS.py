@@ -317,15 +317,15 @@ insinfo = {
         'frametypes': 'AQ',
         'description': u'',
         },
-    'OTHER31': {
-        'name': 'OTHER31',
+    'VAMPIRES': {
+        'name': 'VAMPIRES',
         'number': 31,
-        'code': 'O31',
-        'active': False,
+        'code': 'VMP',
+        'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
         'frametypes': 'AQ',
-        'description': u'',
+        'description': u'VAMPIRES (interferometry with differential polarimetry)',
         },
     'OTHER32': {
         'name': 'OTHER32',
