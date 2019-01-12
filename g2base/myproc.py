@@ -195,7 +195,7 @@ class myproc(object):
                                 # Write pid of *our* child to *our* parent, who will
                                 # read it and put it in the myproc object.
                                 tmp_f = os.fdopen(wdfd, 'wb', 0)
-                                tmp_f.write("%d\n" % pid)
+                                tmp_f.write("{:d}\n".format(pid).encode('utf-8'))
                                 tmp_f.close()
 
                                 # reap possible dead child
@@ -213,7 +213,7 @@ class myproc(object):
                                           (os.getpid(), e.errno, e.strerror))
                         try:
                             tmp_f = os.fdopen(wdfd, 'wb', 0)
-                            tmp_f.write("%d\n" % os.getpid())
+                            tmp_f.write("{:d}\n".format(os.getpid()).encode('utf-8'))
                             tmp_f.close()
                         finally:
                             sys.exit(1)
@@ -223,7 +223,7 @@ class myproc(object):
                                           (os.getpid(), str(e)))
                         try:
                             tmp_f = os.fdopen(wdfd, 'wb', 0)
-                            tmp_f.write("%d\n" % os.getpid())
+                            tmp_f.write("{:d}\n".format(os.getpid()).encode('utf-8'))
                             tmp_f.close()
                         finally:
                             sys.exit(1)
@@ -546,7 +546,7 @@ class myproc(object):
         self.__update_status()
 
         if self.stdout:
-            return self.stdout.read()
+            return self.stdout.read().decode()
 
         else:
             raise myprocError("process object was passed an explicit stdout")
@@ -559,7 +559,7 @@ class myproc(object):
         self.__update_status()
 
         if self.stderr:
-            return self.stderr.read()
+            return self.stderr.read().decode()
 
         else:
             raise myprocError("process object was passed an explicit stderr")
