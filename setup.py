@@ -40,6 +40,8 @@ setup(
                 'g2base.astro',
                 'g2base.alarm',
                 'g2base.remoteObjects',
+                'g2base.remoteObjects.pubsubs',
+                'g2base.remoteObjects.packers',
                 ],
     package_data = { #'g2cam.doc': ['manual/*.html'],
                      },

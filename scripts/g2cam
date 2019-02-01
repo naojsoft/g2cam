@@ -17,10 +17,9 @@ import traceback
 # optparse imported below (if needed)
 
 # g2base imports
-from g2base import Task
+from g2base import Task, ssdlog
 from g2base.remoteObjects import remoteObjects as ro
-import g2base.remoteObjects.Monitor as Monitor
-from g2base import ssdlog
+from g2base.remoteObjects import Monitor
 
 # module imports
 from g2cam.Instrument import Instrument
@@ -116,7 +115,7 @@ def main(options, args):
 
             # Configure logger for logging via our monitor
             if options.logmon:
-                monitor.logmon(logger, options.logmon, ['logs'])
+                Monitor.logmon(logger, options.logmon, ['logs'])
 
             logger.info("Starting instrument %s ..." % maincam)
             caminst.start(portbase=options.port)

@@ -13,7 +13,7 @@ import threading
 from g2base import Task
 from g2base.Bunch import Bunch, threadSafeBunch
 from g2base.remoteObjects import remoteObjects as ro
-import g2base.remoteObjects.Monitor as Monitor
+from g2base.remoteObjects import Monitor
 from g2cam.INS import INSdata as INSconfig
 
 

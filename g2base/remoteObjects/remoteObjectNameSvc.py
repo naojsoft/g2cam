@@ -1,4 +1,3 @@
-
 #! /usr/bin/env python
 #
 # remoteObjectNameSvc.py -- remote object name service.
