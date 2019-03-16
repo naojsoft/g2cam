@@ -327,10 +327,10 @@ insinfo = {
         'frametypes': 'AQ',
         'description': u'VAMPIRES (interferometry with differential polarimetry)',
         },
-    'OTHER32': {
-        'name': 'OTHER32',
+    'MEC': {
+        'name': 'MEC',
         'number': 32,
-        'code': '032',
+        'code': 'MEC',
         'active': False,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,

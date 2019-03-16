@@ -656,11 +656,17 @@ class MonitorHandler(logging.Handler):
 
     def process_queue(self, ev_quit):
 
+        if six.PY3:
+            trans_tbl = str.maketrans(dict.fromkeys(self.deletechars))
+
         while not ev_quit.isSet():
             try:
                 msgstr = self.queue.get(block=True, timeout=self.interval)
                 # Strip out bogus characters
-                msgstr = msgstr.translate(None, self.deletechars)
+                if six.PY2:
+                    msgstr = msgstr.translate(None, self.deletechars)
+                else:
+                    msgstr = msgstr.translate(trans_tbl)
                 msglen = len(msgstr) + 1
 
                 # Would message size exceed buffer limit?

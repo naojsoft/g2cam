@@ -24,9 +24,11 @@ from __future__ import print_function
 import sys, os
 import time
 from optparse import OptionParser
+import logging
 
-import SOSS.DotParaFiles.ParaValidator as ParaValidator
-import logging, ssdlog
+from g2base import ssdlog
+
+from SOSS.DotParaFiles import ParaValidator
 
 
 templates = {}
