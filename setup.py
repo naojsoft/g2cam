@@ -36,6 +36,7 @@ setup(
     packages = ['g2cam', 'g2base',
                 # Misc g2cam
                 'g2cam.util',
+                'g2cam.status',
                 # Misc g2base
                 'g2base.astro',
                 'g2base.alarm',
