@@ -85,12 +85,15 @@ class StatusClient(object):
         """
         try:
             # fetch status in store
-            doc = self.mdb_coll.find(self.mdb_doc).next()
+            proj = {key.replace('.', '__'): True
+                    for key in status_dict}
+            doc = self.mdb_coll.find(self.mdb_doc, proj).next()
 
+            # update results for aliases including those not found
             res = {key: doc.get(key.replace('.', '__'), status_not_found)
                    for key in status_dict}
 
-            # convert types that cannot be stored as Python values
+            # convert types that could not be stored as Python values
             # back into Python ones
             res = {key: (val if not isinstance(val, dict)
                    else self._cvt[val['ptype']](val['value']))
