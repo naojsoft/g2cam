@@ -42,12 +42,14 @@ class StatusClient(object):
 
     """
     def __init__(self, host='localhost', port=29013,
-                 username=None, password=None, auth_mech=None):
+                 username=None, password=None,
+                 auth_mech='SCRAM-SHA-256', auth_src='gen2'):
         self.db_host = host
         self.db_port = port
         self.db_user = username
         self.db_pswd = password
         self.db_auth = auth_mech
+        self.db_auth_src = auth_src
 
         # table of conversion functions
         self._cvt = dict(int=int)
@@ -64,6 +66,7 @@ class StatusClient(object):
         kwargs = {}
         if self.db_user is not None:
             kwargs = dict(username=self.db_user, password=self.db_pswd,
+                          authSource=self.db_auth_src,
                           authMechanism=self.db_auth)
         self.mdb_client = MongoClient(self.db_host, self.db_port,
                                       **kwargs)
