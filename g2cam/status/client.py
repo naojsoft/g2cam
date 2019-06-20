@@ -1,7 +1,9 @@
 
 from pymongo import MongoClient
 
-status_not_found = '##NODATA##'
+from g2cam.status include common
+
+status_not_found = common.STATNONE
 
 class StatusClient(object):
     """
