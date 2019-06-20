@@ -1,7 +1,7 @@
 
 from pymongo import MongoClient
 
-from g2cam.status include common
+from g2cam.status import common
 
 status_not_found = common.STATNONE
 
