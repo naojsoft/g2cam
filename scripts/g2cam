@@ -156,65 +156,67 @@ def main(options, args):
 if __name__ == '__main__':
 
     # Parse command line options
-    from optparse import OptionParser
+    import argparse
 
     usage = "usage: %prog [options]"
-    optprs = OptionParser(usage=usage, version=('%%prog %s' % version.version))
+    argprs = argparse.ArgumentParser(usage=usage)
 
-    optprs.add_option("--archivesvc", dest="archivesvc", metavar="NAME",
-                      default='archiver',
-                      help="Lookup archive service by NAME")
-    optprs.add_option("--cam", dest="cam", default="SIMCAM",
-                      help="Use CAM as the instrument", metavar="CAM")
-    optprs.add_option("--debug", dest="debug", default=False, action="store_true",
-                      help="Enter the pdb debugger on main()")
-    optprs.add_option("--display", dest="display", metavar="HOST:N",
-                      help="Use X display on HOST:N")
-    optprs.add_option("--gen2host", dest="gen2host", metavar="HOST",
-                      default='localhost',
-                      help="Use HOST to dynamically locate services")
-    optprs.add_option("--framesvc", dest="framesvc", metavar="NAME",
-                      default='frames',
-                      help="Lookup frame service by NAME")
-    optprs.add_option("--monitorsvc", dest="monitor", metavar="NAME",
-                      default='monitor',
-                      help="Publish events to external monitor NAME")
-    optprs.add_option("--monport", dest="monport", type="int",
-                      default=9080, metavar="NUM",
-                      help="Use port number NUM for monitor connections")
-    optprs.add_option("-n", "--obcpnum", dest="obcpnum", type="int",
-                      default=9,
-                      help="Use NUM as the OBCP number", metavar="NUM")
-    optprs.add_option("--numthreads", dest="numthreads", type="int",
-                      default=200,
-                      help="Use NUM threads in thread pool", metavar="NUM")
-    optprs.add_option("--port", dest="port", type="int",
-                      default=9081, metavar="NUM",
-                      help="Use port number NUM for command connections")
-    optprs.add_option("--profile", dest="profile", action="store_true",
-                      default=False,
-                      help="Run the profiler on main()")
-    optprs.add_option("--seppuku", dest="seppuku", action="store_true",
-                      default=False,
-                      help="Terminate the program forcefully on ^C")
-    optprs.add_option("--statussvc", dest="statussvc", metavar="NAME",
-                      default='status',
-                      help="Lookup status service by NAME")
-    optprs.add_option("--taskmgr", dest="taskmgr", metavar="NAME",
-                      default='taskmgr0',
-                      help="Connect to TaskManager with name NAME")
-    optprs.add_option("--viewersvc", dest="viewersvc", metavar="NAME",
-                      default='fitsview',
-                      help="Lookup viewer service by NAME")
-    ssdlog.addlogopts(optprs)
+    argprs.add_argument("--archivesvc", dest="archivesvc", metavar="NAME",
+                        default='archiver',
+                        help="Lookup archive service by NAME")
+    argprs.add_argument("--cam", dest="cam", default="SIMCAM",
+                        help="Use CAM as the instrument", metavar="CAM")
+    argprs.add_argument("--debug", dest="debug", default=False, action="store_true",
+                        help="Enter the pdb debugger on main()")
+    argprs.add_argument("--display", dest="display", metavar="HOST:N",
+                        help="Use X display on HOST:N")
+    argprs.add_argument("--gen2host", dest="gen2host", metavar="HOST",
+                        default='localhost',
+                        help="Use HOST to dynamically locate services")
+    argprs.add_argument("--framesvc", dest="framesvc", metavar="NAME",
+                        default='frames',
+                        help="Lookup frame service by NAME")
+    argprs.add_argument("--monitorsvc", dest="monitor", metavar="NAME",
+                        default='monitor',
+                        help="Publish events to external monitor NAME")
+    argprs.add_argument("--monport", dest="monport", type=int,
+                        default=9080, metavar="NUM",
+                        help="Use port number NUM for monitor connections")
+    argprs.add_argument("-n", "--obcpnum", dest="obcpnum", type=int,
+                        default=9,
+                        help="Use NUM as the OBCP number", metavar="NUM")
+    argprs.add_argument("--numthreads", dest="numthreads", type=int,
+                        default=200,
+                        help="Use NUM threads in thread pool", metavar="NUM")
+    argprs.add_argument("--port", dest="port", type=int,
+                        default=9081, metavar="NUM",
+                        help="Use port number NUM for command connections")
+    argprs.add_argument("--profile", dest="profile", action="store_true",
+                        default=False,
+                        help="Run the profiler on main()")
+    argprs.add_argument("--seppuku", dest="seppuku", action="store_true",
+                        default=False,
+                        help="Terminate the program forcefully on ^C")
+    argprs.add_argument("--statussvc", dest="statussvc", metavar="NAME",
+                        default='status',
+                        help="Lookup status service by NAME")
+    argprs.add_argument("--taskmgr", dest="taskmgr", metavar="NAME",
+                        default='taskmgr0',
+                        help="Connect to TaskManager with name NAME")
+    argprs.add_argument("--viewersvc", dest="viewersvc", metavar="NAME",
+                        default='fitsview',
+                        help="Lookup viewer service by NAME")
+    argprs.add_argument('-V', '--version', action='version',
+                        version='%(prog)s {}'.format(version.version))
+    ssdlog.addlogopts(argprs)
 
-    (options, args) = optprs.parse_args(sys.argv[1:])
+    (options, args) = argprs.parse_known_args(sys.argv[1:])
 
     if options.display:
         os.environ['DISPLAY'] = options.display
 
     if len(args) != 0:
-        optprs.error("incorrect number of arguments")
+        argprs.error("incorrect number of arguments")
 
 
     # Are we debugging this?

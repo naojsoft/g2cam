@@ -413,34 +413,41 @@ def mklog(logname, queue, level, format=STD_FORMAT):
 
 
 def addlogopts(optprs):
-    optprs.add_option("--log", dest="logfile", metavar="FILE",
-                      help="Write logging output to FILE")
-    optprs.add_option("--logport", dest="logport", metavar="PORT",
-                      type='int',
-                      help="Broadcast logging messages to PORT")
-    optprs.add_option("--logdir", dest="logdir", metavar="DIR",
-                      help="Write logging output to DIR")
-    optprs.add_option("--logbyhostname", dest="logbyhostname", default=False,
-                      action="store_true",
-                      help="Create log files under host name")
-    optprs.add_option("--logbyqueue", dest="logbyqueue", default=False,
-                      action="store_true",
-                      help="Use a queue to speed logging")
-    optprs.add_option("--loglevel", dest="loglevel", metavar="LEVEL",
-                      default='info',
-                      help="Set logging level to LEVEL")
-    optprs.add_option("--logsize", dest="logsize", metavar="NUMBYTES",
-                      type="int", default=max_logsize,
-                      help="Set maximum logging level to NUMBYTES")
-    optprs.add_option("--logbackups", dest="logbackups", metavar="NUM",
-                      type="int", default=max_backups,
-                      help="Set maximum number of backups to NUM")
-    optprs.add_option("--logtime", dest="logtime", metavar="OPTIONS",
-                      help="Set log file time-based rotation options")
-    optprs.add_option("--stderr", dest="logstderr", default=False,
-                      action="store_true",
-                      help="Copy logging also to stderr")
-    optprs.add_option("--logmon", dest="logmon", metavar="NAME",
-                      help="Logging via publish/subscribe using monitor NAME")
+    if hasattr(optprs, 'add_option'):
+        # older optparse
+        add_argument = optprs.add_option
+    else:
+        # newer argparse
+        add_argument = optprs.add_argument
+
+    add_argument("--log", dest="logfile", metavar="FILE",
+                 help="Write logging output to FILE")
+    add_argument("--logport", dest="logport", metavar="PORT",
+                 type=int,
+                 help="Broadcast logging messages to PORT")
+    add_argument("--logdir", dest="logdir", metavar="DIR",
+                 help="Write logging output to DIR")
+    add_argument("--logbyhostname", dest="logbyhostname", default=False,
+                 action="store_true",
+                 help="Create log files under host name")
+    add_argument("--logbyqueue", dest="logbyqueue", default=False,
+                 action="store_true",
+                 help="Use a queue to speed logging")
+    add_argument("--loglevel", dest="loglevel", metavar="LEVEL",
+                 default=20,
+                 help="Set logging level to LEVEL")
+    add_argument("--logsize", dest="logsize", metavar="NUMBYTES",
+                 type=int, default=max_logsize,
+                 help="Set maximum logging level to NUMBYTES")
+    add_argument("--logbackups", dest="logbackups", metavar="NUM",
+                 type=int, default=max_backups,
+                 help="Set maximum number of backups to NUM")
+    add_argument("--logtime", dest="logtime", metavar="OPTIONS",
+                 help="Set log file time-based rotation options")
+    add_argument("--stderr", dest="logstderr", default=False,
+                 action="store_true",
+                 help="Copy logging also to stderr")
+    add_argument("--logmon", dest="logmon", metavar="NAME",
+                 help="Logging via publish/subscribe using monitor NAME")
 
 # END
