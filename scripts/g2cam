@@ -158,8 +158,7 @@ if __name__ == '__main__':
     # Parse command line options
     import argparse
 
-    usage = "usage: %prog [options]"
-    argprs = argparse.ArgumentParser(usage=usage)
+    argprs = argparse.ArgumentParser()
 
     argprs.add_argument("--archivesvc", dest="archivesvc", metavar="NAME",
                         default='archiver',

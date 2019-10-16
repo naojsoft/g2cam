@@ -25,7 +25,7 @@ from g2base.six.moves import input
 from g2base.remoteObjects import remoteObjects as ro
 
 
-version = '20080130.0'
+version = '20191015.0'
 
 # History file for ro_sh
 hist_file = os.path.join(os.environ['HOME'], '.roshrc')
@@ -39,12 +39,12 @@ class Shell(object):
     with a set of remote object proxy objects.
     """
 
-    def __init__(self, connects=[]):
+    def __init__(self, hosts=[], connects=[]):
         """Constructor for a remote shell object."""
         self.options = options
         self.cursor = 'names'
         self.svc = {}
-        self.svc[self.cursor] = ro.getns()
+        self.svc[self.cursor] = ro.getns(hosts=hosts)
 
         for svcname in connects:
             self.rosh_conn(svcname)
@@ -151,8 +151,7 @@ Any other method is considered to be a method call on the remote service.
 
 def main(options, args):
 
-    # Not used yet.
-    if options.rohosts:
+    if options.rohosts is not None:
         rohosts = options.rohosts.split(',')
     else:
         rohosts = None
@@ -165,7 +164,7 @@ def main(options, args):
         svcs = []
 
     # Get a remote object shell instance
-    ro_sh = Shell(connects=svcs)
+    ro_sh = Shell(hosts=rohosts, connects=svcs)
 
     # If there are command line arguments (after stripping options)
     # then treat them as a command and try to execute it.  Otherwise
@@ -201,26 +200,25 @@ def main(options, args):
 if __name__ == '__main__':
 
     # Parse command line options
-    from optparse import OptionParser
+    import argparse
 
-    usage = "usage: %prog [options] command [args]"
-    parser = OptionParser(usage=usage, version=('%%prog %s' % version))
+    argprs = argparse.ArgumentParser(description="Connect to Gen2 remote object services")
 
-    parser.add_option('-y', "--confirm", dest="confirm", default=False,
-                      action="store_true",
-                      help="Confirm certain actions")
-    parser.add_option('-c', "--connect", dest="connect", metavar="NAMES",
-                      help="Connect to service NAMES")
-    parser.add_option("--debug", dest="debug", default=False, action="store_true",
-                      help="Enter the pdb debugger on main()")
-    parser.add_option("--rohosts", dest="rohosts",
-                      help="Override hosts configuration (careful)",
-                      metavar="HOSTS")
-    parser.add_option("--profile", dest="profile", action="store_true",
-                      default=False,
-                      help="Run the profiler on main()")
+    argprs.add_argument('-y', "--confirm", dest="confirm", default=False,
+                        action="store_true",
+                        help="Confirm certain actions")
+    argprs.add_argument('-c', "--connect", dest="connect", metavar="NAMES",
+                        help="Connect to service NAMES")
+    argprs.add_argument("--debug", dest="debug", default=False, action="store_true",
+                        help="Enter the pdb debugger on main()")
+    argprs.add_argument("--rohosts", dest="rohosts", default=None,
+                        help="Override hosts configuration (careful)",
+                        metavar="HOSTS")
+    argprs.add_argument("--profile", dest="profile", action="store_true",
+                        default=False,
+                        help="Run the profiler on main()")
 
-    (options, args) = parser.parse_args(sys.argv[1:])
+    (options, args) = argprs.parse_known_args(sys.argv[1:])
 
 
     # Are we debugging this?

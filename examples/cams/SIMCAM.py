@@ -452,11 +452,13 @@ class SIMCAM(BASECAM):
                            imname=imname)
 
 
-    def view_fits(self, path=None, num_hdu=0, tag=None):
+    def view_fits(self, path=None, num_hdu=0,  chname=None, imname=None,
+                  tag=None):
         """View a FITS file in the OCS viewer
              (sending entire file as buffer, no need for astropy).
         """
-        self.ocs.view_file_as_buffer(path, num_hdu=num_hdu)
+        self.ocs.view_file_as_buffer(path, num_hdu=num_hdu, chname=chname,
+                                     imname=imname)
 
 
     def reqframes(self, num=1, type="A"):
