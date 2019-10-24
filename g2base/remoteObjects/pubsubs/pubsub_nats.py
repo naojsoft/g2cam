@@ -45,7 +45,15 @@ class PubSub(Callback.Callbacks):
 
     def publish(self, channel, envelope, pack_info):
         packet = ro_packer.pack(envelope, pack_info)
+
         self.pubsub.publish(channel, payload=packet)
+
+    def publish_many(self, channels, envelope, pack_info):
+        packet = ro_packer.pack(envelope, pack_info)
+
+        with self.lock:
+            for channel in channels:
+                self.redis.publish(channel, packet)
 
     def subscribe(self, channel):
         if not self.has_callback(channel):

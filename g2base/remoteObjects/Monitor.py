@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 #
 # Monitor.py -- internal status monitoring and synchronization
 #
@@ -46,14 +45,7 @@ Important definitions:
                 to the same channel will receive update and delete calls to
                 reflect the changes to their storage spaces.
 
-Main issues to think about/resolve:
-
-  [X] Deleting data (esp. wrt. bidirectional subscriptions)
-  [ ] Preserving ordering of updates (e.g. use a queue or sequence number)
-       is it even necessary (or desirable)?
-  [ ] Clumping updates together to improve network efficiency (i.e. caching)
 """
-from __future__ import print_function
 import sys, re
 import time
 import string
@@ -68,13 +60,12 @@ else:
 from g2base import Task, Bunch
 from g2base import ssdlog
 from . import NestedBunch
-from . import remoteObjects as ro
+# NOTE: uncomment only one!
 from . import PubSub as ps
+#from . import pub_sub as ps
 
-serviceName = 'monitor'
-
-version = '20161005.0'
-
+ro_OK = 0
+ro_ERROR = 1
 
 class MonitorError(ps.PubSubError):
     """General class for exceptions raised by Monitor.
@@ -113,11 +104,11 @@ def has_keys(valDict, keys):
 
 class Monitor(ps.PubSub):
 
-    def __init__(self, name, logger, dbpath=None, useSync=False,
+    def __init__(self, name, logger, dbpath=None,
                  ev_quit=None, threadPool=None, numthreads=30):
 
         self._store = NestedBunch.NestedBunch(dbpath=dbpath)
-        self.defaultChannels = [name]
+        self.default_channels = [name]
 
         self.lock = threading.RLock()
 
@@ -127,13 +118,26 @@ class Monitor(ps.PubSub):
 
         # Superclass initialization
         super(Monitor, self).__init__(name, logger,
-#                                      ev_quit=None, threadPool=None,
                                       ev_quit=ev_quit, threadPool=threadPool,
                                       numthreads=numthreads)
 
         # number of seconds after which a delivery to a subscriber is
         # considered "late"
         self.update_limit = 10.0
+
+        self.add_callback('update', self.pubsub_cb)
+
+    def pubsub_cb(self, pubsub, envelope):
+        if envelope['mtype'] != 'pubsub':
+            return
+
+        # Avoid cyclic dependencies--don't update ourselves if we
+        # originated this event
+        if self.name in envelope['names']:
+            return ro_OK
+
+        self.monitor_update(envelope['payload'], envelope['names'],
+                            envelope['channels'])
 
     # INTERNAL INTERFACE
 
@@ -182,7 +186,6 @@ class Monitor(ps.PubSub):
         else:
             raise MonitorError("Unrecognized 'msg' field: %s" % (msg))
 
-
     def update(self, path, value, channels):
         """
         Method called by local users of this Monitor to update it
@@ -200,7 +203,6 @@ class Monitor(ps.PubSub):
 
         return self.notify(payload, channels)
 
-
     def delete(self, path, channels):
         """
         Method called by local users of this Monitor to delete items.
@@ -217,15 +219,22 @@ class Monitor(ps.PubSub):
 
         return self.notify(payload, channels)
 
-    ###########################################################
+    ## def subscriber_update_cb(self, value, names, channels, priority):
+    ##     # Avoid cyclic dependencies--don't update ourselves if we
+    ##     # originated this event
+    ##     if self.name in names:
+    ##         return ro.OK
 
+    ##     # update monitor
+    ##     self.monitor_update(value, names, channels)
+
+    ###########################################################
 
     def setvals(self, channels, path, **values):
         """Similar method to update(), but uses keyword arguments as the
         value (a dict) to store.
         """
         return self.update(path, values, channels)
-
 
     def get_nowait(self, pfx, key):
         """Try to get a status value associated with the path formed by
@@ -252,47 +261,41 @@ class Monitor(ps.PubSub):
         with self.lock:
             return self._store.getitem(path)
 
-
     def getitems(self, path):
         """Get the status values associated with this path in the table.
         If successful, then return a dictionary of the items found, otherwise
         return an error code.
         """
-
         with self.lock:
             try:
                 return self._store.getitems(path)
 
             except KeyError:
-                return ro.ERROR
-
+                return ro_ERROR
 
     def getitems_suffixOnly(self, path):
         """Get the status values associated with this path in the table.
         If successful, then return a dictionary of the items found, otherwise
         return an error code.
         """
-
         with self.lock:
             try:
                 return self._store.getitems_suffixOnly(path)
 
             except KeyError:
-                return ro.ERROR
-
+                return ro_ERROR
 
     def getTree(self, path):
         """Get the status values associated with this path in the table.
         If successful, then return a dictionary of the items found, otherwise
         return an error code.
         """
-
         with self.lock:
             try:
                 return self._store.getTree(path)
 
             except KeyError:
-                return ro.ERROR
+                return ro_ERROR
 
 
     def get_node(self, path, create=False):
@@ -301,7 +304,6 @@ class Monitor(ps.PubSub):
         with self.lock:
             return self._store.get_node(path, create=create)
 
-
     def get_dict(self, path):
         """Same as get_node, but returns a dict."""
         with self.lock:
@@ -309,25 +311,21 @@ class Monitor(ps.PubSub):
             # TODO: optomize this
             return eval(repr(b))
 
-
     def keys(self, path):
         with self.lock:
             try:
                 return list(self._store.keys(path=path))
 
             except KeyError:
-                return ro.ERROR
-
+                return ro_ERROR
 
     def has_key(self, path):
         with self.lock:
             return path in self._store
 
-
     def has_val(self, path, key):
         with self.lock:
             return '%s.%s' % (path, key) in self._store
-
 
     def isLeaf(self, path):
         with self.lock:
@@ -335,8 +333,7 @@ class Monitor(ps.PubSub):
                 return self._store.isLeaf(path)
 
             except KeyError:
-                return ro.ERROR
-
+                return ro_ERROR
 
     def logmon(self, logger, svcname, channels):
         try:
@@ -358,14 +355,8 @@ class Monitor(ps.PubSub):
             logger.error("Error attaching monitor to logging handler: %s" % (
                 str(e)))
 
-##     def setvals(self, channels, path, **values):
-##         if not channels:
-##             channels = self.defaultChannels
 
-##         return self.update(path, values, channels)
-
-
-    # Get deprecate these item interface methods if we remove dict-style
+    # Deprecate these item interface methods if we remove dict-style
     # uses of these objects
 
     def __getitem__(self, path):
@@ -373,18 +364,15 @@ class Monitor(ps.PubSub):
         """
         return self.getitem(path)
 
-
     def __setitem__(self, path, value):
         """Called for dictionary style access with assignment.
         """
-        return self.update(path, value, self.defaultChannels)
-
+        return self.update(path, value, self.default_channels)
 
     def __delitem__(self, path):
         """Deletes key/value pairs from object.
         """
-        return self.delete(path, self.defaultChannels)
-
+        return self.delete(path, self.default_channels)
 
     def __contains__(self, path):
         """Called for dictionary style key test.
@@ -399,7 +387,7 @@ class Minimon(Monitor):
     TODO: how many of these methods can we deprecate
     """
 
-    def __init__(self, name, logger, dbpath=None, useSync=False,
+    def __init__(self, name, logger, dbpath=None,
                  ev_quit=None, threadPool=None, numthreads=30):
 
         # dictionary of lists of condition variables for synchronization
@@ -425,11 +413,8 @@ class Minimon(Monitor):
                 d = self.getitem_any([path], timeout=timeout)
                 return d.values()[0]
 
-
     def get_wait(self, pfx, key, timeout=None):
-
         return self.getitem('%s.%s' % (pfx, key), timeout=timeout)
-
 
     def release(self, path, has_value=False):
         with self.lock:
@@ -450,14 +435,14 @@ class Minimon(Monitor):
             except KeyError:
                 pass
 
-            return ro.OK
+            return ro_OK
 
     def releaseAll(self, has_value=False):
         with self.lock:
             for path in list(self.syncd.keys()):
                 self.release(path, has_value=has_value)
 
-            return ro.OK
+            return ro_OK
 
     def _getitems_list(self, tags):
         res = {}
@@ -471,7 +456,6 @@ class Minimon(Monitor):
                 continue
 
         return res
-
 
     def getitem_any(self, tags, timeout=None, eventlist=None):
 
@@ -534,7 +518,6 @@ class Minimon(Monitor):
 
             raise EventError("Awakened without finding a value!")
 
-
     def getitem_all(self, tags, timeout=None, eventlist=None):
 
         start_time = time.time()
@@ -568,7 +551,6 @@ class Minimon(Monitor):
 
         self.logger.debug("res = %s" % (str(res)))
         return res
-
 
     def do_update(self, path, value):
 
@@ -720,92 +702,6 @@ def addlogopts(optprs):
                       help="Register my monitor using PORT", metavar="PORT")
     optprs.add_option("--monauth", dest="monauth", metavar="USER:PASS",
                       help="Authenticate to monitor using USER:PASS")
-
-
-def main(options, args):
-
-    # Create top level logger.
-    logger = ssdlog.make_logger(options.svcname, options)
-
-    # Initialize remote objects subsystem.
-    try:
-        ro.init()
-
-    except ro.remoteObjectError as e:
-        logger.error("Error initializing remote objects subsystem: %s" % str(e))
-        sys.exit(1)
-
-    ev_quit = threading.Event()
-    usethread=False
-
-    # Create our monitor and start it
-    monitor = Monitor(options.svcname, logger,
-                      numthreads=options.numthreads)
-    #config_monitor(monitor)
-
-    logger.info("Starting monitor...")
-    monitor.start()
-    try:
-        try:
-            monitor.start_server(port=options.port, wait=True,
-                                 usethread=usethread)
-
-        except KeyboardInterrupt:
-            logger.error("Caught keyboard interrupt!")
-
-    finally:
-        logger.info("Stopping monitor...")
-        if usethread:
-            monitor.stop_server(wait=True)
-        monitor.stop()
-
-
-if __name__ == '__main__':
-
-    # Parse command line options with nifty new optparse module
-    from optparse import OptionParser
-
-    usage = "usage: %prog [options]"
-    optprs = OptionParser(usage=usage, version=('%%prog %s' % version))
-
-    optprs.add_option("--db", dest="dbpath", metavar="FILE",
-                      help="Use FILE as the monitor database")
-    optprs.add_option("--debug", dest="debug", default=False, action="store_true",
-                      help="Enter the pdb debugger on main()")
-    optprs.add_option("--numthreads", dest="numthreads", type="int",
-                      default=30,
-                      help="Use NUM threads", metavar="NUM")
-    optprs.add_option("--port", dest="port", type="int", default=None,
-                      help="Register using PORT", metavar="PORT")
-    optprs.add_option("--profile", dest="profile", action="store_true",
-                      default=False,
-                      help="Run the profiler on main()")
-    optprs.add_option("--svcname", dest="svcname", metavar="NAME",
-                      default=serviceName,
-                      help="Register using NAME as service name")
-    ssdlog.addlogopts(optprs)
-
-    (options, args) = optprs.parse_args(sys.argv[1:])
-
-    if len(args) != 0:
-        optprs.error("incorrect number of arguments")
-
-
-    # Are we debugging this?
-    if options.debug:
-        import pdb
-
-        pdb.run('main(options, args)')
-
-    # Are we profiling this?
-    elif options.profile:
-        import profile
-
-        print("%s profile:" % sys.argv[0])
-        profile.run('main(options, args)')
-
-    else:
-        main(options, args)
 
 
 # END

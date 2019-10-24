@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 #
 # PubSub.py -- Subaru Remote Objects Publish/Subscribe module
 #
@@ -14,8 +13,6 @@ Main issues to think about/resolve:
         e.g. TaskManager needs to pull combined feed
   [ ] Permissions/access issues
 """
-from __future__ import print_function
-
 import sys, os, time
 import threading
 from collections import deque as Deque
@@ -25,12 +22,10 @@ if six.PY2:
 else:
     import queue as Queue
 
-from g2base import Bunch, Task, ssdlog
+from g2base import Bunch, Task, Callback, ssdlog
 from g2base.remoteObjects import remoteObjects as ro
 from g2base.remoteObjects import Timer
 from g2base.remoteObjects.ro_config import *
-
-version = '20160330.0'
 
 # Subscriber options
 TWO_WAY = 'bidirectional'
@@ -42,7 +37,7 @@ class PubSubError(Exception):
     """
     pass
 
-class PubSub(object):
+class PubSub(Callback.Callbacks):
     """Base class for publish/subscribe entities.
     """
 
@@ -136,6 +131,7 @@ class PubSub(object):
 
         self.cb_subscr_cnt = 0
 
+        self.enable_callback('update')
 
     def get_threadPool(self):
         return self.threadPool
@@ -717,12 +713,18 @@ class PubSub(object):
         return (list(subscribers), list(all_channels))
 
 
-    def _monitor_update(self, value, names, channels, priority):
-        # update monitor
-        self.monitor_update(value, names, channels)
+    def _monitor_update(self, value, names, channels):
+        # update monitor, if one is attached
+        if self.num_callbacks('update') > 0:
+            # fake a pubsub delivery envelope that is like the one used
+            # in the newer remote objects pubsubs
+            envelope = dict(mtype='pubsub', names=names, channels=channels,
+                            timestamp=time.time(), payload=value,
+                            priority=0)
+            self.make_callback('update', envelope)
 
-        # if successful, update our subscribers
-        self._named_update(value, names, channels, priority=priority)
+        # now update our subscribers, if any
+        self._named_update(value, names, channels, priority=0)
 
 
     def remote_update(self, value, names, channels):
@@ -734,18 +736,9 @@ class PubSub(object):
         if self.name in names:
             return ro.OK
 
-        # Monitor update--this can be removed once Monitor is
-        # no longer a subclass of PubSub
-        if hasattr(self, 'monitor_update'):
-            task = Task.FuncTask(self._monitor_update,
-                                 (value, names, channels, 0),
-                                 {}, logger=self.logger)
-        else:
-            task = Task.FuncTask(self._named_update,
-                                 (value, names, channels),
-                                 {'priority': 0},
-                                 logger=self.logger)
-
+        task = Task.FuncTask(self._monitor_update,
+                             (value, names, channels),
+                             {}, logger=self.logger)
         task.init_and_start(self)
 
         return ro.OK
@@ -1194,59 +1187,4 @@ def main(options, args):
             pubsub.stop_server(wait=True)
         pubsub.stop()
 
-
-if __name__ == '__main__':
-
-    # Parse command line options with nifty new optparse module
-    from optparse import OptionParser
-
-    usage = "usage: %prog [options]"
-    optprs = OptionParser(usage=usage, version=('%%prog %s' % version))
-
-    optprs.add_option("--config", dest="config",
-                      metavar="FILE",
-                      help="Use configuration FILE for setup")
-    optprs.add_option("--debug", dest="debug", default=False,
-                      action="store_true",
-                      help="Enter the pdb debugger on main()")
-    optprs.add_option("--outlimit", dest="outlimit", type="int", default=6,
-                      help="Limit outgoing connections to NUM", metavar="NUM")
-    optprs.add_option("--inlimit", dest="inlimit", type="int", default=20,
-                      help="Limit incoming connections to NUM", metavar="NUM")
-    optprs.add_option("--numthreads", dest="numthreads", type="int",
-                      default=100,
-                      help="Use NUM threads", metavar="NUM")
-    optprs.add_option("--port", dest="port", type="int", default=None,
-                      help="Register using PORT", metavar="PORT")
-    optprs.add_option("--profile", dest="profile", action="store_true",
-                      default=False,
-                      help="Run the profiler on main()")
-    optprs.add_option("--svcname", dest="svcname", metavar="NAME",
-                      default='pubsub',
-                      help="Register using NAME as service name")
-    ssdlog.addlogopts(optprs)
-
-    (options, args) = optprs.parse_args(sys.argv[1:])
-
-    if len(args) != 0:
-        optprs.error("incorrect number of arguments")
-
-
-    # Are we debugging this?
-    if options.debug:
-        import pdb
-
-        pdb.run('main(options, args)')
-
-    # Are we profiling this?
-    elif options.profile:
-        import profile
-
-        print("%s profile:" % sys.argv[0])
-        profile.run('main(options, args)')
-
-    else:
-        main(options, args)
-
-
-# END
+#END

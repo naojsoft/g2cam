@@ -2,9 +2,7 @@
 # pub_sub.py -- Subaru Remote Objects Publish/Subscribe module
 #
 
-"""
-"""
-import sys, os, time
+import time
 import threading
 
 from g2base import six
@@ -13,7 +11,9 @@ if six.PY2:
 else:
     import queue as Queue
 
-from g2base import Bunch, Task, Callback, ssdlog
+from g2base import Bunch, Task, Callback
+from g2base.remoteObjects import ps_cfg
+
 from .ro_pubsub import PubSub as InternalPS
 
 ro_OK = 0
@@ -77,10 +77,10 @@ class PubSub(Callback.Callbacks):
         self._remote_sub_info = set([])
 
         # Timeout for remote updates
-        self.remote_timeout = 10.0
+        self.remote_timeout = 30.0
 
         # Interval between remote subscription updates
-        self.update_interval = 10.0
+        self.update_interval = 60.0
 
         # warn us when the outgoing queue size exceeds this
         self.qlen_warn_limit = 100
@@ -88,7 +88,13 @@ class PubSub(Callback.Callbacks):
         self.qlen_warn_interval = 10.0
 
         self.pubsub = InternalPS(logger=self.logger)
+        # TODO: allow auto configuration of optimal packer for transport
         self.pack_info = Bunch.Bunch(ptype='msgpack')
+
+        # set up the channel map
+        self.chmap = ChannelMap()
+        ps_cfg.setup(self.chmap)
+        self.chmap.recalc_constituents()
 
         self.enable_callback('update')
 
@@ -108,12 +114,14 @@ class PubSub(Callback.Callbacks):
                 last_warn = cur_time
 
             try:
-                priority, msg = self.outqueue.get(True, 0.25)
-
-                self.make_callback('update', msg)
+                #priority, msg = self.outqueue.get(True, 0.25)
+                wrapper = self.outqueue.get(True, 0.25)
+                self.logger.debug("envelope: {}".format(wrapper.envelope))
 
             except Queue.Empty:
                 continue
+
+            self.make_callback('update', wrapper.envelope)
 
     def get_qlen(self):
         return self.outqueue.qsize()
@@ -139,11 +147,11 @@ class PubSub(Callback.Callbacks):
             # small increments so we can be responsive to changes to
             # ev_quit
             cur_time = time.time()
-            self.logger.debug("Waiting interval, remaining: %f sec" % \
-                              (time_end - cur_time))
+            self.logger.debug("Waiting interval, remaining: %f sec" % (
+                time_end - cur_time))
 
-            while (cur_time < time_end) and (not self.ev_quit.isSet()):
-                time.sleep(0)
+            while (cur_time < time_end) and (not self.ev_quit.is_set()):
+                time.sleep(0.0)
                 self.ev_quit.wait(min(0.1, time_end - cur_time))
                 cur_time = time.time()
 
@@ -170,7 +178,7 @@ class PubSub(Callback.Callbacks):
         # NOTE: this decouples the thread in internal pubsub from callbacks
         # that take time to process it, and also makes sure that priority
         # messages are handled before others
-        self.outqueue.put((envelope['priority'], envelope))
+        self.outqueue.put(EnvelopeWrapper(envelope))
 
     ######## PUBLIC METHODS ########
 
@@ -197,9 +205,8 @@ class PubSub(Callback.Callbacks):
         """
         Method called by local users of this PubSub to update it
         with new and changed items.
-            value
-            channels    one (a string) or more (a list) of channel names to
-                        which to send the specified update
+            value       usually a dict, but can be any marshallable value
+            channels    a list of channel names to send the specified update
         """
         names = [self.name]
         # form a 'pubsub' message
@@ -210,7 +217,8 @@ class PubSub(Callback.Callbacks):
         # NOTE: could create tasks in the threadpool to publish the
         # item, if the publishing becomes a bottleneck
         for channel in channels:
-            self.pubsub.publish(channel, envelope, self.pack_info)
+            channel_list = self.chmap.constituents[channel]
+            self.pubsub.publish_many(channel_list, envelope, self.pack_info)
 
     def subscribe(self, subscriber, channels, options):
         # a no-op in this version
@@ -299,6 +307,18 @@ class PubSub(Callback.Callbacks):
         self.pubsub.stop()
 
 
+class EnvelopeWrapper(object):
+    """Simple class to wrap pubsub envelopes in so that they can be
+    inserted and retrieved from a Queue.PriorityQueue.
+    """
+
+    def __init__(self, envelope):
+        self.envelope = envelope
+
+    def __lt__(self, other):
+        return self.envelope['priority'] < other.envelope['priority']
+
+
 class ChannelMap(object):
 
     def __init__(self):
@@ -309,6 +329,9 @@ class ChannelMap(object):
     def add_channel(self, channel):
         self.channels.add(channel)
 
+    def add_channels(self, channels):
+        self.channels = self.channels.union(set(channels))
+
     def aggregate(self, channel, channels):
         """
         Establish a new aggregate channel (channel) based on a group of
@@ -317,14 +340,14 @@ class ChannelMap(object):
         """
         self.aggregates[channel] = set(channels)
 
-        self.recalc_consitutents()
+        #self.recalc_consitutents()
 
-    def get_constituents(self, channel):
+    def calc_constituents(self, channel):
         """
         Returns the set of subaggregate and nonaggregate channels
         associated with the channel.
         """
-        def _get_constituents(channel, visited):
+        def _calc_constituents(channel, visited):
             res = set([])
 
             # Only process this if it is an aggregate channel and we haven't
@@ -340,17 +363,18 @@ class ChannelMap(object):
             for sub_ch in self.aggregates[channel]:
                 res.add(sub_ch)
                 if sub_ch in self.aggregates:
-                    res.update(_get_constituents(sub_ch, visited))
+                    res.update(_calc_constituents(sub_ch, visited))
 
             return res
 
-        res = _get_constituents(channel, set([]))
+        res = _calc_constituents(channel, set([]))
         res.add(channel)
         return res
 
     def recalc_constituents(self):
         self.constituents = dict()
         for channel in self.channels:
-            self.constituents[channel] = self.get_constituents(channel)
+            self.constituents[channel] = self.calc_constituents(channel)
+
 
 # END

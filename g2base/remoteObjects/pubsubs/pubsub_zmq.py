@@ -13,6 +13,11 @@ hub defined in this file.  Like so:
 import sys
 import threading
 import time
+from g2base import six
+if six.PY2:
+    import Queue
+else:
+    import queue as Queue
 
 import zmq
 
@@ -35,6 +40,7 @@ class PubSub(Callback.Callbacks):
         self.pub = None
         self.sub = None
         self.timeout = 0.2
+        self.queue = Queue.Queue()
 
         self.reconnect()
 
@@ -51,11 +57,10 @@ class PubSub(Callback.Callbacks):
         # poller makes us take a big hit in efficiency
         # better to use the time out feature
         self.sub.setsockopt(zmq.RCVTIMEO, 1000)
-        # self.poller = zmq.Poller()
-        # self.poller.register(self.sub, zmq.POLLIN)
+        #self.poller = zmq.Poller()
+        #self.poller.register(self.sub, zmq.POLLIN)
 
-    def publish(self, channel, envelope, pack_info):
-        packet = ro_packer.pack(envelope, pack_info)
+    def _pub(self, channel, packet):
         try:
             #self.pub.send_unicode("%s %s" % (channel, message), zmq.NOBLOCK)
             #self.pub.send_unicode("%s %s" % (channel, message))
@@ -68,22 +73,43 @@ class PubSub(Callback.Callbacks):
             print('AGAIN error')
             pass
 
+    def publish(self, channel, envelope, pack_info):
+        packet = ro_packer.pack(envelope, pack_info)
+
+        thunk = lambda: self._pub(channel, packet)
+        self.queue.put(thunk)
+
+    def publish_many(self, channels, envelope, pack_info):
+        packet = ro_packer.pack(envelope, pack_info)
+
+        for channel in channels:
+            thunk = lambda: self._pub(channel, packet)
+            self.queue.put(thunk)
+
     def flush(self):
         #self.pub.close()
         pass
+
+    def _sub(self, channel):
+        # ZMQ doesn't like unicode
+        channel_b = channel.encode()
+        self.sub.setsockopt(zmq.SUBSCRIBE, channel_b)
 
     def subscribe(self, channel):
         if not self.has_callback(channel):
             self.enable_callback(channel)
 
-        # ZMQ doesn't like unicode
-        channel_b = channel.encode()
-        self.sub.setsockopt(zmq.SUBSCRIBE, channel_b)
+        thunk = lambda: self._sub(channel)
+        self.queue.put(thunk)
 
-    def unsubscribe(self, channel):
+    def _unsub(self, channel):
         # ZMQ doesn't like unicode
         channel_b = channel.encode()
         self.sub.setsockopt(zmq.UNSUBSCRIBE, channel_b)
+
+    def unsubscribe(self, channel):
+        thunk = lambda: self._unsub(channel)
+        self.queue.put(thunk)
 
     def start(self, ev_quit=None):
         if ev_quit is None:
@@ -102,7 +128,7 @@ class PubSub(Callback.Callbacks):
     ##         channel, _, data = self.sub.recv().partition(b' ')
     ##         yield {"type": "message", "channel": channel, "data": data}
 
-    def get_message(self, timeout=None):
+    def get_message1(self, timeout=None):
         if timeout is None:
             timeout = self.timeout
 
@@ -136,9 +162,25 @@ class PubSub(Callback.Callbacks):
             pkt = {"type": "message", "channel": channel, "data": data}
             return pkt
 
+    def process_thunk(self):
+        try:
+            try:
+                thunk = self.queue.get(block=False)
+
+            except Queue.Empty:
+                return
+
+            thunk()
+
+        except Exception as e:
+            if self.logger is not None:
+                self.logger.error("error in processing thunk: {}".format(e),
+                                  exc_info=True)
+                return
+
     def listen(self):
         #print('waiting for message')
-        pkt = self.get_message(timeout=self.timeout)
+        pkt = self.get_message1(timeout=self.timeout)
         if pkt is None:
             # timeout
             #print('timeout')
@@ -168,6 +210,9 @@ class PubSub(Callback.Callbacks):
     def subscribe_loop(self, ev_quit):
         self.ev_quit = ev_quit
         while not ev_quit.is_set():
+
+            self.process_thunk()
+
             self.listen()
 
 

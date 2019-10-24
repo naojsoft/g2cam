@@ -8,6 +8,11 @@ In order to run this pubsub transport, you need to have the python
 """
 import threading
 import time
+from g2base import six
+if six.PY2:
+    import Queue
+else:
+    import queue as Queue
 
 import redis
 
@@ -15,50 +20,6 @@ from g2base import Callback
 
 from g2base.remoteObjects import ro_packer
 
-
-class BufferedRedis(redis.Redis):
-    """
-    Wrapper for Redis pub-sub that uses a pipeline internally
-    for buffering message publishing. A thread is run that
-    periodically flushes the buffer pipeline.
-    """
-
-    def __init__(self, *args, **kwargs):
-        super(BufferedRedis, self).__init__(*args, **kwargs)
-
-        self.flush_interval = 0.001
-        self.flush_size = 1000
-
-        self.buffer = self.pipeline()
-        self.lock = threading.Lock()
-        t = threading.Thread(target=self.flusher, args=[])
-        t.start()
-
-    def flush(self):
-        """
-        Manually flushes the buffer pipeline.
-        """
-        with self.lock:
-            self.buffer.execute()
-
-    def flusher(self):
-        """
-        Thread that periodically flushes the buffer pipeline.
-        """
-        while True:
-            time.sleep(self.flush_interval)
-            with self.lock:
-                self.buffer.execute()
-
-    def publish(self, *args, **kwargs):
-        """
-        Overrides publish to use the buffer pipeline, flushing
-        it when the defined buffer size is reached.
-        """
-        with self.lock:
-            self.buffer.publish(*args, **kwargs)
-            if len(self.buffer.command_stack) >= self.flush_size:
-                self.buffer.execute()
 
 class PubSub(Callback.Callbacks):
 
@@ -74,21 +35,27 @@ class PubSub(Callback.Callbacks):
         self.redis = None
         self.pubsub = None
         self.timeout = 0.2
-
-        self.reconnect()
+        self.queue = Queue.Queue()
 
     def reconnect(self):
         self.redis = redis.StrictRedis(host=self.host, port=self.port,
                                        db=self.db)
         ## self.redis = BufferedRedis(host=self.host, port=self.port,
         ##                            db=self.db)
-        self.pubsub = self.redis.pubsub()
+        self.pubsub = self.redis.pubsub(ignore_subscribe_messages=True)
         self.pubsub.subscribe('admin')
 
     def publish(self, channel, envelope, pack_info):
         packet = ro_packer.pack(envelope, pack_info)
-
+        # redis client is supposedly thread-safe, but not pubsub
         self.redis.publish(channel, packet)
+
+    def publish_many(self, channels, envelope, pack_info):
+        packet = ro_packer.pack(envelope, pack_info)
+
+        for channel in channels:
+            # redis client is supposedly thread-safe, but not pubsub
+            self.redis.publish(channel, packet)
 
     def flush(self):
         if hasattr(self.redis, 'flush'):
@@ -99,10 +66,12 @@ class PubSub(Callback.Callbacks):
         if not self.has_callback(channel):
             self.enable_callback(channel)
 
-        self.pubsub.subscribe(channel)
+        thunk = lambda: self.pubsub.subscribe(channel)
+        self.queue.put(thunk)
 
     def unsubscribe(self, channel):
-        self.pubsub.unsubscribe(channel)
+        thunk = lambda: self.pubsub.unsubscribe(channel)
+        self.queue.put(thunk)
 
     def start(self, ev_quit=None):
         if ev_quit is None:
@@ -116,16 +85,52 @@ class PubSub(Callback.Callbacks):
     def stop(self):
         self.ev_quit.set()
 
-    def listen(self):
-        pkt = self.pubsub.get_message(timeout=self.timeout)
-        if pkt is None:
-            # timeout
-            return
+    def process_thunk(self):
+        try:
+            try:
+                thunk = self.queue.get(block=False)
 
-        # this is Redis API--packet will have type, channel and
-        # data fields.
-        if pkt['type'] != "message":
-            return
+            except Queue.Empty:
+                return
+
+            thunk()
+
+        except Exception as e:
+            if self.logger is not None:
+                self.logger.error("error in processing thunk: {}".format(e),
+                                  exc_info=True)
+                return
+
+    def listen(self):
+        pkt = None
+        try:
+            try:
+                pkt = self.pubsub.get_message(timeout=self.timeout)
+                #self.logger.error("NORMAL timeout")
+                if pkt is None:
+                    # timeout
+                    return
+            except redis.exceptions.TimeoutError:
+                self.logger.error("ABNORMAL timeout")
+                # timeout
+                return
+
+            except redis.exceptions.ConnectionError:
+                # TODO: handle server disconnection
+                self.logger.warning("server disconnected us")
+                return
+
+            # this is Redis API--packet will have type, channel and
+            # data fields.
+            if pkt['type'] != "message":
+                return
+
+        except Exception as e:
+            if self.logger is not None:
+                self.logger.error("error in getting message: {}".format(e),
+                                  exc_info=True)
+                self.logger.error("pkt: {}".format(str(pkt)))
+                return
 
         channel = pkt['channel']
         channel = channel.decode('utf-8')
@@ -135,9 +140,9 @@ class PubSub(Callback.Callbacks):
 
         except Exception as e:
             if self.logger is not None:
-                self.logger.error("Error unpacking payload: %s" % (str(e)))
+                self.logger.error("Error unpacking payload: {}".format(e),
+                                  exc_info=True)
             raise
-            # need traceback
 
         # this will catch its own exceptions so that we don't
         # kill the subscribe loop
@@ -145,7 +150,11 @@ class PubSub(Callback.Callbacks):
 
     def subscribe_loop(self, ev_quit):
         self.ev_quit = ev_quit
-        while not ev_quit.is_set():
-            self.listen()
 
-# END
+        self.reconnect()
+
+        while not ev_quit.is_set():
+
+            self.process_thunk()
+
+            self.listen()

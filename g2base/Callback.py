@@ -3,7 +3,6 @@
 #
 # Eric Jeschke (eric@naoj.org)
 #
-# Copyright (c) Eric R. Jeschke.  All rights reserved.
 # This is open-source software licensed under a BSD license.
 # Please see the file LICENSE.txt for details.
 #
@@ -27,6 +26,9 @@ class Callbacks(object):
     def has_callback(self, name):
         #return self.cb.has_key(name) and (len(self.cb[name]) > 0)
         return name in self.cb
+
+    def num_callbacks(self, name):
+        return len(self.cb[name])
 
     def delete_callback(self, name):
         del self.cb[name]
