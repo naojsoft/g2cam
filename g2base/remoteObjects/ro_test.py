@@ -1,11 +1,3 @@
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
 #!/usr/bin/env python
 #
 # Remote objects tests
@@ -36,6 +28,7 @@ class TestRO(ro.remoteObjectServer):
                                        threaded_server=threaded,
                                        usethread=usethread,
                                        authDict=authDict,
+                                       encoding=options.packer,
                                        secure=options.secure,
                                        transport=options.transport,
                                        threadPool=threadPool,
@@ -58,7 +51,7 @@ def client2(options, logger):
     datafile = None
     if options.datafile:
         datafile = open(options.datafile, 'a')
-            
+
     auth = None
     if options.auth:
         auth = options.auth.split(':')
@@ -66,7 +59,6 @@ def client2(options, logger):
     # Get handle to server
     testro = ro.remoteObjectProxy(options.svcname, auth=auth,
                                   logger=logger,
-                                  secure=options.secure,
                                   timeout=2.0)
 
     time1 = time.time()
@@ -105,7 +97,7 @@ def main(options, args):
         threadPool.startall(wait=True)
 
         testro = TestRO(options, logger, threadPool=threadPool,
-                        threaded=True, usethread=False)
+                        threaded=options.threaded, usethread=False)
 
         print("Starting TestRO service...")
         try:
@@ -125,7 +117,7 @@ def main(options, args):
 
     print("Program exit.")
     sys.exit(0)
-            
+
 if __name__ == '__main__':
 
     # Parse command line options with nifty new optparse module
@@ -133,7 +125,7 @@ if __name__ == '__main__':
 
     usage = "usage: %prog [options]"
     parser = OptionParser(usage=usage, version=('%%prog'))
-    
+
     parser.add_option("--action", dest="action",
                       help="Action is server|calls")
     parser.add_option("--auth", dest="auth",
@@ -148,6 +140,8 @@ if __name__ == '__main__':
     parser.add_option("--debug", dest="debug", default=False,
                       action="store_true",
                       help="Enter the pdb debugger on main()")
+    parser.add_option("--packer", dest="packer", default=None,
+                      help="Use the packer NAME", metavar="NAME")
     parser.add_option("--numthreads", dest="numthreads", type="int",
                       default=10,
                       help="Use NUM threads in thread pool", metavar="NUM")
@@ -158,10 +152,13 @@ if __name__ == '__main__':
                       help="Run the profiler on main()")
     parser.add_option("--secure", dest="secure", action="store_true",
                       default=False,
-                      help="Use SSL encryption")
+                      help="Use encryption")
     parser.add_option("--svcname", dest="svcname",
                       default='ro_test',
                       help="Register using service NAME", metavar="NAME")
+    parser.add_option("--threaded", dest="threaded", default=False,
+                      action="store_true",
+                      help="Use a threaded server")
     parser.add_option("--transport", dest="transport", metavar='PROTOCOL',
                       default=ro.default_transport,
                       help="Choose PROTOCOL for transport")
@@ -184,10 +181,5 @@ if __name__ == '__main__':
 
     else:
         main(options, args)
-       
+
 #END
-
-
-    
-
-    

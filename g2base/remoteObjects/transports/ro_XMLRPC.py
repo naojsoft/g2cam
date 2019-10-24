@@ -37,35 +37,36 @@ except ImportError:
 
 from g2base import Task
 
+from ..exceptions import (RemoteObjectsError, TimeoutError,
+                          AuthenticationError, ServiceUnavailableError)
+
 version = '20160912.0'
 
 # Timeout value for XML-RPC sockets
 socket_timeout = 0.25
 
 
-class Error(Exception):
+class Error(RemoteObjectsError):
     """Class of errors raised in this module."""
     pass
-
-class socketTimeout(Error):
-    """Raised when a socket times out waiting for a client."""
-    pass
-
 
 #
 # ------------------ CONVENIENCE FUNCTIONS ------------------
 #
 class ServiceProxy(object):
 
-    def __init__(self, url):
+    def __init__(self, url, name):
         self.url = url
+        self.name = name
         # transport = MyTransport()
         #self.proxy = ServerProxy(self.url, transport=transport,
         #                         allow_none=True)
         #self.proxy = ServerProxy(self.url, allow_none=True)
         #self.logger = logger
 
-    def call(self, attrname, args, kwdargs):
+    def call(self, attrname, args, kwdargs, timeout=None):
+
+        # TODO: timeout is ignored, for now...
 
         #transport = MyTransport()
         #proxy = ServerProxy(self.url, transport=transport,
@@ -74,11 +75,14 @@ class ServiceProxy(object):
         method = eval('proxy.%s' % attrname)
         return method(*args, **kwdargs)
 
-def make_serviceProxy(host, port, auth=None, secure=False, timeout=None):
+def make_serviceProxy(name, host, port, auth=None, encoding='xml',
+                      secure=False, logger=None):
     """
     Convenience function to make a XML-RPC service proxy.
     'auth' is None for no authentication, otherwise (user, passwd)
     'secure' should be True if you want to use SSL, otherwise vanilla http.
+
+    NOTE: encoding is ignored for this transport
     """
     if auth is not None:
         user, passwd = auth
@@ -95,11 +99,11 @@ def make_serviceProxy(host, port, auth=None, secure=False, timeout=None):
             else:
                 url = 'http://%s:%d/' % (host, port)
 
-        return ServiceProxy(url)
+        return ServiceProxy(url, name)
 
     except Exception as e:
-        raise Error("Can't create proxy to service found on '%s:%d': %s" % (
-            host, port, str(e)))
+        raise ServiceUnavailableError("Can't create proxy to service '%s' found on '%s:%d': %s" % (
+            name, host, port, str(e)))
 
 
 #
@@ -218,20 +222,21 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
 
     # Note: cert_file param is just for constructor compatibility with
     # SecureXMLRPCServer--it is ignored
-    def __init__(self, host, port, ev_quit=None, timeout=socket_timeout,
+    def __init__(self, name, host, port, ev_quit=None, timeout=socket_timeout,
                  logger=None,
                  requestHandler=XMLRPCRequestHandler,
                  logRequests=False, allow_none=True, encoding=None,
                  threaded=False, threadPool=None, numthreads=5,
-                 authDict=None, cert_file=None):
+                 authDict=None, secure=False, cert_file=None):
 
         SimpleXMLRPCServer.__init__(self, (host, port),
                                     requestHandler=requestHandler,
                                     logRequests=logRequests,
-                                    allow_none=allow_none, encoding=encoding)
+                                    allow_none=allow_none)
 
         ProcessingMixin.__init__(self, threaded=threaded, threadPool=threadPool)
 
+        self.name = name
         if logger:
             self.logger = logger
         else:
@@ -250,6 +255,8 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
         self.threaded = threaded
         self.threadPool = threadPool
         self._num_threads = numthreads
+        # packer cannot be overridden for this server
+        self._packer = 'xml'
 
         # Create an attribute to hold the Queue object. The actual
         # Queue object will be created in the start method if this
@@ -269,7 +276,7 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
             flags |= fcntl.FD_CLOEXEC
             fcntl.fcntl(self.fileno(), fcntl.F_SETFD, flags)
 
-    def start(self, use_thread=True):
+    def start(self, use_thread=False):
         # Threaded server.  Start N workers either as new threads or using
         # the thread pool, if we have one.
         if self.threaded:
@@ -350,7 +357,7 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
 
         if not auth:
             self.logger.error("No authentication credentials passed")
-            raise Error("Service requires authentication and no credentials passed")
+            raise AuthenticationError("Service requires authentication and no credentials passed")
 
         # this is the client authentication, pulled from the HTTP header
         try:
@@ -359,7 +366,7 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
 
         except KeyError:
             self.logger.error("Bad authentication credentials passed")
-            raise Error("Service only handles 'basic' authentication type")
+            raise AuthenticationError("Service only handles 'basic' authentication type")
 
         if not username in self.authDict:
             self.logger.error("No user matching '%s'" % username)
@@ -368,13 +375,13 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
             # but also delays applications when there is a legitimate
             # authentication mismatch
             #time.sleep(1.0)
-            raise Error("Service requires authentication; username or password mismatch")
+            raise AuthenticationError("Service requires authentication; username or password mismatch")
 
         if self.authDict[username] != password:
             self.logger.error("Password incorrect '%s'" % password)
             # sleep thwarts brute force attacks
             time.sleep(1.0)
-            raise Error("Service requires authentication; username or password mismatch")
+            raise AuthenticationError("Service requires authentication; username or password mismatch")
 
         self.logger.debug("Authorized client '%s'" % (username))
 
@@ -396,13 +403,8 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
 
         except Exception as e:
             self.logger.error("Method %s raised exception: %s" % (str(methodName),
-                                                                  str(e)))
-            try:
-                (type, value, tb) = sys.exc_info()
-                tb_str = ("Traceback:\n%s" % '\n'.join(traceback.format_tb(tb)))
-                self.logger.error(tb_str)
-            except:
-                self.logger.error("Traceback information unavailable")
+                                                                  str(e)),
+                              exc_info=True)
             raise e
 
 

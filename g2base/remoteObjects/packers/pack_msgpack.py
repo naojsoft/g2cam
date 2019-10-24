@@ -27,12 +27,12 @@ class Packer(object):
         self.version = '1.0'
 
     def pack(self, data):
-        payload = msgpack.packb(data,  default=encode_special,
+        payload = msgpack.packb(data, default=encode_special,
                                 use_bin_type=True)
         return payload
 
     def unpack(self, payload):
-        data = msgpack.loads(payload,  ext_hook=decode_special,
+        data = msgpack.loads(payload, ext_hook=decode_special,
                              raw=False)
         return data
 

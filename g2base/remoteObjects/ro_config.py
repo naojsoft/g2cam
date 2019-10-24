@@ -16,13 +16,12 @@ objectsBasePort    = 8000
 # Default transport
 default_transport  = 'xmlrpc'
 #default_transport  = 'socket'
-#default_transport  = 'zmqrpc'
-        
+#default_transport  = 'redis'
+
 # Default encoding
+# Leave as None to pick up optimal encoding for the transport
 # [ignored for default_transport=xmlrpc]
-#default_encoding  = 'xml'
-#default_encoding  = 'json'
-default_encoding  = 'pickle'
+default_encoding  = None
 
 # Name service transport
 ns_transport  = 'xmlrpc'
@@ -32,18 +31,18 @@ ns_encoding  = 'xml'
 # Do you want to default to SSL connections (slower)
 # [only for transport=xmlrpc]
 # NOTE: currently this should be set to False!
-default_secure     = False
+default_secure = False
 
 # Path of default cert file to use for encrypted servers
 # [only for transport=xmlrpc]
 # NOTE: careful, if you set this then anyone with access to this file
 # will run a server with that cert
-default_cert       = None
+default_cert = None
 
 # If set to True, and no explicit authentication is supplied
 # servers and clients will resort to using the service name.
 # A good idea to leave True, to prevent accidental masquerading.
-use_default_auth   = True
+use_default_auth = True
 
 # Timeout value for certain known types of remoteObject calls (e.g. nameSvc)
 timeout = 10.0

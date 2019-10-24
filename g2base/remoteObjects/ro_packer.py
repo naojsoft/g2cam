@@ -97,6 +97,10 @@ def unpack(packet):
 # Try to import all the possible data packers
 ############################################################
 
+def get_packer(typ):
+    return packers[typ]
+
+
 # msgpack
 try:
     from .packers import pack_msgpack
