@@ -115,7 +115,7 @@ def main(options, args):
 
             # Configure logger for logging via our monitor
             if options.logmon:
-                Monitor.logmon(logger, options.logmon, ['logs'])
+                monitor.logmon(logger, options.logmon, ['logs'])
 
             logger.info("Starting instrument %s ..." % maincam)
             caminst.start(portbase=options.port)
