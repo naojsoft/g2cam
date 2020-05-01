@@ -28,7 +28,7 @@ except ImportError:
     codecs['pickle'] = (pickle.dumps, pickle.loads)
 
 def get_codecs():
-    return codecs.keys()
+    return list(codecs.keys())
 
 def get_encoder(encoding):
     return codecs[encoding][0]
@@ -38,4 +38,3 @@ def get_decoder(encoding):
 
 
 #END
-
