@@ -357,6 +357,16 @@ insinfo = {
         'frametypes': 'AQ',
         'description': u'Telescope simulator at the DD command level',
         },
+    'CSW': {
+        'name': 'CSW',
+        'number': 35,
+        'code': 'CSW',
+        'active': True,
+        'interface': ('g2cam', 1.0),
+        'fov': 0.007,
+        'frametypes': 'AQ',
+        'description': u'COMICS Waveplate Unit',
+        },
     }
 
 
