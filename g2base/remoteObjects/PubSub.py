@@ -30,7 +30,7 @@ from g2base.remoteObjects import remoteObjects as ro
 from g2base.remoteObjects import Timer
 from g2base.remoteObjects.ro_config import *
 
-version = '20160330.0'
+version = '20201115.0'
 
 # Subscriber options
 TWO_WAY = 'bidirectional'

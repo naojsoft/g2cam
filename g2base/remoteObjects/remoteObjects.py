@@ -1400,13 +1400,20 @@ def init(ro_hosts=None,
 
 def addlogopts(optprs):
     """Add special options used in remoteObjects applications."""
-    optprs.add_option("--auth", dest="auth",
-                      help="Use authorization; arg should be user:passwd")
-    optprs.add_option("--cert", dest="cert",
+    if hasattr(optprs, 'add_option'):
+        # older optparse
+        add_argument = optprs.add_option
+    else:
+        # newer argparse
+        add_argument = optprs.add_argument
+
+    add_argument("--auth", dest="auth",
+                 help="Use authorization; arg should be user:passwd")
+    add_argument("--cert", dest="cert",
                       help="Path to key/certificate file")
-    optprs.add_option("--secure", dest="secure", action="store_true",
-                      default=False,
-                      help="Use SSL encryption")
+    add_argument("--secure", dest="secure", action="store_true",
+                 default=False,
+                 help="Use SSL encryption")
 
 
 # END

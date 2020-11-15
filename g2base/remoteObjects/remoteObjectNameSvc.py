@@ -1,4 +1,3 @@
-#! /usr/bin/env python
 #
 # remoteObjectNameSvc.py -- remote object name service.
 #
@@ -39,10 +38,9 @@ import socket
 from g2base.remoteObjects import remoteObjects as ro
 from g2base.remoteObjects import Monitor
 from g2base import ssdlog
-from six.moves import map, zip
 
 # Our version
-version = '20100707.0'
+version = '20201115.0'
 
 
 #regex_ping = re.compile(r'^mon\.names\.(?P<svcname>.+)\.(?P<host>[^:]+):(?P<port>\d+)$')
@@ -369,7 +367,7 @@ class remoteObjectNameService(object):
     def getNamesHost(self, host):
         """Return the names for any services registered on _host_."""
         res = self.getInfoHost(host)
-        return map(lambda d: d['name'], res)
+        return [d['name'] for d in res]
 
     def _syncInfoPred(self, pred_fn):
         """Ping any services that match predicate function _pred_fn_."""
@@ -552,59 +550,59 @@ def main(options, args):
     sys.exit(0)
 
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
 
-    # Parse command line options with nifty new optparse module
-    from optparse import OptionParser
+#     # Parse command line options with nifty new optparse module
+#     from optparse import OptionParser
 
-    usage = "usage: %prog [options]"
-    optprs = OptionParser(usage=usage, version=('%%prog %s' % version))
+#     usage = "usage: %prog [options]"
+#     optprs = OptionParser(usage=usage, version=('%%prog %s' % version))
 
-    optprs.add_option("--debug", dest="debug", default=False,
-                      action="store_true",
-                      help="Enter the pdb debugger on main()")
-    optprs.add_option("--numthreads", dest="numthreads", type="int",
-                      default=100,
-                      help="Use NUM threads", metavar="NUM")
-    optprs.add_option("--port", dest="port", type="int",
-                      default=ro.nameServicePort,
-                      help="Register using PORT", metavar="PORT")
-    optprs.add_option("--profile", dest="profile", action="store_true",
-                      default=False,
-                      help="Run the profiler on main()")
-    optprs.add_option("--purge-interval", dest="purge_interval",
-                      type="float", metavar="SECS",
-                      default=60.0,
-                      help="How often (SECS) to purge dead services")
-    optprs.add_option("--purge-delta", dest="purge_delta",
-                      type="float", metavar="SECS",
-                      default=30.0,
-                      help="Delta (SECS) to consider a service dead")
-    ssdlog.addlogopts(optprs)
-    ro.addlogopts(optprs)
-    Monitor.addlogopts(optprs)
+#     optprs.add_option("--debug", dest="debug", default=False,
+#                       action="store_true",
+#                       help="Enter the pdb debugger on main()")
+#     optprs.add_option("--numthreads", dest="numthreads", type="int",
+#                       default=100,
+#                       help="Use NUM threads", metavar="NUM")
+#     optprs.add_option("--port", dest="port", type="int",
+#                       default=ro.nameServicePort,
+#                       help="Register using PORT", metavar="PORT")
+#     optprs.add_option("--profile", dest="profile", action="store_true",
+#                       default=False,
+#                       help="Run the profiler on main()")
+#     optprs.add_option("--purge-interval", dest="purge_interval",
+#                       type="float", metavar="SECS",
+#                       default=60.0,
+#                       help="How often (SECS) to purge dead services")
+#     optprs.add_option("--purge-delta", dest="purge_delta",
+#                       type="float", metavar="SECS",
+#                       default=30.0,
+#                       help="Delta (SECS) to consider a service dead")
+#     ssdlog.addlogopts(optprs)
+#     ro.addlogopts(optprs)
+#     Monitor.addlogopts(optprs)
 
-    (options, args) = optprs.parse_args(sys.argv[1:])
+#     (options, args) = optprs.parse_args(sys.argv[1:])
 
-    if len(args) != 0:
-        optprs.error("incorrect number of arguments")
+#     if len(args) != 0:
+#         optprs.error("incorrect number of arguments")
 
 
-    # Are we debugging this?
-    if options.debug:
-        import pdb
+#     # Are we debugging this?
+#     if options.debug:
+#         import pdb
 
-        pdb.run('main(options, args)')
+#         pdb.run('main(options, args)')
 
-    # Are we profiling this?
-    elif options.profile:
-        import profile
+#     # Are we profiling this?
+#     elif options.profile:
+#         import profile
 
-        print("%s profile:" % sys.argv[0])
-        profile.run('main(options, args)')
+#         print("%s profile:" % sys.argv[0])
+#         profile.run('main(options, args)')
 
-    else:
-        main(options, args)
+#     else:
+#         main(options, args)
 
 
 # END

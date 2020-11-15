@@ -1,4 +1,3 @@
-#! /usr/bin/env python
 #
 # remoteObjectManagerSvc.py -- start/stop/monitor remote object services.
 #
@@ -21,7 +20,7 @@ from g2base import Bunch, myproc, ssdlog
 from g2base.remoteObjects import remoteObjects as ro
 
 # Our version
-version = '20140323.0'
+version = '20201115.0'
 
 
 class managerSvcError(Exception):
@@ -694,72 +693,72 @@ def main(options, args):
 
 
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
 
-    # Parse command line options with nifty new optparse module
-    from optparse import OptionParser
+#     # Parse command line options with nifty new optparse module
+#     from optparse import OptionParser
 
-    usage = "usage: %prog [options]"
-    optprs = OptionParser(usage=usage, version=('%%prog %s' % version))
+#     usage = "usage: %prog [options]"
+#     optprs = OptionParser(usage=usage, version=('%%prog %s' % version))
 
-    optprs.add_option("--auth", dest="auth",
-                      help="Use authorization; arg should be user:passwd")
-    optprs.add_option("--cert", dest="cert",
-                      help="Path to key/certificate file")
-    optprs.add_option("--debug", dest="debug", default=False, action="store_true",
-                      help="Enter the pdb debugger on main()")
-    optprs.add_option("--detach", dest="detach", default=False,
-                      action="store_true",
-                      help="Detach from terminal and run as a daemon")
-    optprs.add_option("--profile", dest="profile", action="store_true",
-                      default=False,
-                      help="Run the profiler on main()")
-    optprs.add_option("--hosts", dest="ro_hosts",
-                      help="Use HOSTS for remote objects", metavar="HOSTS")
-    optprs.add_option("--output", dest="stdout", metavar="FILE",
-                      help="Direct subprocess stdout/stderr to FILE")
-    optprs.add_option("--pidfile", dest="pidfile", metavar="FILE",
-                      help="Write process pid to FILE")
-    optprs.add_option("--port", dest="port", type="int",
-                      default=ro.managerServicePort,
-                      help="Register using PORT", metavar="PORT")
-    optprs.add_option("--secure", dest="secure", action="store_true",
-                      default=False,
-                      help="Use SSL encryption")
-    ssdlog.addlogopts(optprs)
+#     optprs.add_option("--auth", dest="auth",
+#                       help="Use authorization; arg should be user:passwd")
+#     optprs.add_option("--cert", dest="cert",
+#                       help="Path to key/certificate file")
+#     optprs.add_option("--debug", dest="debug", default=False, action="store_true",
+#                       help="Enter the pdb debugger on main()")
+#     optprs.add_option("--detach", dest="detach", default=False,
+#                       action="store_true",
+#                       help="Detach from terminal and run as a daemon")
+#     optprs.add_option("--profile", dest="profile", action="store_true",
+#                       default=False,
+#                       help="Run the profiler on main()")
+#     optprs.add_option("--hosts", dest="ro_hosts",
+#                       help="Use HOSTS for remote objects", metavar="HOSTS")
+#     optprs.add_option("--output", dest="stdout", metavar="FILE",
+#                       help="Direct subprocess stdout/stderr to FILE")
+#     optprs.add_option("--pidfile", dest="pidfile", metavar="FILE",
+#                       help="Write process pid to FILE")
+#     optprs.add_option("--port", dest="port", type="int",
+#                       default=ro.managerServicePort,
+#                       help="Register using PORT", metavar="PORT")
+#     optprs.add_option("--secure", dest="secure", action="store_true",
+#                       default=False,
+#                       help="Use SSL encryption")
+#     ssdlog.addlogopts(optprs)
 
-    (options, args) = optprs.parse_args(sys.argv[1:])
+#     (options, args) = optprs.parse_args(sys.argv[1:])
 
-    if len(args) != 0:
-        optprs.error("incorrect number of arguments")
+#     if len(args) != 0:
+#         optprs.error("incorrect number of arguments")
 
 
-    if options.detach:
-        print("Detaching from this process...")
-        sys.stdout.flush()
-        try:
-            child = myproc.myproc(main, args=[options, args],
-                                  pidfile=options.pidfile, detach=True)
-            child.wait()
+#     if options.detach:
+#         print("Detaching from this process...")
+#         sys.stdout.flush()
+#         try:
+#             child = myproc.myproc(main, args=[options, args],
+#                                   pidfile=options.pidfile, detach=True)
+#             child.wait()
 
-            # TODO: check status of process and report error if necessary
-        finally:
-            sys.exit(0)
+#             # TODO: check status of process and report error if necessary
+#         finally:
+#             sys.exit(0)
 
-    # Are we debugging this?
-    elif options.debug:
-        import pdb
+#     # Are we debugging this?
+#     elif options.debug:
+#         import pdb
 
-        pdb.run('main(options, args)')
+#         pdb.run('main(options, args)')
 
-    # Are we profiling this?
-    elif options.profile:
-        import profile
+#     # Are we profiling this?
+#     elif options.profile:
+#         import profile
 
-        print("%s profile:" % sys.argv[0])
-        profile.run('main(options, args)')
+#         print("%s profile:" % sys.argv[0])
+#         profile.run('main(options, args)')
 
-    else:
-        main(options, args)
+#     else:
+#         main(options, args)
 
 # END

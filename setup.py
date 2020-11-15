@@ -46,7 +46,9 @@ setup(
                 ],
     package_data = { #'g2cam.doc': ['manual/*.html'],
                      },
-    scripts = ['scripts/g2cam', 'scripts/stubgen', 'scripts/ro_shell'],
+    scripts = ['scripts/g2cam', 'scripts/stubgen', 'scripts/ro_shell',
+               'scripts/ro_mgr_svc', 'scripts/ro_name_svc',
+               'scripts/ro_ps_svc'],
     classifiers = [
         "License :: OSI Approved :: BSD License",
         "Operating System :: MacOS :: MacOS X",

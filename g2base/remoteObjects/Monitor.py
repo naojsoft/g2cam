@@ -713,13 +713,20 @@ def config_monitor(monitor, channels, aggregates):
 
 def addlogopts(optprs):
     """Add special options used in Monitor applications."""
-    optprs.add_option("--monitor", dest="monitor",
-                      help="Use NAME or HOST:PORT for publish/subscribe",
-                      metavar="NAME")
-    optprs.add_option("--monport", dest="monport", type="int",
-                      help="Register my monitor using PORT", metavar="PORT")
-    optprs.add_option("--monauth", dest="monauth", metavar="USER:PASS",
-                      help="Authenticate to monitor using USER:PASS")
+    if hasattr(optprs, 'add_option'):
+        # older optparse
+        add_argument = optprs.add_option
+    else:
+        # newer argparse
+        add_argument = optprs.add_argument
+
+    add_argument("--monitor", dest="monitor",
+                 help="Use NAME or HOST:PORT for publish/subscribe",
+                 metavar="NAME")
+    add_argument("--monport", dest="monport", type=int,
+                 help="Register my monitor using PORT", metavar="PORT")
+    add_argument("--monauth", dest="monauth", metavar="USER:PASS",
+                 help="Authenticate to monitor using USER:PASS")
 
 
 def main(options, args):
