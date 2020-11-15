@@ -1,0 +1,75 @@
+#! /usr/bin/env python
+#
+# ro_mgr_svc -- start/stop/monitor remote object services.
+#
+import sys
+import argparse
+
+from g2base import ssdlog, myproc
+from g2base.remoteObjects import remoteObjectManagerSvc as ro_ms
+from g2base.remoteObjects.ro_config import managerServicePort
+
+
+if __name__ == '__main__':
+
+    argprs = argparse.ArgumentParser("Remote Objects Manager Service")
+
+    argprs.add_argument("--auth", dest="auth",
+                        help="Use authorization; arg should be user:passwd")
+    argprs.add_argument("--cert", dest="cert",
+                        help="Path to key/certificate file")
+    argprs.add_argument("--debug", dest="debug", default=False,
+                        action="store_true",
+                        help="Enter the pdb debugger on main()")
+    argprs.add_argument("--detach", dest="detach", default=False,
+                        action="store_true",
+                        help="Detach from terminal and run as a daemon")
+    argprs.add_argument("--profile", dest="profile", action="store_true",
+                        default=False,
+                        help="Run the profiler on main()")
+    argprs.add_argument("--hosts", dest="ro_hosts",
+                        help="Use HOSTS for remote objects", metavar="HOSTS")
+    argprs.add_argument("--output", dest="stdout", metavar="FILE",
+                        help="Direct subprocess stdout/stderr to FILE")
+    argprs.add_argument("--pidfile", dest="pidfile", metavar="FILE",
+                        help="Write process pid to FILE")
+    argprs.add_argument("--port", dest="port", type=int,
+                        default=managerServicePort,
+                        help="Register using PORT", metavar="PORT")
+    argprs.add_argument("--secure", dest="secure", action="store_true",
+                        default=False,
+                        help="Use SSL encryption")
+    ssdlog.addlogopts(argprs)
+
+    (options, args) = argprs.parse_known_args(sys.argv[1:])
+
+    if len(args) != 0:
+        argprs.error("incorrect number of arguments")
+
+    if options.detach:
+        print("Detaching from this process...")
+        sys.stdout.flush()
+        try:
+            child = myproc.myproc(ro_ms.main, args=[options, args],
+                                  pidfile=options.pidfile, detach=True)
+            child.wait()
+
+            # TODO: check status of process and report error if necessary
+        finally:
+            sys.exit(0)
+
+    # Are we debugging this?
+    elif options.debug:
+        import pdb
+
+        pdb.run('ro_ms.main(options, args)')
+
+    # Are we profiling this?
+    elif options.profile:
+        import profile
+
+        print("%s profile:" % sys.argv[0])
+        profile.run('ro_ms.main(options, args)')
+
+    else:
+        ro_ms.main(options, args)
