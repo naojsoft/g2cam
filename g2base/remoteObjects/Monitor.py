@@ -2,8 +2,6 @@
 #
 # Monitor.py -- internal status monitoring and synchronization
 #
-# Eric Jeschke (eric@naoj.org)
-#
 """
 The Monitor and Minimon classes are subclasses of the PubSub class.
 
@@ -145,7 +143,10 @@ class Monitor(ps.PubSub):
     def do_delete(self, path):
         # Delete item from our store
         with self.lock:
-            self._store.delitem(path)
+            try:
+                self._store.delitem(path)
+            except KeyError:
+                pass
 
     # CALLED BY MONITOR USERS TO SAVE/RESTORE THEIR STATE
 
