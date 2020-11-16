@@ -43,9 +43,6 @@ from g2base import ssdlog
 version = '20201115.0'
 
 
-#regex_ping = re.compile(r'^mon\.names\.(?P<svcname>.+)\.(?P<host>[^:]+):(?P<port>\d+)$')
-
-
 # For generating errors from this module
 #
 class nameServiceError(Exception):
@@ -85,8 +82,7 @@ class remoteObjectNameService(object):
         #   mon.names.<svcname>.<host>:<port>
         # service name and host name have to be escaped for '.'
         tag = '%s.%s.%s:%d' % (self.tagpfx,
-                               name.replace('.', '%'),
-                               host.replace('.', '%'), port)
+                               _fix_name(name), _fix_host(host), port)
 
         if not tag in self.monitor:
             self.logger.info("Registering remote object service %s:%d under name '%s'" % (
@@ -148,8 +144,7 @@ class remoteObjectNameService(object):
         #   mon.names.<svcname>.<host>:<port>
         # service name and host name have to be escaped for '.'
         tag = '%s.%s.%s:%d' % (self.tagpfx,
-                               name.replace('.', '%'),
-                               host.replace('.', '%'), port)
+                               _fix_name(name), _fix_host(host), port)
 
         if tag in self.monitor:
             self.logger.info("Unregistering remote object service %s:%d under name '%s'" % (
@@ -172,7 +167,7 @@ class remoteObjectNameService(object):
 
         # mon.names.<svcname>
         # service name has to be escaped for '.'
-        tag = '%s.%s' % (self.tagpfx, name.replace('.', '%'))
+        tag = '%s.%s' % (self.tagpfx, _fix_name(name))
 
         try:
             self.monitor.delete(tag, self.channels)
@@ -217,7 +212,7 @@ class remoteObjectNameService(object):
             return []
         res = []
         for name in list(tree.keys()):
-            res.append(name.replace('%', '.'))
+            res.append(_unfix_name(name))
         return res
 
 
@@ -239,8 +234,7 @@ class remoteObjectNameService(object):
 
         for (host, port) in self.getHosts(name):
             tag = '%s.%s.%s:%d' % (self.tagpfx,
-                                   name.replace('.', '%'),
-                                   host.replace('.', '%'), port)
+                                   _fix_name(name), _fix_host(host), port)
             vals = self.monitor.getitems_suffixOnly(tag)
             if 'pingtime' not in vals:
                 # No pingtime?  Give `em the boot!
@@ -258,7 +252,7 @@ class remoteObjectNameService(object):
         # if there are no more live hosts left, drop the service name
         # as well
         if not anyleft:
-            tag = '%s.%s' % (self.tagpfx, name.replace('.', '%'))
+            tag = '%s.%s' % (self.tagpfx, _fix_name(name))
             try:
                 self.monitor.delete(tag, self.channels)
 
@@ -299,7 +293,7 @@ class remoteObjectNameService(object):
 
         # mon.names.<svcname>
         # service name has to be escaped for '.'
-        tag = '%s.%s' % (self.tagpfx, name.replace('.', '%'))
+        tag = '%s.%s' % (self.tagpfx, _fix_name(name))
 
         tree = self.monitor.getTree(tag)
         if not isinstance(tree, dict):
@@ -308,7 +302,7 @@ class remoteObjectNameService(object):
         res = []
         for key in list(tree.keys()):
             host, port = key.split(':')
-            host = host.replace('%', '.')
+            host = _unfix_host(host)
             #host = socket.gethostbyname(host)
             port = int(port)
             res.append((host, port))
@@ -323,7 +317,7 @@ class remoteObjectNameService(object):
 
         # mon.names.<svcname>
         # service name has to be escaped for '.'
-        tag = '%s.%s' % (self.tagpfx, name.replace('.', '%'))
+        tag = '%s.%s' % (self.tagpfx, _fix_name(name))
 
         tree = self.monitor.getTree(tag)
         if not isinstance(tree, dict):
@@ -332,7 +326,7 @@ class remoteObjectNameService(object):
         res = []
         for key in list(tree.keys()):
             host, port = key.split(':')
-            host = host.replace('%', '.')
+            host = _unfix_host(host)
             #host = socket.gethostbyname(host)
             port = int(port)
             secure = tree[key].get('secure', ro.default_secure)
@@ -407,7 +401,17 @@ class remoteObjectNameService(object):
 
 ##             print host, port, bnch.value
 
+def _fix_name(name):
+    return name.replace('.', '^')
 
+def _fix_host(host):
+    return host.replace('.', '%')
+
+def _unfix_name(name):
+    return name.replace('^', '.')
+
+def _unfix_host(host):
+    return host.replace('%', '.')
 
 
 #------------------------------------------------------------------
