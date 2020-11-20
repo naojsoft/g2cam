@@ -48,7 +48,7 @@ setup(
                      },
     scripts = ['scripts/g2cam', 'scripts/stubgen', 'scripts/ro_shell',
                'scripts/ro_mgr_svc', 'scripts/ro_name_svc',
-               'scripts/ro_ps_svc'],
+               'scripts/ro_ps_svc', 'scripts/get_status'],
     classifiers = [
         "License :: OSI Approved :: BSD License",
         "Operating System :: MacOS :: MacOS X",

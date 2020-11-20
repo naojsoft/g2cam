@@ -100,11 +100,42 @@ class StatusClient(object):
 
             # convert types that could not be stored as Python values
             # back into Python ones
-            res = {key: (val if not isinstance(val, dict)
-                   else self._cvt[val['ptype']](val['value']))
+            res = {key: (val if not isinstance(val, dict) or 'ptype' not in val
+                         else self._cvt[val['ptype']](val['value']))
                    for key, val in res.items()}
 
             status_dict.update(res)
+
+        except Exception as e:
+            raise ValueError("Error fetching status in db: %s" % (
+                str(e)))
+
+    def fetch_all(self):
+        """Fetch a dictionary of status aliases from Gen2
+
+        Parameters
+        ----------
+        status_dict : dict
+            A dictionary where the keys are Gen2 status aliases
+
+        The dictionary is filled in with values for each key.
+        """
+        try:
+            # fetch status in store
+            doc = self.mdb_coll.find(self.mdb_doc).next()
+
+            # update results for aliases including those not found
+            res = {key.replace('__', '.'): doc[key] for key in doc}
+
+            # convert types that could not be stored as Python values
+            # back into Python ones
+            res = {key: (val if not isinstance(val, dict) or 'ptype' not in val
+                         else self._cvt[val['ptype']](val['value']))
+                   for key, val in res.items()}
+
+            del res['_id']
+            del res['owner']
+            return res
 
         except Exception as e:
             raise ValueError("Error fetching status in db: %s" % (
