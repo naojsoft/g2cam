@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 #
-# Eric Jeschke (eric@naoj.org)
-#
 """
 Simple example of a remoteObjects client/service.
 
@@ -33,13 +31,6 @@ Using SSL encryption + authentication:
    (client) ./ro_example.py --secure --auth=bob:foo
 
 """
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
 from __future__ import print_function
 import sys, time
 from . import remoteObjects as ro

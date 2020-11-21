@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 #
-# Eric Jeschke (eric@naoj.org)
-#
 """
 
 This module provides a process object abstraction for simplifying Unix

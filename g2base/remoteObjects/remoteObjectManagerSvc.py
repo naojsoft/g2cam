@@ -1,8 +1,6 @@
 #
 # remoteObjectManagerSvc.py -- start/stop/monitor remote object services.
 #
-# Eric Jeschke (eric@naoj.org)
-#
 # Description:
 #   Implements a service for handing graceful startup, shutdown and
 #   monitoring/failover of remote object services.

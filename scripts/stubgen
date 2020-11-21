@@ -3,8 +3,6 @@
 # Generate instrument simulator command stubs from a list of PARA file
 #   definitions.
 #
-# Eric Jeschke (eric@naoj.org)
-#
 """
 This simple program creates a set of empty instrument method stubs for
 creating an instrument 'personality' for simcam.  You call it in the

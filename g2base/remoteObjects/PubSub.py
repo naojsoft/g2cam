@@ -2,9 +2,6 @@
 #
 # PubSub.py -- Subaru Remote Objects Publish/Subscribe module
 #
-# Eric Jeschke (eric@naoj.org)
-#
-
 """
 Main issues to think about/resolve:
 

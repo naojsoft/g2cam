@@ -2,8 +2,6 @@
 #
 # remoteObjects.py -- remote object server module.
 #
-# Eric Jeschke (eric@naoj.org)
-#
 # TODO:
 # [ ] ? allow authentication on a method-by-method basis
 #

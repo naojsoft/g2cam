@@ -1,8 +1,6 @@
 #
 # common_task.py -- Common tasks for instrument simulators
 #
-# Eric Jeschke (eric@naoj.org)
-#
 import time
 from g2base import Task
 from g2cam.Instrument import CamError, CamCommandError
@@ -31,7 +29,7 @@ class DelayedSendTask(Task.Task):
         res = self.ocs.archive_fits(self.framelist)
 
         return res
-    
+
 
 class IntervalTask(Task.Task):
     """Task that runs a function at a given interval, passing it args
@@ -51,7 +49,7 @@ class IntervalTask(Task.Task):
 
     def stop(self):
         self.ev_quit.set()
-        
+
     def execute(self):
         self.logger.info('Starting periodic interval task')
 
@@ -78,10 +76,10 @@ class IntervalTask(Task.Task):
                 cur_time = time.time()
 
             self.logger.debug("End interval wait")
-                
+
         self.logger.info('Stopping periodic interval task')
 
-      
+
 class PowerMonTask(IntervalTask):
     """
     A periodic task to check for a power outage and notify the OBCP if there
@@ -100,7 +98,7 @@ class PowerMonTask(IntervalTask):
         self.interval = check_interval
         self.statusDict = {'TSCV.DOMEUPS': 0}
         self.on_ups_start_time = None
-        
+
         super(PowerMonTask, self).__init__(self._check_power,
                                            self.interval)
 
@@ -125,7 +123,7 @@ class PowerMonTask(IntervalTask):
             # If nothing else, log a warning message
             self.logger.warn('WARNING: running on UPS power!')
 
-        
+
     def _power_up(self):
         # Cancel any pending call to self.fnOff
         if self.on_ups_start_time:
@@ -139,8 +137,8 @@ class PowerMonTask(IntervalTask):
             else:
                 # If nothing else, log a message
                 self.logger.warn('Power restored.')
-        
-        
+
+
     def _check_power(self):
         self.logger.debug('Checking power via TSCV.DOMEUPS')
         try:
@@ -175,9 +173,9 @@ class FuncTask(Task.FuncTask):
         """
         func: any callable.
         args: tuple or list of positional arguments
-        kwdargs: any keyword arguments 
+        kwdargs: any keyword arguments
         """
         super(FuncTask, self).__init__(func, args, kwdargs)
 
-      
+
 #END

@@ -1,8 +1,6 @@
 #
 # Simple common log format for Python logging module
 #
-# Eric Jeschke (eric@naoj.org)
-#
 import sys, os
 import re, string
 import time

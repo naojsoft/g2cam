@@ -2,8 +2,6 @@
 # g2Instrument.py -- generic base class for an instrument (BASECAM) and
 #   a framework for interfacing with the OCS (Instrument)
 #
-# Eric Jeschke (eric@naoj.org)
-#
 from __future__ import print_function
 import sys, os
 import time

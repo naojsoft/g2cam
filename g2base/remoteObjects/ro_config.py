@@ -1,8 +1,6 @@
 #
 # Configuration file for remoteObjects
 #
-# Eric Jeschke (eric@naoj.org)
-#
 
 # Port for manager service to run on
 managerServicePort = 7070
@@ -17,7 +15,7 @@ objectsBasePort    = 8000
 default_transport  = 'xmlrpc'
 #default_transport  = 'socket'
 #default_transport  = 'zmqrpc'
-        
+
 # Default encoding
 # [ignored for default_transport=xmlrpc]
 #default_encoding  = 'xml'

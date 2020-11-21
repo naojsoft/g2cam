@@ -2,8 +2,6 @@
 #
 # g2cam -- instrument using OCS Gen2 interface
 #
-# Eric Jeschke (eric@naoj.org)
-#
 from __future__ import print_function
 
 # stdlib imports

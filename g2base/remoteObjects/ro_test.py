@@ -1,18 +1,8 @@
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
-from __future__ import print_function
 #!/usr/bin/env python
 #
 # Remote objects tests
 #
-# Eric Jeschke (eric@naoj.org)
-#
-
+from __future__ import print_function
 import sys, time
 import logging
 
@@ -58,7 +48,7 @@ def client2(options, logger):
     datafile = None
     if options.datafile:
         datafile = open(options.datafile, 'a')
-            
+
     auth = None
     if options.auth:
         auth = options.auth.split(':')
@@ -125,7 +115,7 @@ def main(options, args):
 
     print("Program exit.")
     sys.exit(0)
-            
+
 if __name__ == '__main__':
 
     # Parse command line options with nifty new optparse module
@@ -133,7 +123,7 @@ if __name__ == '__main__':
 
     usage = "usage: %prog [options]"
     parser = OptionParser(usage=usage, version=('%%prog'))
-    
+
     parser.add_option("--action", dest="action",
                       help="Action is server|calls")
     parser.add_option("--auth", dest="auth",
@@ -184,10 +174,5 @@ if __name__ == '__main__':
 
     else:
         main(options, args)
-       
+
 #END
-
-
-    
-
-    

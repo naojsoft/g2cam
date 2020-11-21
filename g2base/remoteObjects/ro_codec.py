@@ -1,8 +1,6 @@
 #
 # ro_codec.py -- encoding/decoding support for remoteObjects system
 #
-# Eric Jeschke (eric@naoj.org)
-#
 from . import ro_config
 
 encoding = ro_config.default_encoding.lower()

@@ -2,9 +2,6 @@
 #
 # ro_shell -- generic remote object client
 #
-# Eric Jeschke (eric@naoj.org)
-#
-#
 """This generic remoteObjects client gives a command line interface
 that allows you to create proxies to any number of remoteObject servers
 and execute commands on them.

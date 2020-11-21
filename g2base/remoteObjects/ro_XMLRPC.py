@@ -1,8 +1,6 @@
 #
 # ro_XMLRPC.py -- enhanced XML-RPC services for remoteObjects system
 #
-# Eric Jeschke (eric@naoj.org)
-#
 import sys
 import threading
 import traceback

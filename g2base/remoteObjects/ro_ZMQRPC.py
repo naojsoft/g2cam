@@ -1,10 +1,6 @@
 #
 # ro_ZMQRPC.py -- ZeroMQ-based RPC services for remoteObjects system
 #
-# Eric Jeschke (eric@naoj.org)
-#
-"""
-"""
 from __future__ import print_function
 import sys, os, time
 import threading

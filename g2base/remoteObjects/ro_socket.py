@@ -1,8 +1,6 @@
 #
 # ro_socket.py -- socket-based RPC services for remoteObjects system
 #
-# Eric Jeschke (eric@naoj.org)
-#
 import sys, os, time
 import threading
 from uuid import uuid4
