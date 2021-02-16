@@ -31,11 +31,11 @@ class Packer(object):
         # of a tuple
         data = (data,)
         # TODO: is there a more efficient encoding to byte stream?
-        payload = xmlrpc.client.dumps(data).encode('utf-8')
+        payload = xmlrpc_client.dumps(data).encode('utf-8')
         return payload
 
     def unpack(self, payload):
-        data = xmlrpc.client.loads(payload)
+        data = xmlrpc_client.loads(payload)
         # See NOTE [1] above
         data = data[0]
         return data

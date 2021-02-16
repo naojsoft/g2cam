@@ -2,6 +2,7 @@
 # Please see the file LICENSE.txt for details.
 
 from pymongo import MongoClient
+import bson
 
 from g2cam.status import common
 
@@ -58,6 +59,7 @@ class StatusClient(object):
 
         # table of conversion functions
         self._cvt = dict(int=int)
+        self._cvt_types = (dict, bson.int64.Int64)
 
         # for Mongo status db
         self.g2_db = 'gen2'
@@ -81,6 +83,18 @@ class StatusClient(object):
     def reconnect(self):
         return self.connect()
 
+    def _convert(self, value):
+        """Internal routine to convert specially encoded values back into
+        native Python ones.
+        """
+        if isinstance(value, bson.int64.Int64):
+            return int(value)
+
+        elif isinstance(value, dict) and 'ptype' in value:
+            return self._cvt[value['ptype']](value['value'])
+
+        return '##ERROR##'
+
     def fetch(self, status_dict):
         """Fetch a dictionary of status aliases from Gen2
 
@@ -103,8 +117,8 @@ class StatusClient(object):
 
             # convert types that could not be stored as Python values
             # back into Python ones
-            res = {key: (val if not isinstance(val, dict) or 'ptype' not in val
-                         else self._cvt[val['ptype']](val['value']))
+            res = {key: val if not isinstance(val, self._cvt_types)
+                   else self._convert(val)
                    for key, val in res.items()}
 
             status_dict.update(res)
@@ -116,12 +130,10 @@ class StatusClient(object):
     def fetch_all(self):
         """Fetch a dictionary of status aliases from Gen2
 
-        Parameters
-        ----------
+        Returns
+        -------
         status_dict : dict
             A dictionary where the keys are Gen2 status aliases
-
-        The dictionary is filled in with values for each key.
         """
         try:
             # fetch status in store
@@ -132,8 +144,8 @@ class StatusClient(object):
 
             # convert types that could not be stored as Python values
             # back into Python ones
-            res = {key: (val if not isinstance(val, dict) or 'ptype' not in val
-                         else self._cvt[val['ptype']](val['value']))
+            res = {key: val if not isinstance(val, self._cvt_types)
+                   else self._convert(val)
                    for key, val in res.items()}
 
             del res['_id']
