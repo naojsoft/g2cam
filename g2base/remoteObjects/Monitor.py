@@ -507,10 +507,10 @@ class Minimon(Monitor):
             if timeout != None:
                 deadline = start_time + timeout
 
-            while not ev_store.isSet():
+            while not ev_store.is_set():
                 # Check for interruption
                 for evt in eventlist:
-                    if evt.isSet():
+                    if evt.is_set():
                         raise EventError("Another event interrupted wait")
 
                 wait_time = self.wait_interval
@@ -663,7 +663,7 @@ class MonitorHandler(logging.Handler):
         if six.PY3:
             trans_tbl = str.maketrans(dict.fromkeys(self.deletechars))
 
-        while not ev_quit.isSet():
+        while not ev_quit.is_set():
             try:
                 msgstr = self.queue.get(block=True, timeout=self.interval)
                 # Strip out bogus characters

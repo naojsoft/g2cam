@@ -20,12 +20,14 @@ class StatusStream(object):
 
     """
     def __init__(self, host='localhost', port=9989,
-                 db=0, username=None, password=None):
+                 db=0, username=None, password=None,
+                 logger=None):
         self.ps_host = host
         self.ps_port = port
         self.ps_db = db
         self.ps_user = username
         self.ps_pswd = password
+        self.logger = logger
 
         self.timeout = 0.2
         self.reconnect_interval = 20.0
@@ -49,18 +51,21 @@ class StatusStream(object):
         try:
             try:
                 pkt = self.pubsub.get_message(timeout=self.timeout)
-                #self.logger.error("NORMAL timeout")
+                #if self.logger is not None:
+                #    self.logger.error("NORMAL timeout")
                 if pkt is None:
                     # timeout
                     return
             except redis.exceptions.TimeoutError:
-                #self.logger.error("ABNORMAL timeout")
+                #if self.logger is not None:
+                #    self.logger.error("ABNORMAL timeout")
                 # timeout
                 return
 
             except redis.exceptions.ConnectionError:
                 # TODO: handle server disconnection
-                #self.logger.warning("server disconnected us")
+                #if self.logger is not None:
+                #    self.logger.warning("server disconnected us")
                 return
 
             # this is Redis API--packet will have type, channel and
