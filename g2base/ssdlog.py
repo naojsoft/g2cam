@@ -330,7 +330,6 @@ def make_logger(logname, options, format=STD_FORMAT):
         fileHdlr.setLevel(level)
         logger.addHandler(fileHdlr)
 
-    #islogging = options.logfile or options.logport or
     # Add output to stderr, if requested
     if options.logstderr:
         level = get_level(options.loglevel)
@@ -338,15 +337,6 @@ def make_logger(logname, options, format=STD_FORMAT):
         stderrHdlr.setLevel(level)
         stderrHdlr.setFormatter(fmt)
         logger.addHandler(stderrHdlr)
-
-    # # TODO: deprecate?
-    # if options.logbyqueue:
-    #     # In queue-based logging, the real logger is hidden behind a queue
-    #     hidden = logger
-    #     logger = logging.Logger('queue')
-    #     queueHdlr = QueueHandler2(Queue.Queue())
-    #     queueHdlr.setLevel(level)
-    #     logger.addHandler(queueHdlr)
 
     if options.logmon:
         from .remoteObjects.Monitor import MonitorHandler
@@ -357,13 +347,11 @@ def make_logger(logname, options, format=STD_FORMAT):
         monHdlr.setFormatter(fmt)
         logger.addHandler(monHdlr)
 
-    # if options.logport:
-    #     #addr = '255.255.255.255'
-    #     addr = '133.40.166.0'
-    #     sockHdlr = BroadcastHandler(addr, options.logport,
-    #                                 level=get_level(options.loglevel))
-    #     sockHdlr.setFormatter(fmt)
-    #     logger.addHandler(sockHdlr)
+    if options.pidfile:
+        # save process id to a file if a path was specified
+        mypid = os.getpid()
+        with open(options.pidfile, 'w') as pid_f:
+            pid_f.write(str(mypid))
 
     return logger
 
@@ -420,17 +408,11 @@ def addlogopts(optprs):
 
     add_argument("--log", dest="logfile", metavar="FILE",
                  help="Write logging output to FILE")
-    add_argument("--logport", dest="logport", metavar="PORT",
-                 type=int,
-                 help="Broadcast logging messages to PORT")
     add_argument("--logdir", dest="logdir", metavar="DIR",
                  help="Write logging output to DIR")
     add_argument("--logbyhostname", dest="logbyhostname", default=False,
                  action="store_true",
                  help="Create log files under host name")
-    add_argument("--logbyqueue", dest="logbyqueue", default=False,
-                 action="store_true",
-                 help="Use a queue to speed logging")
     add_argument("--loglevel", dest="loglevel", metavar="LEVEL",
                  default=20,
                  help="Set logging level to LEVEL")
@@ -442,6 +424,8 @@ def addlogopts(optprs):
                  help="Set maximum number of backups to NUM")
     add_argument("--logtime", dest="logtime", metavar="OPTIONS",
                  help="Set log file time-based rotation options")
+    add_argument("--pidfile", dest="pidfile", metavar="FILE",
+                 help="Set FILE for saving the pid")
     add_argument("--stderr", dest="logstderr", default=False,
                  action="store_true",
                  help="Copy logging also to stderr")
