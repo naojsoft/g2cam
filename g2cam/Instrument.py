@@ -5,6 +5,7 @@
 from __future__ import print_function
 import sys, os
 import time
+import re
 import traceback
 import threading
 
@@ -849,10 +850,10 @@ class Instrument(object):
         obcpnum = self.get_obcpnum()
         insname = self.insconfig.getNameByNumber(obcpnum)
 
-        frame_types = ('A', 'Q', 'A9', 'Q9', 'A8', 'Q8', 'A7', 'Q7')
-        if not frtype in frame_types:
-            raise CamError("Frame type (%s) must be one of %s'" % (
-                str(type), str(frame_types)))
+        frame_types = self.insconfig.getFrametypesByName(insname)
+        match = re.match(r'^([A-Z])\d?$', frtype)
+        if match is None or match.group(1) not in frame_types:
+            raise CamError("Bad frame type (%s)" % (frtype))
 
         try:
             (status, framelist) = self.frameint.getFrames(insname, frtype, num)

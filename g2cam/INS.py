@@ -169,7 +169,7 @@ insinfo = {
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.045,
-        'frametypes': 'AQ',
+        'frametypes': 'BCQV',
         'description': u'Subaru Coronagraphic Extreme Adaptive Optics',
         },
     'MOIRCS': {
