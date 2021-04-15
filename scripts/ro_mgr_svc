@@ -31,8 +31,6 @@ if __name__ == '__main__':
                         help="Use HOSTS for remote objects", metavar="HOSTS")
     argprs.add_argument("--output", dest="stdout", metavar="FILE",
                         help="Direct subprocess stdout/stderr to FILE")
-    argprs.add_argument("--pidfile", dest="pidfile", metavar="FILE",
-                        help="Write process pid to FILE")
     argprs.add_argument("--port", dest="port", type=int,
                         default=managerServicePort,
                         help="Register using PORT", metavar="PORT")
