@@ -2,7 +2,6 @@
 #
 # Instrument configuration file.
 #
-from __future__ import print_function
 import sys, os
 import re
 
@@ -380,9 +379,8 @@ class INSdata(object):
         # Update from supplementary info provided by config file
         if info == None:
             try:
-                # Yuk--use g2soss module instead of envvar?
                 infopath = os.path.join(os.environ['GEN2COMMON'],
-                                        'db', 'inscfg')
+                                        'db', 'inscfg.yml')
                 if os.path.exists(infopath):
                     info = infopath
             except:
@@ -391,9 +389,10 @@ class INSdata(object):
         # Update from supplementary info provided by the user
         if info:
             if isinstance(info, str):
+                import yaml
                 with open(info, 'r') as in_f:
                     buf = in_f.read()
-                    info = eval(buf)
+                    info = yaml.safe_load(buf)
 
             assert isinstance(info, dict), Exception("argument must be a dict")
             for key in info.keys():
