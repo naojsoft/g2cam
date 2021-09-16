@@ -178,7 +178,7 @@ class XMLRPCRequestHandler(SimpleXMLRPCRequestHandler):
                 method, auth = auth.split()
                 if method.lower() == 'basic':
                     #logger.debug("decoding base64...")
-                    auth = base64.decodestring(auth.encode()).decode()
+                    auth = base64.b64decode(auth.encode()).decode()
                     #logger.debug("splitting...")
                     username, password = auth.split(':')
                     logger.debug("username: '%s', password: '%s'" % (
@@ -191,7 +191,8 @@ class XMLRPCRequestHandler(SimpleXMLRPCRequestHandler):
                     logger.error("unsupported auth method: '%s'" % method)
                     auth = None
             except Exception as e:
-                logger.error("unrecognized auth cred: '%s'" % auth)
+                logger.error("unrecognized auth cred: '%s'" % auth,
+                             exc_info=True)
                 auth = None
 
         return auth
