@@ -8,17 +8,15 @@ This simple program creates a set of empty instrument method stubs for
 creating an instrument 'personality' for simcam.  You call it in the
 following way, e.g.:
 
-./stubgen.py --paradir=$OBSHOME/SPCAM/para --inst=SPCAM --type=simcam > spcam_stubs.txt
+stubgen --paradir=$OBSHOME/SPCAM/para --inst=SPCAM --type=simcam > spcam_stubs.txt
 
 OR
 
-./stubgen.py --paradir=$OBSHOME/SPCAM/para --inst=SPCAM --type=g2task > task_stubs.txt
+stubgen --paradir=$OBSHOME/SPCAM/para --inst=SPCAM --type=g2task > task_stubs.txt
 
 You can then pull the stubs into an editor and flesh them out to create a
 more complete simulation or task definition.
 """
-from __future__ import print_function
-
 import sys, os
 import time
 from optparse import OptionParser
@@ -26,7 +24,7 @@ import logging
 
 from g2base import ssdlog
 
-from SOSS.DotParaFiles import ParaValidator
+from oscript.DotParaFiles import ParaValidator
 
 
 templates = {}
