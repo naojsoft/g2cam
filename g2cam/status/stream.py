@@ -39,7 +39,7 @@ class StatusStream(object):
     def connect(self):
         # TODO: username, password ignored for now
         self.rs = redis.StrictRedis(host=self.ps_host, port=self.ps_port,
-                                    db=self.ps_db)
+                                    db=self.ps_db, socket_timeout=1.0)
         self.pubsub = self.rs.pubsub(ignore_subscribe_messages=True)
         self.pubsub.subscribe('status')
 
