@@ -31,6 +31,7 @@ class StatusStream(object):
 
         self.timeout = 0.2
         self.reconnect_interval = 20.0
+        self.socket_timeout = 60.0
 
         # for Redis status streaming
         self.rs = None
@@ -39,7 +40,9 @@ class StatusStream(object):
     def connect(self):
         # TODO: username, password ignored for now
         self.rs = redis.StrictRedis(host=self.ps_host, port=self.ps_port,
-                                    db=self.ps_db, socket_timeout=1.0)
+                                    db=self.ps_db,
+                                    socket_timeout=self.socket_timeout,
+                                    health_check_interval=30.0)
         self.pubsub = self.rs.pubsub(ignore_subscribe_messages=True)
         self.pubsub.subscribe('status')
 
@@ -49,29 +52,24 @@ class StatusStream(object):
     def listen(self, queue):
         pkt = None
         try:
-            try:
-                pkt = self.pubsub.get_message(timeout=self.timeout)
-                #if self.logger is not None:
-                #    self.logger.error("NORMAL timeout")
-                if pkt is None:
-                    # timeout
-                    return
-            except redis.exceptions.TimeoutError:
-                #if self.logger is not None:
-                #    self.logger.error("ABNORMAL timeout")
+            pkt = self.pubsub.get_message(timeout=self.timeout)
+            #if self.logger is not None:
+            #    self.logger.error("NORMAL timeout")
+            if pkt is None:
                 # timeout
                 return
 
-            except redis.exceptions.ConnectionError:
-                # TODO: handle server disconnection
-                #if self.logger is not None:
-                #    self.logger.warning("server disconnected us")
-                return
+        except redis.exceptions.TimeoutError as e:
+            if self.logger is not None:
+                self.logger.error("abnormal timeout--server restart?")
+            # timeout
+            raise e
 
-            # this is Redis API--packet will have type, channel and
-            # data fields.
-            if pkt['type'] != "message":
-                return
+        except redis.exceptions.ConnectionError as e:
+            # TODO: handle server disconnection
+            if self.logger is not None:
+                self.logger.warning("server disconnected us")
+            raise e
 
         except Exception as e:
             if self.logger is not None:
@@ -79,6 +77,11 @@ class StatusStream(object):
                                   exc_info=True)
                 self.logger.error("pkt: {}".format(str(pkt)))
                 return
+
+        # this is Redis API--packet will have type, channel and
+        # data fields.
+        if pkt['type'] != "message":
+            return
 
         channel = pkt['channel']
         channel = channel.decode('utf-8')
@@ -90,7 +93,6 @@ class StatusStream(object):
             if self.logger is not None:
                 self.logger.error("Error unpacking payload: {}".format(e),
                                   exc_info=True)
-            raise
 
         queue.put(envelope)
 
