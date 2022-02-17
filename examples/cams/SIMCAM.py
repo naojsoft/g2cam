@@ -413,6 +413,21 @@ class SIMCAM(BASECAM):
         self.ocs.archive_framelist(framelist)
 
 
+    def archive_fits(self, frame_id=None, path=None, tag=None):
+        """Archive a file through Gen2.
+        """
+        if frame_id is None:
+            raise CamCommandError("Need to provide a frame id")
+        if path is None or not os.path.exists(path):
+            raise CamCommandError("Need to provide a valid path to a file")
+
+        size_bytes = os.stat(path).st_size
+
+        framelist = [(frame_no, fitsfile, size_bytes)]
+        self.logger.info("Submitting frame '%s' for archiving" % frame_id)
+        self.ocs.archive_framelist(framelist)
+
+
     def putstatus(self, target="ALL", tag=None):
         """Forced export of our status.
         """
