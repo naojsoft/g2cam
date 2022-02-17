@@ -119,10 +119,6 @@ class Monitor(ps.PubSub):
 
         self.lock = threading.RLock()
 
-        # TEMP: to get around an infinite recursion issue for monitor
-        # logging
-        #logger = ro.nullLogger()
-
         # Superclass initialization
         super(Monitor, self).__init__(name, logger,
 #                                      ev_quit=None, threadPool=None,
@@ -596,6 +592,10 @@ class MonitorHandler(logging.Handler):
         self.tagpfx = tagpfx
         self.monchannels = channels
 
+        # to get around an infinite recursion issue for monitor logging
+        if monitor is not None:
+            monitor.logger = ro.nullLogger()
+
         # size of the current buffer
         self.bufsize = 0
         # size limit beyond which buffer is sent out as a datagram
@@ -609,24 +609,31 @@ class MonitorHandler(logging.Handler):
         # of size
         self.interval = interval
 
+        # characters that interfere with XML-RPC
+        bad_for_xmlrpc = '<>&"!\x0b\x0c'
         # escape anything that can't pass over remoteObjects calls
-        printable = set(string.printable) - set('<>&"!\x0b\x0c')
+        printable = set(string.printable) - set(bad_for_xmlrpc)
 
         # Used to strip out bogus characters from log buffers
         if six.PY2:
             self.deletechars = ''.join(set(string.maketrans('', '')) -
                                   printable)
         else:
-            self.deletechars = ''.join(set(map(chr,
-                                               bytes.maketrans(b'', b''))) -
-                                       printable)
+            allchars = set([chr(c) for c in bytes.maketrans(b'', b'')])
+            self.deletechars = ''.join(allchars - printable)
 
         self.lock = threading.RLock()
         self.queue = Queue.Queue()
 
+        # NOTE: to get around an infinite recursion issue for monitor
+        # logging, we cannot log through the monitor at debug level
+        level = max(level, logging.INFO)
         logging.Handler.__init__(self, level=level)
 
     def set_monitor(self, monitor):
+        # to get around an infinite recursion issue for monitor logging
+        if monitor is not None:
+            monitor.logger = ro.nullLogger()
         self.monitor = monitor
 
     def _sendbuf(self):
