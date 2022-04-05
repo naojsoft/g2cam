@@ -15,6 +15,9 @@ from g2base.remoteObjects import remoteObjects as ro
 from g2base.remoteObjects import Monitor
 from g2cam.INS import INSdata as INSconfig
 
+# see doExecute()
+ASYNC_COMPLETE = 'async-complete'
+
 
 class CamError(Exception):
     pass
@@ -368,7 +371,6 @@ class Instrument(object):
 
         return ro.OK
 
-
     def doExecute(self, tag, method, args, kwdargs):
         self.cmdHist[tag].time_start = time.time()
         res = (0, 'OK')
@@ -376,33 +378,9 @@ class Instrument(object):
             # call method and collect result
             res = method(*args, **kwdargs)
 
-            # If a cam raises an exception, the command is recorded as
-            # a failure.  If the cam returns a value, it is considered
-            # a success, EXCEPT in the case where it is an int or tuple
-            # For backward-compatibility with SIMCAM cams we check the
-            # return value if it is one of these
-            self.logger.debug("Return value is %s" % str(res))
-            if res == None:
-                res = (0, 'OK')
-
-            if isinstance(res, tuple) and (len(res) == 2):
-                (status, result) = res
-                if not isinstance(status, int):
-                    self.logger.error("Bad status return (%s)--should be type int" % (str(status)))
-                    status = 1
-                if not isinstance(result, str):
-                    self.logger.error("Bad message return (%s)--should be type str" % (str(result)))
-                    result = "ERROR: %s" % (str(result))
-                res = (status, result)
-
-            elif isinstance(res, int):
-                if res == 0:
-                    res = (0, 'OK')
-                else:
-                    res = (res, 'ERROR')
-
-            else:
-                res = (0, 'OK')
+            if res is ASYNC_COMPLETE:
+                self.logger.debug("asynchronous command return")
+                return
 
         except CamCommandError as e:
             # This is the Pythonic way for the instrument to cleanly
@@ -414,19 +392,45 @@ class Instrument(object):
         except Exception as e:
             msg = "ERROR: Command terminated with exception: %s" % \
                   (str(e))
-            try:
-                (extype, value, tb) = sys.exc_info()
-                self.logger.error("Traceback:\n%s" % \
-                                  "".join(traceback.format_tb(tb)))
-
-                # NOTE: to avoid creating a cycle that might cause
-                # problems for GC--see Python library doc for sys module
-                tb = None
-
-            except Exception as e:
-                self.logger.error("Traceback information unavailable.")
-
+            self.logger.error(msg, exc_info=True)
             res = (1, msg)
+
+        self.finish_command(tag, res)
+
+    def finish_command(self, tag, res):
+        # If a cam raises an exception, the command is recorded as
+        # a failure.  If the cam returns a value, it is considered
+        # a success, EXCEPT in the case where it is an int or tuple
+        # For backward-compatibility with SIMCAM cams we check the
+        # return value if it is one of these
+        self.logger.debug("Return value is %s" % str(res))
+
+        if res == None:
+            res = (0, 'OK')
+
+        elif isinstance(res, Exception):
+            msg = str(res)
+            self.logger.error(msg)
+            res = (1, msg)
+
+        if isinstance(res, tuple) and (len(res) == 2):
+            (status, result) = res
+            if not isinstance(status, int):
+                self.logger.error("Bad status return (%s)--should be type int" % (str(status)))
+                status = 1
+            if not isinstance(result, str):
+                self.logger.error("Bad message return (%s)--should be type str" % (str(result)))
+                result = "ERROR: %s" % (str(result))
+            res = (status, result)
+
+        elif isinstance(res, int):
+            if res == 0:
+                res = (0, 'OK')
+            else:
+                res = (res, 'ERROR')
+
+        else:
+            res = (0, 'OK')
 
         end_time = time.time()
         self.cmdHist[tag].time_end = end_time

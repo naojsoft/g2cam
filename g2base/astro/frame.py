@@ -42,7 +42,6 @@ def getFrameInfoFromPath(fitspath):
 class Frame(object):
 
     def __init__(self, path=None):
-        self.path = None
         self.filename = None
         self.directory = None
         self.inscode = None
@@ -62,6 +61,10 @@ class Frame(object):
     def frameid(self):
         return frame_templ % (self.inscode, self.frametype, self.prefix,
                               self.number)
+
+    @property
+    def path(self):
+        return os.path.join(self.directory, self.frameid + '.fits')
 
     def from_frameid(self, frameid):
 
@@ -89,7 +92,6 @@ class Frame(object):
         (fitsdir, filename) = os.path.split(path)
         (frameid, ext) = os.path.splitext(filename)
 
-        self.path = path
         self.filename = filename
         self.directory = fitsdir
 

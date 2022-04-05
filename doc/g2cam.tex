@@ -206,7 +206,7 @@ g2cam is publicly available in a {\tt git} repository from the
 Install like any other python package:
 \begin{verbatim}
   $ cd g2cam
-  $ python setup.py install
+  $ pip install .
 \end{verbatim}
 Be sure to use the version of python that you want to run g2cam with
 when you do the install (e.g. if you have both python 2 and python 3
@@ -694,21 +694,52 @@ For many commands, the control flow would work out something like this:
 \item Command finishes, via one of the appropriate ways outlined earlier.
 \end{itemize}
 Sometimes, this is not the flow of control that you want. For example,
-you may want to have an asyncronous command that validates its
+you may want to have an asynchronous command that validates its
 parameters and then exits quickly, but which initiates continued
-processing on the instrument side that entails further processing. This
-is often done for long-running commands. For example, suppose we want a
-version of {\tt snap()} that returns immediately, but initiates an exposure
-operation on the instrument. Later, the instrument will finish the snap
-as previously described and send the finished fits files and update the
-status value to indicate completion of the command. Let's see how we
-might do that. 
-\begin{verbatim}
+processing on the instrument side. This is often done for long-running
+commands. For example, suppose we want a version of {\tt snap()} that
+returns immediately, but initiates an exposure operation on the
+instrument. Later, the instrument will finish the snap as previously
+described, archive the finished fits files and then indicate
+success/failure/completion of the command. Let's see how we might
+accomplish that. 
 
-from g2cam.util import common_task as common
+\subsection{Option 1: custom dispatch method and asynchronous completion}
+One option is to create your own custom dispatch method in your cam module:
+\begin{verbatim}
+    def dispatchCommand(self, tag, cmdName, args, kwdargs):
+        self.logger.debug("tag=%s cmdName=%s args=%s kwdargs=%s" % (
+            tag, cmdName, str(args), str(kwdargs)))
+
+        params = {}
+        params.update(kwdargs)
+        params['tag'] = tag
+
+        try:
+            # Try to look up the named method
+            method = getattr(self, cmdName)
+
+        except AttributeError as e:
+            result = "ERROR: No such method in subsystem: %s" % (cmdName)
+            self.logger.error(result)
+            raise CamCommandError(result)
+
+        return method(*args, **params)
+\end{verbatim}
+This custom dispatch command allows you to access the tag that is sent
+by Gen2 to track the command completion.  This dispatch function adds
+the tag to the keyword arguments, so your command methods, in addition
+to accepting the normal keyword parameters, must also include a
+{\tt tag} keyword. 
+
+In the command function, you return the special value
+{\tt ASYNC\_COMPLETE} that indicates that the command is asynchronous
+and will be reported on later: 
+\begin{verbatim}
+from g2cam.Instrument import ASYNC_COMPLETE
     ...
     ...
-    def snap_async(self, frameid=None, itime=30.0):
+    def snap(self, frameid=None, itime=30.0, tag=None):
         """Snap command that returns immediately, then later finishes
         asynchronously.
         """
@@ -719,31 +750,74 @@ from g2cam.util import common_task as common
             raise CamCommandError("No frame number passed!")
 
         self.logger.info("Starting concurrent task")
-        t = common.FuncTask(self.snap, (), frameid=frameid,
-                                           itime=itime)
+        t = common.FuncTask(self._snap_async, (tag, frameid, itime))
         t.init_and_start(self)
+        return ASYNC_COMPLETE
 
 \end{verbatim}
-This command creates a generic function-calling task that will call the
-method {\tt snap()} with no positional arguments and the exact same keyword
-arguments that it was called with. Then it initializes and starts the
-task. The function will be called by another thread in the framework's
-thread pool, leaving this thread to exit the current command. 
+You don't need to use a {\tt FuncTask}, of course. If you want to manage the
+concurrency yourself you can initiate the {\tt snap\_async} anyway you
+want. However, when the command completes you \emph{must} call
+{\tt finish\_command} with the tag that was passed and the result of the
+command. The result is interpreted in the same way as described above
+for regular synchronous commands.
+\begin{verbatim}
+    ...
+    ...
+    def _snap_async(self, tag, frameid, itime):
+        ...
+        ...
+        self.ocs.finish_command(tag, result)
+\end{verbatim}
 
-The general problem with this sort of approach is the same as for any
-asynchronous command: what to do if the command fails. The initial
-command completed with success, but how do you track the result of the
-asynchronous part? Typically this would be handled via status value
-notification. Alternatively, another way that this can be handled is to
-have a 2-phase command. For example, snap() may initiate an exposure and
-return immediately. A second command (e.g. readout) is sent later by the
-OCS to read out the CCD, create the FITS files and archive them. 
+\subsection{Option 2: Separate commands for initiating and completing}
+Some developers prefer a approach in which one command initiates the
+command, and a second command is called if and when the result is
+required by the observing script; this second command blocks until the
+first command has completed.  In this case regular synchronous
+command processing suffices. 
+\begin{verbatim}
+    def snap(self, frameid=None, itime=30.0):
+        """Snap command that returns immediately. Command results
+        are collected with command get_snap.
+        """
 
-There are a few common enough tasks that they have been added as a
-module of common task code that can be used by any g2cam instrument.
+        self.logger.info("long_snap called...")
+
+        if not frameid:
+            raise CamCommandError("No frame number passed!")
+            
+        if not self.snap_event.is_set():
+            raise CamCommandError("A snap is already running!")
+        self.logger.info("Starting concurrent task")
+        t = common.FuncTask(self._snap_async, (frameid, itime)
+        t.init_and_start(self)
+
+    def _snap_async(self, frameid, itime):
+        self.snap_event.clear()
+        self.snap_result = None
+        ...
+        ...
+        self.snap_result = (0, "Snap completed")
+        self.snap_event.set()
+        
+    def get_snap(self, timeout=None):
+        self.snap_event.wait(timeout=timeout)
+
+        if self.snap_result is None:
+            raise CamCommandError("timed out waiting for snap result")
+
+        return self.snap_result
+\end{verbatim}
+This command hands off the work to {\tt \_snap\_async()} using a
+{\tt FuncTask} in another thread. 
+The command {\tt get\_snap} is used to collect the result.
+The synchronization between {\tt snap} and {\tt get\_snap} is managed
+using the variables {\tt snap\_event} and {\tt snap\_result}.
+The initialization of these variables is left as an exercise for the reader.
 
 \subsection{Example: Sending Periodic Status}
-Our example is used to illustrate the sending of periodic status.
+This example is used to illustrate the sending of periodic status.
 The Subaru OCS likes to receive periodic status updates from the
 instrument as a kind of heartbeat, to indicate that the instrument is up
 and running. The exact interval is not that important, and instruments
