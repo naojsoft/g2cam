@@ -19,7 +19,8 @@ class FitsFrameIdError(Exception):
 def getFrameInfoFromPath(fitspath):
     # Extract frame id from file path
     (fitsdir, fitsname) = os.path.split(fitspath)
-    (frameid, ext) = os.path.splitext(fitsname)
+    ridx = fitsname.rindex('.fits')
+    frameid, ext = fitsname[:ridx], fitsname[ridx + 1:]
 
     match = frame_regex1.match(frameid)
     if match:
@@ -43,6 +44,7 @@ class Frame(object):
 
     def __init__(self, path=None):
         self.filename = None
+        self.extension = None
         self.directory = None
         self.inscode = None
         self.frametype = None
@@ -64,7 +66,7 @@ class Frame(object):
 
     @property
     def path(self):
-        return os.path.join(self.directory, self.frameid + '.fits')
+        return os.path.join(self.directory, self.filename)
 
     def from_frameid(self, frameid):
 
@@ -90,9 +92,12 @@ class Frame(object):
 
         # Extract frame id from file path
         (fitsdir, filename) = os.path.split(path)
-        (frameid, ext) = os.path.splitext(filename)
+        ridx = filename.rindex('.fits')
+        frameid, ext = filename[:ridx], filename[ridx + 1:].strip()
 
         self.filename = filename
+        if len(ext) > 0:
+            self.extension = ext
         self.directory = fitsdir
 
         self.from_frameid(frameid)
@@ -111,6 +116,11 @@ class Frame(object):
 
         else:
             self.number = res
+
+    def get_primary_hdu(self, fits_f):
+        if self.extension.endswith('.fz'):
+            return fits_f[1]
+        return fits_f[0]
 
     def __repr__(self):
         return str(self)
