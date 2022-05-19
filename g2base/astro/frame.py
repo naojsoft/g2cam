@@ -92,8 +92,11 @@ class Frame(object):
 
         # Extract frame id from file path
         (fitsdir, filename) = os.path.split(path)
-        ridx = filename.rindex('.fits')
-        frameid, ext = filename[:ridx], filename[ridx + 1:].strip()
+        if '.fits' in path:
+            ridx = filename.rindex('.fits')
+            frameid, ext = filename[:ridx], filename[ridx + 1:].strip()
+        else:
+            frameid, ext = filename, '.fits'
 
         self.filename = filename
         if len(ext) > 0:

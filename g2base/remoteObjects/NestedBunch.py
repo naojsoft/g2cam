@@ -1,4 +1,8 @@
-from collections import Mapping
+from g2base import six
+if six.PY2:
+    from collections import Mapping
+else:
+    from collections.abc import Mapping
 
 from g2base import Bunch
 
