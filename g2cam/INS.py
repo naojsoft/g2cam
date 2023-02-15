@@ -84,7 +84,7 @@ insinfo = {
         'name': 'SPCAM',
         'number': 8,
         'code': 'SUP',
-        'active': True,
+        'active': False,
         'interface': ('daqtk', 1.0),
         'fov': 0.22433,
         'frametypes': 'AQ',
@@ -155,7 +155,7 @@ insinfo = {
         'name': 'K3D',
         'number': 15,
         'code': 'K3D',
-        'active': True,
+        'active': False,
         'interface': ('daqtk', 1.0),
         'fov': 0.023570,
         'frametypes': 'AQ',
@@ -185,7 +185,7 @@ insinfo = {
         'name': 'FMOS',
         'number': 18,
         'code': 'FMS',
-        'active': True,
+        'active': False,
         'interface': ('g2cam', 1.0),
         'fov': 0.22433,
         'frametypes': 'AQ',
@@ -195,7 +195,7 @@ insinfo = {
         'name': 'FLDMON',
         'number': 19,
         'code': 'FLD',
-        'active': True,
+        'active': False,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
         'frametypes': 'AQ',
@@ -215,7 +215,7 @@ insinfo = {
         'name': 'HICIAO',
         'number': 21,
         'code': 'HIC',
-        'active': True,
+        'active': False,
         'interface': ('daqtk', 1.0),
         'fov': 0.023570,
         'frametypes': 'AQ',
@@ -256,7 +256,7 @@ insinfo = {
         'name': 'K3C',
         'number': 25,
         'code': 'K3C',
-        'active': True,
+        'active': False,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
         'frametypes': 'AQ',
@@ -279,8 +279,8 @@ insinfo = {
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
-        'frametypes': 'ABCD',
-        'frames_per_exp': dict(A=100, B=100, C=100, D=100),
+        'frametypes': 'ABCDF',
+        'frames_per_exp': dict(A=100, B=100, C=100, D=100, F=100),
         'description': u'Prime Focus Spectrograph',
         },
     'IRD': {
@@ -297,7 +297,7 @@ insinfo = {
         'name': 'SWIMS',
         'number': 29,
         'code': 'SWS',
-        'active': True,
+        'active': False,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
         'frametypes': 'BCRS',
@@ -308,7 +308,7 @@ insinfo = {
         'name': 'MIMIZUKU',
         'number': 30,
         'code': 'MMZ',
-        'active': True,
+        'active': False,
         'interface': ('g2cam', 1.0),
         'fov': 0.023570,
         'frametypes': 'AQ',
@@ -666,43 +666,17 @@ def main(options, args):
 if __name__ == '__main__':
 
     # Parse command line options
-    from optparse import OptionParser
+    from argparse import ArgumentParser
 
-    usage = "usage: %prog [options]"
-    optprs = OptionParser(usage=usage, version=('%%prog'))
+    argprs = ArgumentParser(description="Get instrument info")
 
-    optprs.add_option("--debug", dest="debug", default=False,
-                      action="store_true",
-                      help="Enter the pdb debugger on main()")
-    optprs.add_option("--show", dest="show", default='name',
-                      help="Show name|code|number")
-    optprs.add_option("--ins", dest="ins", default='active',
-                      help="List of names/codes/numbers or 'all' or 'active'")
-    optprs.add_option("--profile", dest="profile", action="store_true",
-                      default=False,
-                      help="Run the profiler on main()")
+    argprs.add_argument("--show", dest="show", default='name',
+                        help="Show name|code|number")
+    argprs.add_argument("--ins", dest="ins", default='active',
+                        help="List of names/codes/numbers or 'all' or 'active'")
 
-    (options, args) = optprs.parse_args(sys.argv[1:])
+    (options, args) = argprs.parse_known_args(sys.argv[1:])
 
     if len(args) != 0:
-        optprs.error("incorrect number of arguments")
-
-
-    # Are we debugging this?
-    if options.debug:
-        import pdb
-
-        pdb.run('main(options, args)')
-
-    # Are we profiling this?
-    elif options.profile:
-        import profile
-
-        print("%s profile:" % sys.argv[0])
-        profile.run('main(options, args)')
-
-    else:
-        main(options, args)
-
-
-#END
+        argprs.error("incorrect number of arguments")
+    main(options, args)
