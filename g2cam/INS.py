@@ -583,7 +583,7 @@ class INSdata(object):
         return list(types)
 
 
-    def getFramesPerExpByName(insname, frtype):
+    def getFramesPerExpByName(self, insname, frtype):
         insname = insname.upper()
 
         d = self.nameMap[insname]
