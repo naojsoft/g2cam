@@ -1087,10 +1087,12 @@ class nullLogger(object):
             self.f_out.write("%s\n" % msg)
             self.f_out.flush()
 
-    def warn(self, msg):
+    def warning(self, msg):
         if self.f_out:
             self.f_out.write("%s\n" % msg)
             self.f_out.flush()
+
+    warn = warning
 
     def error(self, msg):
         if self.f_out:
