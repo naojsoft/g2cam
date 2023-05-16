@@ -9,7 +9,6 @@
 The names of the "top-level" services along with the startup commands are
 registered in a configuration file.  This service starts those processes.
 '''
-from __future__ import print_function
 import sys, socket, os
 import threading
 import time, signal
