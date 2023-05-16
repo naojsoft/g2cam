@@ -32,7 +32,9 @@ class PubSub(Callback.Callbacks):
         self.logger = logger
 
         self.pubsub = None
+        self.subscriptions = set([])
         self.timeout = 0.2
+        self.reconnect_interval = 20.0
 
         url = "nats://%s:%d" % (self.host, self.port)
         self.pubsub = NATSClient(url)
@@ -44,20 +46,29 @@ class PubSub(Callback.Callbacks):
         self.pubsub.reconnect()
 
     def publish(self, channel, envelope, pack_info):
+        if self.pubsub is None:
+            raise ConnectionError("pubsub is not connected")
         packet = ro_packer.pack(envelope, pack_info)
         self.pubsub.publish(channel, payload=packet)
 
     def subscribe(self, channel):
+        self.subscriptions.add(channel)
+
         if not self.has_callback(channel):
             self.enable_callback(channel)
 
         cb_fn = self.create_callback_fn(channel)
 
-        subscription = self.pubsub.subscribe(channel, callback=cb_fn)
+        if self.pubsub is not None:
+            subscription = self.pubsub.subscribe(channel, callback=cb_fn)
 
     def unsubscribe(self, channel):
-        # TODO: need to unsubscribe with the subscription
-        self.pubsub.unsubscribe(channel)
+        if channel in self.subscriptions:
+            self.subscriptions.remove(channel)
+
+            if self.pubsub is not None:
+                # TODO: need to unsubscribe with the subscription
+                self.pubsub.unsubscribe(channel)
 
     def start(self, ev_quit=None):
         if ev_quit is None:
@@ -80,14 +91,21 @@ class PubSub(Callback.Callbacks):
         self.pubsub.wait(count=1)
 
     def subscribe_loop(self, ev_quit):
-        self.ev_quit = ev_quit
         while not ev_quit.is_set():
             try:
-                self.listen()
+                self.reconnect()
+
+                # subscribe or re-subscribe
+                for name in self.subscriptions:
+                    self.subscribe(name)
+
+                while not ev_quit.is_set():
+                    self.listen()
 
             except Exception as e:
-                self.logger.error("Error in msg handling loop: %s" % (str(e)))
-                self.reconnect()
+                self.pubsub = None
+                self.logger.error(f"Error in msg handling loop: {e}")
+                ev_quit.wait(self.reconnect_interval)
 
     def create_callback_fn(self, channel):
         def _cb(msg):

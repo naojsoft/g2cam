@@ -8,7 +8,6 @@ import argparse
 from g2base import ssdlog
 from g2base.remoteObjects import remoteObjects as ro
 from g2base.remoteObjects import remoteObjectNameSvc as ro_ns
-from g2base.remoteObjects import Monitor
 from g2base.remoteObjects.ro_config import nameServicePort
 
 
@@ -16,21 +15,12 @@ if __name__ == '__main__':
 
     argprs = argparse.ArgumentParser(description="Remote Object Name Service")
 
-    argprs.add_argument("--debug", dest="debug", default=False,
-                        action="store_true",
-                        help="Enter the pdb debugger on main()")
-    argprs.add_argument("--dbtype", dest="dbtype", type=str,
-                        default=None,
-                        help="Which type of database to use", metavar="DBTYPE")
     argprs.add_argument("--numthreads", dest="numthreads", type=int,
                         default=20,
                         help="Use NUM threads", metavar="NUM")
     argprs.add_argument("--port", dest="port", type=int,
                         default=nameServicePort,
                         help="Register using PORT", metavar="PORT")
-    argprs.add_argument("--profile", dest="profile", action="store_true",
-                        default=False,
-                        help="Run the profiler on main()")
     argprs.add_argument("--purge-interval", dest="purge_interval",
                         type=float, metavar="SECS",
                         default=60.0,
@@ -41,26 +31,10 @@ if __name__ == '__main__':
                         help="Delta (SECS) to consider a service dead")
     ssdlog.addlogopts(argprs)
     ro.addlogopts(argprs)
-    Monitor.addlogopts(argprs)
 
     (options, args) = argprs.parse_known_args(sys.argv[1:])
 
     if len(args) != 0:
         argprs.error("incorrect number of arguments")
 
-
-    # Are we debugging this?
-    if options.debug:
-        import pdb
-
-        pdb.run('ro_ns.main(options, args)')
-
-    # Are we profiling this?
-    elif options.profile:
-        import profile
-
-        print("%s profile:" % sys.argv[0])
-        profile.run('ro_ns.main(options, args)')
-
-    else:
-        ro_ns.main(options, args)
+    ro_ns.main(options, args)

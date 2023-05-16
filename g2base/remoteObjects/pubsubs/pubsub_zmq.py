@@ -31,6 +31,7 @@ class PubSub(Callback.Callbacks):
         self.db = db
         self.logger = logger
 
+        self.subscriptions = set([])
         self.context = None
         self.pub = None
         self.sub = None
@@ -55,6 +56,8 @@ class PubSub(Callback.Callbacks):
         # self.poller.register(self.sub, zmq.POLLIN)
 
     def publish(self, channel, envelope, pack_info):
+        if self.pub is None:
+            raise ConnectionError("pubsub is not connected")
         packet = ro_packer.pack(envelope, pack_info)
         try:
             #self.pub.send_unicode("%s %s" % (channel, message), zmq.NOBLOCK)
@@ -73,17 +76,24 @@ class PubSub(Callback.Callbacks):
         pass
 
     def subscribe(self, channel):
+        self.subscriptions.add(channel)
+
         if not self.has_callback(channel):
             self.enable_callback(channel)
 
-        # ZMQ doesn't like unicode
-        channel_b = channel.encode()
-        self.sub.setsockopt(zmq.SUBSCRIBE, channel_b)
+        if self.sub is not None:
+            # ZMQ doesn't like unicode
+            channel_b = channel.encode()
+            self.sub.setsockopt(zmq.SUBSCRIBE, channel_b)
 
     def unsubscribe(self, channel):
-        # ZMQ doesn't like unicode
-        channel_b = channel.encode()
-        self.sub.setsockopt(zmq.UNSUBSCRIBE, channel_b)
+        if channel in self.subscriptions:
+            self.subscriptions.remove(channel)
+
+            if self.sub is not None:
+                # ZMQ doesn't like unicode
+                channel_b = channel.encode()
+                self.sub.setsockopt(zmq.UNSUBSCRIBE, channel_b)
 
     def start(self, ev_quit=None):
         if ev_quit is None:
@@ -166,9 +176,27 @@ class PubSub(Callback.Callbacks):
         self.make_callback(channel, channel, envelope)
 
     def subscribe_loop(self, ev_quit):
-        self.ev_quit = ev_quit
         while not ev_quit.is_set():
-            self.listen()
+            try:
+                self.reconnect()
+
+                # subscribe or re-subscribe
+                for name in self.subscriptions:
+                    self.subscribe(name)
+
+                while not ev_quit.is_set():
+                    self.listen()
+
+            except Exception as e:
+                self.pub = None
+                self.sub = None
+                self.logger.error(f"Error listening for messages: {e}",
+                                  exc_info=True)
+                ev_quit.wait(self.reconnect_interval)
+
+    def close(self):
+        return self.redis.close()
+        self.redis = None
 
 
 class Server(object):
@@ -209,43 +237,20 @@ def main(options, args):
         pass
 
 if __name__ == '__main__':
-    from optparse import OptionParser
+    from argparse import ArgumentParser
 
-    usage = "usage: %prog [options]"
-    optprs = OptionParser(usage=usage)
+    argprs = ArgumentParser(description="ZeroMQ based pubsub hub")
 
-    optprs.add_option("--debug", dest="debug", default=False,
-                      action="store_true",
-                      help="Enter the pdb debugger on main()")
-    optprs.add_option("--host", dest="host", metavar="HOST",
-                      default='localhost',
-                      help="Bind to HOST")
-    optprs.add_option("--profile", dest="profile", action="store_true",
-                      default=False,
-                      help="Run the profiler on main()")
-    optprs.add_option("--port", dest="port", type="int", default=5562,
-                      help="Register using PORT", metavar="PORT")
-    ssdlog.addlogopts(optprs)
+    argprs.add_argument("--host", dest="host", metavar="HOST",
+                        default='localhost',
+                        help="Bind to HOST")
+    argprs.add_argument("--port", dest="port", type="int", default=5562,
+                        help="Register using PORT", metavar="PORT")
+    ssdlog.addlogopts(argprs)
 
-    (options, args) = optprs.parse_args(sys.argv[1:])
+    (options, args) = argprs.parse_known_args(sys.argv[1:])
 
     if len(args) != 0:
-        optprs.error("incorrect number of arguments")
+        argprs.error("incorrect number of arguments")
 
-    # Are we debugging this?
-    if options.debug:
-        import pdb
-
-        pdb.run('main(options, args)')
-
-    # Are we profiling this?
-    elif options.profile:
-        import profile
-
-        print(("%s profile:" % sys.argv[0]))
-        profile.run('main(options, args)')
-
-    else:
-        main(options, args)
-
-# END
+    main(options, args)

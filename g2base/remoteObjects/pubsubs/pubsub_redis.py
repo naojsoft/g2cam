@@ -70,22 +70,29 @@ class PubSub(Callback.Callbacks):
         self.port = port
         self.db = db
         self.logger = logger
+        self.ev_quit = None
 
         self.redis = None
         self.pubsub = None
+        self.subscriptions = set([])
         self.timeout = 0.2
-
-        self.reconnect()
+        self.reconnect_interval = 20.0
+        self.socket_timeout = 60.0
+        self.ping_interval = 30.0
 
     def reconnect(self):
         self.redis = redis.StrictRedis(host=self.host, port=self.port,
-                                       db=self.db)
+                                       db=self.db,
+                                       socket_timeout=self.socket_timeout,
+                                       health_check_interval=self.ping_interval)
         ## self.redis = BufferedRedis(host=self.host, port=self.port,
         ##                            db=self.db)
-        self.pubsub = self.redis.pubsub()
-        self.pubsub.subscribe('admin')
+        self.pubsub = self.redis.pubsub(ignore_subscribe_messages=True)
+        ## self.pubsub.subscribe('admin')
 
     def publish(self, channel, envelope, pack_info):
+        if self.redis is None:
+            raise ConnectionError("pubsub is not connected")
         packet = ro_packer.pack(envelope, pack_info)
 
         self.redis.publish(channel, packet)
@@ -96,13 +103,20 @@ class PubSub(Callback.Callbacks):
             self.redis.flush()
 
     def subscribe(self, channel):
+        self.subscriptions.add(channel)
+
         if not self.has_callback(channel):
             self.enable_callback(channel)
 
-        self.pubsub.subscribe(channel)
+        if self.pubsub is not None:
+            self.pubsub.subscribe(channel)
 
     def unsubscribe(self, channel):
-        self.pubsub.unsubscribe(channel)
+        if channel in self.subscriptions:
+            self.subscriptions.remove(channel)
+
+            if self.pubsub is not None:
+                self.pubsub.unsubscribe(channel)
 
     def start(self, ev_quit=None):
         if ev_quit is None:
@@ -117,10 +131,31 @@ class PubSub(Callback.Callbacks):
         self.ev_quit.set()
 
     def listen(self):
-        pkt = self.pubsub.get_message(timeout=self.timeout)
-        if pkt is None:
+        pkt = None
+        try:
+            pkt = self.pubsub.get_message(timeout=self.timeout)
+            if pkt is None:
+                # timeout
+                return
+
+        except redis.exceptions.TimeoutError as e:
+            if self.logger is not None:
+                self.logger.error("abnormal timeout--server restart?")
             # timeout
-            return
+            raise e
+
+        except redis.exceptions.ConnectionError as e:
+            # TODO: handle server disconnection
+            if self.logger is not None:
+                self.logger.warning("server disconnected us")
+            raise e
+
+        except Exception as e:
+            if self.logger is not None:
+                self.logger.error(f"error in getting message: {e}",
+                                  exc_info=True)
+                self.logger.error("pkt: {}".format(str(pkt)))
+                return
 
         # this is Redis API--packet will have type, channel and
         # data fields.
@@ -135,17 +170,33 @@ class PubSub(Callback.Callbacks):
 
         except Exception as e:
             if self.logger is not None:
-                self.logger.error("Error unpacking payload: %s" % (str(e)))
+                self.logger.error("Error unpacking payload: %s" % (str(e)),
+                                  exc_info=True)
             raise
-            # need traceback
 
         # this will catch its own exceptions so that we don't
         # kill the subscribe loop
         self.make_callback(channel, channel, envelope)
 
     def subscribe_loop(self, ev_quit):
-        self.ev_quit = ev_quit
         while not ev_quit.is_set():
-            self.listen()
+            try:
+                self.reconnect()
 
-# END
+                # subscribe or re-subscribe
+                for name in self.subscriptions:
+                    self.subscribe(name)
+
+                while not ev_quit.is_set():
+                    self.listen()
+
+            except Exception as e:
+                self.redis = None
+                self.pubsub = None
+                self.logger.error(f"Error listening for messages: {e}",
+                                  exc_info=True)
+                ev_quit.wait(self.reconnect_interval)
+
+    def close(self):
+        return self.redis.close()
+        self.redis = None
