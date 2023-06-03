@@ -41,6 +41,15 @@ def getFrameInfoFromPath(fitspath):
 # Use this class over the old module method if possible
 
 class Frame(object):
+    """
+    Class to extract Subaru telescope frame information from a file
+    path which contains a name conforming to the Subaru telescope naming
+    conventions.
+
+    Usage:
+        frame = Frame('/path/to/some/file.fits')
+
+    """
 
     def __init__(self, path=None):
         self.filename = None
@@ -108,6 +117,15 @@ class Frame(object):
     limit = 9999999
 
     def add(self, count):
+        if count > self.limit:
+            # separate count into 'prefix' addition and 'number' addition
+            pfx_inc = count // (self.limit + 1)
+            count -= pfx_inc * (self.limit + 1)
+            pfx_int = ord(self.prefix) - ord('0') + pfx_inc
+            if pfx_int > 9:
+                raise ValueError("Count exceeds digit space")
+            self.prefix = chr(ord('0') + pfx_int)
+
         res = self.number + count
         if res > self.limit:
             # bump prefix
@@ -119,6 +137,15 @@ class Frame(object):
 
         else:
             self.number = res
+
+    def copy(self):
+        fr = Frame()
+        fr.from_frameid(str(self))
+
+        fr.path = self.path
+        fr.filename = self.filename
+        fr.directory = self.directory
+        return fr
 
     def get_primary_hdu(self, fits_f):
         if self.extension.endswith('.fz'):
