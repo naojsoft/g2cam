@@ -142,7 +142,6 @@ class Frame(object):
         fr = Frame()
         fr.from_frameid(str(self))
 
-        fr.path = self.path
         fr.filename = self.filename
         fr.directory = self.directory
         return fr
