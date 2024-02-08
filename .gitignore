@@ -24,6 +24,7 @@ __pycache__
 *.c
 
 # Other generated files
+version.py
 
 # Sphinx
 _build
