@@ -4,31 +4,85 @@
 import sys
 import os
 import re
+import argparse
 
 from g2cam.status.client import StatusClient
+from g2cam import version
+
+example_text = '''
+
+  Examples:
+    $ get_status
+    $ get_status STATL.
+    $ get_status 'TSCL\.SV.D.'
+    $ get_status <regex> ...
+'''
+
+def main(options, args):
+    host = os.environ.get('GEN2_STATUS_DB_HOST', 'localhost')
+    if options.host is not None:
+        host = options.host
+    if options.user is not None:
+        user = options.user
+    else:
+        user = os.environ.get('GEN2_STATUS_DB_USER', None)
+    if user is None:
+        raise ValueError("Please specify a --user, or set GEN2_STATUS_DB_USER")
+    if options.passwd is not None:
+        pswd = options.passwd
+    else:
+        pswd = os.environ.get('GEN2_STATUS_DB_PASS', None)
+    if pswd is None:
+        raise ValueError("Please specify a --passwd, or set GEN2_STATUS_DB_PASS")
+
+    client = StatusClient(host=host, username=user, password=pswd)
+    client.connect()
+
+    res = client.fetch_all()
+
+    if len(sys.argv) > 1:
+        res2 = []
+        for arg in sys.argv[1:]:
+            regex = re.compile(arg)
+            res2.extend([(key, val)
+                         for key, val in res.items()
+                         if regex.match(key)])
+
+    else:
+        res2 = list(res.items())
+
+    # sort alphabetically
+    res2.sort(key=lambda x: x[0])
+
+    # align keys
+    results = [len(x[0]) for x in res2]
+    if len(results) == 0:
+        sys.exit(1)
+    max_n = max(*results)
+    fmt_s = "{:%d}: {}" % max_n
+    res3 = "\n".join([fmt_s.format(key, val) for key, val in res2])
+    print(res3)
 
 
-host = os.environ['GEN2_STATUS_DB_HOST']
-user = os.environ['GEN2_STATUS_DB_USER']
-pswd = os.environ['GEN2_STATUS_DB_PASS']
+if __name__ == '__main__':
 
-client = StatusClient(host=host, username=user, password=pswd)
-client.connect()
+    # Parse command line options
+    argprs = argparse.ArgumentParser(description="Get status from Gen2",
+                                     epilog=example_text,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
 
-res = client.fetch_all()
+    argprs.add_argument("--host", dest="host", metavar="HOST",
+                        default=None,
+                        help="Use HOST to for status db host")
+    argprs.add_argument('-u', "--user", dest="user", metavar="USER",
+                        default=None,
+                        help="Use USER to log into status db")
+    argprs.add_argument('-p', "--passwd", dest="passwd", metavar="PASS",
+                        default=None,
+                        help="Login into db as user with password PASS")
+    argprs.add_argument('--version', action='version',
+                        version='%(prog)s {}'.format(version.version))
 
-if len(sys.argv) > 1:
-    regex = re.compile(sys.argv[1])
-    res2 = [(key, val) for key, val in res.items() if regex.match(key)]
+    (options, args) = argprs.parse_known_args(sys.argv[1:])
 
-else:
-    res2 = list(res.items())
-
-# sort alphabetically
-res2.sort(key=lambda x: x[0])
-
-# align keys
-max_n = max([len(x[0]) for x in res2])
-fmt_s = "{:%d}: {}" % max_n
-res3 = "\n".join([fmt_s.format(key, val) for key, val in res2])
-print(res3)
+    main(options, args)

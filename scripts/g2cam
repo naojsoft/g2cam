@@ -156,7 +156,7 @@ if __name__ == '__main__':
     # Parse command line options
     import argparse
 
-    argprs = argparse.ArgumentParser()
+    argprs = argparse.ArgumentParser(description="Gen2 instrument interface program")
 
     argprs.add_argument("--archivesvc", dest="archivesvc", metavar="NAME",
                         default='archiver',
