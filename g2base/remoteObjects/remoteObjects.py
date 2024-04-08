@@ -187,9 +187,12 @@ class remoteObjectServer(object):
         self.pinginterval = ping_interval
         self.strict_registration = strict_registration
         self.threaded_server = threaded_server
-        if not ns:
+        if ns is None:
             # if no specific name server supplied, use the module default
             ns = default_ns
+        elif ns is False:
+            ns = None
+            self.pinginterval = 1000000000
         self.ns = ns
         self.__pid = os.getpid()
 
