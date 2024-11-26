@@ -1,7 +1,7 @@
 #
 # Makefile for g2cam manual
 #
-# Eric Jeschke  2012.01.25   (eric@naoj.org)
+# E. Jeschke  2012.01.25
 #
 
 DOC	= g2cam

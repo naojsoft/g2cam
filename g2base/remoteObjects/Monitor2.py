@@ -1,7 +1,7 @@
 #
 # Monitor.py -- internal status monitoring and synchronization
 #
-# Eric Jeschke (eric@naoj.org)
+# E. Jeschke
 #
 """
 The Monitor and Minimon classes are subclasses of the PubSub class.

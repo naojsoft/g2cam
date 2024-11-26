@@ -1,7 +1,7 @@
 #
 # notifications.py -- notifications for alarms, etc.
 #
-# eric@naoj.org
+# E. Jeschke
 #
 # -*- coding: utf-8 -*-
 #

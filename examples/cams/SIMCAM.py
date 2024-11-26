@@ -1,7 +1,7 @@
 #
 # SIMCAM.py -- SIMCAM personality for g2cam instrument interface
 #
-# Eric Jeschke (eric@naoj.org)
+# E. Jeschke
 #
 """This file implements a simulator for a simulated instrument (SIMCAM).
 """
