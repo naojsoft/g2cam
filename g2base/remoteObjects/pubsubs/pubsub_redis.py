@@ -216,5 +216,8 @@ class PubSub(Callback.Callbacks):
                 ev_quit.wait(self.reconnect_interval)
 
     def close(self):
-        return self.redis.close()
+        try:
+            self.redis.close()
+        except Exception as e:
+            pass
         self.redis = None
