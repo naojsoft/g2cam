@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 #
 # PubSub.py -- Subaru Remote Objects Publish/Subscribe module
 #
@@ -1190,60 +1189,6 @@ def main(options, args):
         if usethread:
             pubsub.stop_server(wait=True)
         pubsub.stop()
-
-
-if __name__ == '__main__':
-
-    # Parse command line options with nifty new optparse module
-    from optparse import OptionParser
-
-    usage = "usage: %prog [options]"
-    optprs = OptionParser(usage=usage, version=('%%prog %s' % version))
-
-    optprs.add_option("--config", dest="config",
-                      metavar="FILE",
-                      help="Use configuration FILE for setup")
-    optprs.add_option("--debug", dest="debug", default=False,
-                      action="store_true",
-                      help="Enter the pdb debugger on main()")
-    optprs.add_option("--outlimit", dest="outlimit", type="int", default=6,
-                      help="Limit outgoing connections to NUM", metavar="NUM")
-    optprs.add_option("--inlimit", dest="inlimit", type="int", default=20,
-                      help="Limit incoming connections to NUM", metavar="NUM")
-    optprs.add_option("--numthreads", dest="numthreads", type="int",
-                      default=100,
-                      help="Use NUM threads", metavar="NUM")
-    optprs.add_option("--port", dest="port", type="int", default=None,
-                      help="Register using PORT", metavar="PORT")
-    optprs.add_option("--profile", dest="profile", action="store_true",
-                      default=False,
-                      help="Run the profiler on main()")
-    optprs.add_option("--svcname", dest="svcname", metavar="NAME",
-                      default='pubsub',
-                      help="Register using NAME as service name")
-    ssdlog.addlogopts(optprs)
-
-    (options, args) = optprs.parse_args(sys.argv[1:])
-
-    if len(args) != 0:
-        optprs.error("incorrect number of arguments")
-
-
-    # Are we debugging this?
-    if options.debug:
-        import pdb
-
-        pdb.run('main(options, args)')
-
-    # Are we profiling this?
-    elif options.profile:
-        import profile
-
-        print("%s profile:" % sys.argv[0])
-        profile.run('main(options, args)')
-
-    else:
-        main(options, args)
 
 
 # END

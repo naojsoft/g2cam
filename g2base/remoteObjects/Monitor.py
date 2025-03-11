@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 #
 # Monitor.py -- internal status monitoring and synchronization
 #
@@ -355,11 +354,10 @@ class Monitor(ps.PubSub):
             logger.error("Error attaching monitor to logging handler: %s" % (
                 str(e)))
 
-##     def setvals(self, channels, path, **values):
-##         if not channels:
-##             channels = self.defaultChannels
 
-##         return self.update(path, values, channels)
+    def setup_batch(self, limit_sec, limit_num=100):
+        # For future compatibility
+        pass
 
 
     # Get deprecate these item interface methods if we remove dict-style
@@ -773,54 +771,5 @@ def main(options, args):
         if usethread:
             monitor.stop_server(wait=True)
         monitor.stop()
-
-
-if __name__ == '__main__':
-
-    # Parse command line options with nifty new optparse module
-    from optparse import OptionParser
-
-    usage = "usage: %prog [options]"
-    optprs = OptionParser(usage=usage, version=('%%prog %s' % version))
-
-    optprs.add_option("--db", dest="dbpath", metavar="FILE",
-                      help="Use FILE as the monitor database")
-    optprs.add_option("--debug", dest="debug", default=False, action="store_true",
-                      help="Enter the pdb debugger on main()")
-    optprs.add_option("--numthreads", dest="numthreads", type="int",
-                      default=30,
-                      help="Use NUM threads", metavar="NUM")
-    optprs.add_option("--port", dest="port", type="int", default=None,
-                      help="Register using PORT", metavar="PORT")
-    optprs.add_option("--profile", dest="profile", action="store_true",
-                      default=False,
-                      help="Run the profiler on main()")
-    optprs.add_option("--svcname", dest="svcname", metavar="NAME",
-                      default=serviceName,
-                      help="Register using NAME as service name")
-    ssdlog.addlogopts(optprs)
-
-    (options, args) = optprs.parse_args(sys.argv[1:])
-
-    if len(args) != 0:
-        optprs.error("incorrect number of arguments")
-
-
-    # Are we debugging this?
-    if options.debug:
-        import pdb
-
-        pdb.run('main(options, args)')
-
-    # Are we profiling this?
-    elif options.profile:
-        import profile
-
-        print("%s profile:" % sys.argv[0])
-        profile.run('main(options, args)')
-
-    else:
-        main(options, args)
-
 
 # END
