@@ -364,6 +364,16 @@ insinfo = {
         'frametypes': 'AQ',
         'description': u'COMICS Waveplate Unit',
         },
+    'REACH': {
+        'name': 'REACH',
+        'number': 36,
+        'code': 'RCH',
+        'active': True,
+        'interface': ('g2cam', 1.0),
+        'fov': 0.045,
+        'frametypes': 'ABCQV',
+        'description': u'AO188, HWC, IRD, CHARIS, IRCS, and SCEXAO',
+        },
     }
 
 
