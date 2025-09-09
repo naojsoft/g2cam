@@ -14,7 +14,7 @@ example_text = '''
   Examples:
     $ get_status
     $ get_status STATL.
-    $ get_status 'TSCL\.SV.D.'
+    $ get_status 'TSCL\\.SV.D.'
     $ get_status <regex> ...
 '''
 
@@ -26,14 +26,10 @@ def main(options, args):
         user = options.user
     else:
         user = os.environ.get('GEN2_STATUS_DB_USER', None)
-    if user is None:
-        raise ValueError("Please specify a --user, or set GEN2_STATUS_DB_USER")
     if options.passwd is not None:
         pswd = options.passwd
     else:
         pswd = os.environ.get('GEN2_STATUS_DB_PASS', None)
-    if pswd is None:
-        raise ValueError("Please specify a --passwd, or set GEN2_STATUS_DB_PASS")
 
     client = StatusClient(host=host, username=user, password=pswd)
     client.connect()
