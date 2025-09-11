@@ -6,17 +6,14 @@
 #
 from __future__ import absolute_import, print_function
 from . import six
-from .six.moves import map, zip
 
 import sys
 import time
-import os
+import threading
 
 if six.PY2:
-    import thread
     import Queue
 else:
-    import _thread as thread
     import queue as Queue
 
     # NOTE: See http://bugs.python.org/issue7946
@@ -26,17 +23,18 @@ else:
     _swival = 0.000001
     sys.setswitchinterval(_swival)
 
-import threading
-import traceback
+from . import Callback  # noqa
 
 
 class TaskError(Exception):
     """Exception generated for task errors"""
     pass
 
+
 class TaskTimeout(TaskError):
     """Exception generated when timing out waiting on a task"""
     pass
+
 
 class UserTaskException(Exception):
     pass
@@ -44,7 +42,7 @@ class UserTaskException(Exception):
 
 # ------------ BASIC TASKS ------------
 
-class Task(object):
+class Task(Callback.Callbacks):
     """This class implements a basic Task (command) abstraction.  The
     methods define the interface for starting, cancelling, waiting on a
     task, etc.
@@ -56,7 +54,6 @@ class Task(object):
         initialize() and start() methods.
         """
         self.ev_done = threading.Event()
-        self.callbacks = Queue.Queue()
         self.tag = None
         self.logger = None
         self.threadPool = None
@@ -69,6 +66,7 @@ class Task(object):
 
         super(Task, self).__init__()
 
+        self.enable_callback('resolved')
 
     def initialize(self, taskParent, override=None):
         """This method initializes a task for (re)use.  taskParent is the
@@ -92,7 +90,6 @@ class Task(object):
                 if override and var in override:
                     self.__dict__[var] = override[var]
                 else:
-                    #print "COPYING VAR FROM PARENT: %s(%s)" % (var, str(taskParent.__dict__[var]))
                     self.__dict__[var] = taskParent.__dict__[var]
 
         else:
@@ -122,14 +119,13 @@ class Task(object):
         Subclass should override this method, if it has an asynchronous
         way to start the task and return immediately.
         """
-        if self.threadPool:
+        if self.threadPool is not None:
             self.threadPool.addTask(self)
 
             # Lets other threads have a chance to run
             time.sleep(0)
         else:
             raise TaskError("start(): nothing to start for task %s" % self)
-
 
     def init_and_start(self, taskParent, override={}):
         """Convenience method to initialize and start a task.
@@ -139,13 +135,11 @@ class Task(object):
 
         return tag
 
-
     def check_state(self):
         """Abstract method that should check for pause, cancellation, or
         any other sort of preemption event.
         """
         pass
-
 
     def extend_shares(self, varlist):
         shares = set(self.shares)
@@ -154,7 +148,6 @@ class Task(object):
                 shares.add(var)
 
         self.shares = shares
-
 
     def stop(self):
         """This method cancels an executing task (if possible).
@@ -201,14 +194,12 @@ class Task(object):
 
         return self.result
 
-
     def step(self):
         """If a task has a way of stepping through an operation.  It can
         implement this method.  Subclass should not call super.step().
         """
         raise TaskError("Task %s: subclass should override step() method!" %
                         self)
-
 
     def execute(self):
         """This method does the work of a task (if executed by the
@@ -218,7 +209,6 @@ class Task(object):
         """
         raise TaskError("Task %s: subclass should override execute() method!" %
                         self)
-
 
     def done(self, result, noraise=False):
         """This method is called when a task has finished executing.
@@ -247,7 +237,7 @@ class Task(object):
         self.ev_done.set()
 
         # Perform callbacks for event-style waiters
-        self.do_callbacks()
+        self.make_callback('resolved', self.result)
 
         # If the result is an exception, then our final act is to raise
         # it in the caller, unless the caller explicitly supressed that
@@ -255,35 +245,6 @@ class Task(object):
             raise result
 
         return result
-
-
-    def register_callback(self, fn, args=None):
-        """This method is called to register a callback function to be
-        called when a task terminates.
-        Subclass should probably not override this method.
-        """
-        if args is None:
-            args = []
-
-        if callable(fn):
-            self.callbacks.put((fn, args))
-        else:
-            raise TaskError("Function argument is not a callable: %s" % \
-                            str(fn))
-
-
-    def do_callbacks(self):
-        """Makes callbacks on all registered functions waiting on this task.
-        """
-
-        while not self.callbacks.empty():
-            (fn, rest) = self.callbacks.get()
-
-            args = [self.result]
-            args.extend(rest)
-
-            fn(*args)
-
 
     def get_tag(self):
         """This is only valid AFTER initialize() has been called on the task.
@@ -301,7 +262,6 @@ class Task(object):
 
     def getExecutionTime(self):
         return self.totaltime
-
 
     def runTask(self, task, timeout=None):
         """Run a child task to completion.  Returns the result of
@@ -322,7 +282,6 @@ class Task(object):
         # Now we're done
         return res
 
-
     def run(self, task, timeout=None):
         """Run a child task to completion.  Returns the result of
         the child task.  Simply calls runTask().
@@ -341,6 +300,7 @@ class printTask(Task):
     def execute(self):
         print(self.msg)
 
+
 class sleepTask(Task):
     """Simple task that sleeps for delay seconds."""
     def __init__(self, delay):
@@ -349,6 +309,7 @@ class sleepTask(Task):
 
     def execute(self):
         self.ev_done.wait(timeout=self.delay)
+
 
 class FuncTask(Task):
     """Simple task that calls func and returns func's return value."""
@@ -384,15 +345,7 @@ class FuncTask(Task):
         except Exception as e:
             if self.logger:
                 self.logger.error("Task '%s' terminated with exception: %s" %
-                                  (str(self), str(e)))
-                try:
-                    (type, value, tb) = sys.exc_info()
-                    self.logger.error("Traceback:\n%s" %
-                                      "".join(traceback.format_tb(tb)))
-
-                    tb = None
-                except Exception:
-                    self.logger.error("Traceback information unavailable.")
+                                  (str(self), str(e)), exc_info=True)
             self.done(e)
 
 
@@ -449,12 +402,10 @@ class SequentialTaskset(Task):
 
         self.tasklist = list(taskseq)
 
-
     def initialize(self, taskParent, **kwdargs):
         self.index = 0
 
         super(SequentialTaskset, self).initialize(taskParent, **kwdargs)
-
 
     def step(self):
         """Run the next child task and wait for completion (no timeout)."""
@@ -469,7 +420,6 @@ class SequentialTaskset(Task):
 
         return self.runTask(self.task)
 
-
     def execute(self):
         """Run all child tasks, in order, waiting for completion of each.
         Return the result of the final child task's execution.
@@ -482,7 +432,6 @@ class SequentialTaskset(Task):
         # Returns result of last task to quit
         return res
 
-
     def stop(self):
         """Interrupt/cancel execution, but will allow current child task
         to complete."""
@@ -493,7 +442,6 @@ class SequentialTaskset(Task):
 
         except TaskError as e:
             self.logger.error("Error cancelling child task: %s" % (str(e)))
-
 
     def addTask(self, task):
         """Append a task to the task sequence.  If the SequentialTaskset has
@@ -518,7 +466,6 @@ class ConcurrentAndTaskset(Task):
 
         # internal mutex
         self._lock_c = threading.RLock()
-
 
     def execute(self):
         """Run all child tasks concurrently in separate threads.
@@ -584,7 +531,6 @@ class ConcurrentAndTaskset(Task):
         # Return value of last child to complete
         return value
 
-
     def child_done(self, result, task):
         with self._lock_c:
             self.count += 1
@@ -593,7 +539,6 @@ class ConcurrentAndTaskset(Task):
             self.taskset.remove(task)
             self.totaltime += task.getExecutionTime()
             self.results[(self.count, task)] = result
-
 
     def stop(self):
         """Call stop() on all child tasks, and ignore TaskError exceptions.
@@ -610,7 +555,6 @@ class ConcurrentAndTaskset(Task):
 
         # stop ourself
         #self.ev_intr.set()
-
 
     def addTask(self, task):
         """Add a task to the task set.
@@ -656,7 +600,6 @@ class QueueTaskset(Task):
             ev_quit = threading.Event()
         self.ev_quit = ev_quit
 
-
     def flush(self):
         # Flush queue of pending tasks
         self.logger.debug("Flushing queue.")
@@ -665,7 +608,6 @@ class QueueTaskset(Task):
                 self.queue.get(block=False)
             except Queue.Empty:
                 break
-
 
     def stop(self):
         self.flush()
@@ -682,7 +624,6 @@ class QueueTaskset(Task):
         # put termination sentinel
         self.queue.put(None)
 
-
     def stop_child(self):
         self.flush()
 
@@ -693,7 +634,6 @@ class QueueTaskset(Task):
         except TaskError as e:
             #self.logger.error("Error cancelling child task: %s" % (str(e)))
             pass
-
 
     def execute(self):
         self.count = 0
@@ -710,7 +650,7 @@ class QueueTaskset(Task):
 
                 self.task = task
 
-                task.register_callback(self.child_done, args=[task])
+                task.add_callback('resolved', self.child_done)
 
                 with self.lock:
                     self.count += 1
@@ -729,19 +669,7 @@ class QueueTaskset(Task):
                                           (str(task), str(res))))
                 except Exception as e:
                     self.logger.error("Task '%s' terminated with exception: %s" %
-                                      (str(task), str(e)))
-                    try:
-                        (type, value, tb) = sys.exc_info()
-                        self.logger.debug("Traceback:\n%s" %
-                                          "".join(traceback.format_tb(tb)))
-
-                        # NOTE: to avoid creating a cycle that might cause
-                        # problems for GC--see Python library doc for sys
-                        # module
-                        tb = None
-
-                    except Exception as e:
-                        self.logger.debug("Traceback information unavailable.")
+                                      (str(task), str(e)), exc_info=True)
 
                     # If task raised exception then it didn't call done,
                     task.done(e, noraise=True)
@@ -750,25 +678,21 @@ class QueueTaskset(Task):
                 # No task available.  Continue trying to get one.
                 continue
 
-
         # TODO: should we wait for self.count > 0?
         self.logger.debug("Queue Taskset terminating")
 
         return self.result
 
-
-    def child_done(self, result, task):
+    def child_done(self, task, result):
         with self.lock:
             self.count -= 1
             self.totaltime += task.getExecutionTime()
             self.result = result
 
-
     def cancel(self):
         self.flush()
 
         super(QueueTaskset, self).cancel()
-
 
     def addTask(self, task):
         self.queue.put(task)
@@ -781,10 +705,6 @@ class PriorityQueue(Queue.PriorityQueue):
 
 
 # ------------ WORKER THREADS ------------
-
-class _WorkerReset(Exception):
-    """Local exception used to reset a worker thread."""
-    pass
 
 class WorkerThread(object):
     """Container for a thread in which to call the execute() method of a task.
@@ -799,15 +719,18 @@ class WorkerThread(object):
         self.queue = queue
         self.logger = logger
         self.timeout = timeout
-        if ev_quit:
-            self.ev_quit = ev_quit
-        else:
-            self.ev_quit = threading.Event()
+        # global termination flag
+        if ev_quit is None:
+            ev_quit = threading.Event()
+        self.ev_quit = ev_quit
+        # local termination flag
+        self.my_quit = threading.Event()
         self.tpool = tpool
         self.lock = threading.RLock()
+        self.thread = None
         self.status = 'stopped'
-        self.time_start = 0.0
-
+        self.time_idle = None
+        self.tid = None
 
     def setstatus(self, status):
         """Sets our status field so that others can inquire what we are doing.
@@ -816,14 +739,16 @@ class WorkerThread(object):
         """
         with self.lock:
             self.status = status
-
+            if status == 'idle':
+                self.time_idle = time.time()
+            else:
+                self.time_idle = None
 
     def getstatus(self):
         """Returns our status--a string describing what we are doing.
         """
         with self.lock:
-            return (self.status, self.time_start)
-
+            return (self.status, self.time_idle)
 
     def execute(self, task):
         """Execute a task.
@@ -834,7 +759,6 @@ class WorkerThread(object):
         try:
             # Try to run the task.  If we catch an exception, then
             # it becomes the result.
-            self.time_start = time.time()
             self.setstatus('executing %s' % taskid)
 
             self.logger.debug("now executing task '%s'" % taskid)
@@ -846,20 +770,8 @@ class WorkerThread(object):
 
             except Exception as e:
                 self.logger.error("Task '%s' raised exception: %s" %
-                                  (str(task), str(e)))
+                                  (str(task), str(e)), exc_info=True)
                 res = e
-                try:
-                    (type, value, tb) = sys.exc_info()
-                    self.logger.debug("Traceback:\n%s" %
-                                      "".join(traceback.format_tb(tb)))
-
-                    # NOTE: to avoid creating a cycle that might cause
-                    # problems for GC--see Python library doc for sys
-                    # module
-                    tb = None
-
-                except Exception as e:
-                    self.logger.debug("Traceback information unavailable.")
 
         finally:
             self.logger.debug("done executing task '%s'" % str(task))
@@ -868,26 +780,26 @@ class WorkerThread(object):
             # Wake up waiters on other threads
             task.done(res, noraise=True)
 
-            self.time_start = 0.0
             self.setstatus('idle')
-
 
     # Basic task execution loop.  Dequeue a task and run it, then look
     # for another one
-    def taskloop(self):
+    def taskloop(self, ev_start):
+        self.tid = threading.get_ident()
         self.setstatus('starting')
-        self.logger.debug('Starting worker thread loop.')
+        self.logger.debug("thread %s starting worker thread loop." % (str(self.tid)))
 
         # If we were handed a thread pool upon startup, then register
         # ourselves with it.
-        if self.tpool:
-            self.tpool.register_up()
+        if self.tpool is not None:
+            self.tpool.register_up(self)
 
         try:
             self.setstatus('idle')
-            while not self.ev_quit.is_set():
+            if ev_start is not None:
+                ev_start.set()
+            while not self.ev_quit.is_set() and not self.my_quit.is_set():
                 try:
-
                     # Wait on our queue for a task; will timeout in
                     # self.timeout secs
                     (priority, task) = self.queue.get(block=True,
@@ -899,30 +811,45 @@ class WorkerThread(object):
 
                     self.execute(task)
 
-                except _WorkerReset:
-                    self.logger.info("Worker reset!")
-
                 except Queue.Empty as e:
                     # Reach here when we time out waiting for a task
-                    pass
+                    if self.tpool is not None and self.time_idle is not None:
+                        idle_sec = time.time() - self.time_idle
+                        if (self.tpool.idle_limit_sec is not None and
+                            idle_sec > self.tpool.idle_limit_sec):
+                            self.tpool.offer_to_quit(self)
 
         finally:
-            self.logger.debug('Stopping worker thread loop.')
-
-            if self.tpool:
-                self.tpool.register_dn()
+            if self.tpool is not None:
+                self.tpool.register_dn(self)
 
             self.setstatus('stopped')
 
+        self.logger.debug("thread %s exiting." % (str(self.tid)))
 
-    def start(self):
-        self.thread = threading.Thread(target=self.taskloop, args=[])
+    def start(self, wait=False):
+        if self.thread is not None:
+            raise RuntimeError("A worker thread is already running")
+        self.my_quit.clear()
+        ev_start = None
+        if wait:
+            ev_start = threading.Event()
+        self.thread = threading.Thread(target=self.taskloop, args=[ev_start])
         self.thread.start()
 
+        if wait:
+            ev_start.wait()
+
     def stop(self):
-        # Put termination sentinal on queue
-        self.queue.put((0, None))
-        self.ev_quit.set()
+        self.my_quit.set()
+
+    def cleanup(self):
+        if self.thread is not None:
+            alive = self.thread.is_alive()
+            if not alive:
+                self.thread.join()
+            self.thread = None
+
 
 # ------------ THREAD POOL ------------
 
@@ -937,128 +864,97 @@ class ThreadPool(object):
     """
 
     def __init__(self, numthreads=1, logger=None, ev_quit=None,
-                 workerClass=WorkerThread):
+                 minthreads=None, idle_limit_sec=10.0,
+                 workerClass=WorkerThread, analyze_interval=None):
 
-        self.numthreads = numthreads
+        self.numthreads = max(1, numthreads)
         self.logger = logger
-        if ev_quit:
-            self.ev_quit = ev_quit
-        else:
-            self.ev_quit = threading.Event()
+        if ev_quit is None:
+            ev_quit = threading.Event()
+        self.ev_quit = ev_quit
         self.lock = threading.RLock()
         self.workerClass = workerClass
+        if minthreads is None:
+            minthreads = numthreads
+        self.minthreads = max(0, minthreads)
+        self.idle_limit_sec = idle_limit_sec
+        self.mon_thread = None
+        self._analyze_time = 0.0
+        self.analyze_interval = analyze_interval
 
         self.queue = PriorityQueue()
-        self.workers = []
-        self.tids = []
 
         # Used to synchronize thread pool startup (see register() method)
         self.regcond = threading.Condition()
-        self.runningcount = 0
+        self.mp_cond = threading.Condition()
         self.status = 'down'
+        self.waiting = [self.workerClass(self.queue, logger=self.logger,
+                                         ev_quit=self.ev_quit, tpool=self)
+                        for i in range(self.numthreads)]
+        self.running = []
+        self.cleanup = []
 
-
-    def startall(self, wait=False, **kwdargs):
+    def startall(self, wait=False, **kwargs):
         """Start all of the threads in the thread pool.  If _wait_ is True
         then don't return until all threads are up and running.  Any extra
         keyword arguments are passed to the worker thread constructor.
         """
-        self.logger.debug("startall called")
-        with self.regcond:
-            while self.status != 'down':
-                if self.status in ('start', 'up') or self.ev_quit.is_set():
-                    # For now, abandon additional request to start
-                    self.logger.error("ignoring duplicate request to start thread pool")
-                    return
+        if self.mon_thread is not None:
+            self.logger.error("ignoring duplicate request to start thread pool")
+            return
 
-                self.logger.debug("waiting for threads: count=%d" %
-                                  self.runningcount)
-                self.regcond.wait()
+        self.logger.debug("startall called, starting pool attendant thread")
+        self.status = 'start'
+        self.mon_thread = threading.Thread(target=self.pool_attendant, args=[])
+        self.mon_thread.start()
 
-            #assert(self.status == 'down')
-            if self.ev_quit.is_set():
-                return
-
-            self.runningcount = 0
-            self.status = 'start'
-            self.workers = []
-            if wait:
-                tpool = self
-            else:
-                tpool = None
-
-            # Start all worker threads
-            self.logger.debug("starting threads in thread pool")
-            for i in range(self.numthreads):
-                t = self.workerClass(self.queue, logger=self.logger,
-                                     ev_quit=self.ev_quit, tpool=tpool,
-                                     **kwdargs)
-                self.workers.append(t)
-                t.start()
-
-            # if started with wait=True, then expect that threads will register
-            # themselves and last one up will set status to "up"
-            if wait:
+        # if started with wait=True, then expect that threads will register
+        # themselves and last one up will set status to "up"
+        if wait:
+            with self.regcond:
                 # Threads are on the way up.  Wait until last one starts.
                 while self.status != 'up' and not self.ev_quit.is_set():
                     self.logger.debug("waiting for threads: count=%d" %
-                                      self.runningcount)
+                                      len(self.running))
                     self.regcond.wait()
-            else:
-                # otherwise, we just assume the pool is up
-                self.status = 'up'
-            self.logger.debug("startall done")
-
-
-    def addThreads(self, numthreads, **kwdargs):
-        with self.regcond:
-            # Start all worker threads
-            self.logger.debug("adding %d threads to thread pool" % (
-                numthreads))
-            for i in range(numthreads):
-                t = self.workerClass(self.queue, logger=self.logger,
-                                     ev_quit=self.ev_quit, tpool=self.tpool,
-                                     **kwdargs)
-                self.workers.append(t)
-                t.start()
-
-            self.numthreads += numthreads
+        self.logger.debug("startall done")
 
     def stopall(self, wait=False):
         """Stop all threads in the worker pool.  If _wait_ is True
         then don't return until all threads are down.
         """
         self.logger.debug("stopall called")
-        with self.regcond:
-            while self.status != 'up':
-                if self.status in ('stop', 'down') or self.ev_quit.is_set():
-                    # For now, silently abandon additional request to stop
-                    self.logger.warning("ignoring duplicate request to stop thread pool.")
-                    return
-
-                self.logger.debug("waiting for threads: count=%d" %
-                                  self.runningcount)
-                self.regcond.wait()
-
-            #assert(self.status == 'up')
-            self.logger.debug("stopping threads in thread pool")
+        with self.lock:
             self.status = 'stop'
-            # Signal to all threads to terminate.
-            self.ev_quit.set()
+        # Signal to all threads to terminate.
+        self.ev_quit.set()
 
-            if wait:
+        if wait:
+            with self.regcond:
                 # Threads are on the way down.  Wait until last one quits.
                 while self.status != 'down':
                     self.logger.debug("waiting for threads: count=%d" %
-                                      self.runningcount)
+                                      len(self.running))
                     self.regcond.wait()
 
-            self.logger.debug("stopall done")
+        self.mon_thread.join()
+        self.mon_thread = None
+        self.logger.debug("stopall done")
 
+    def add_threads(self, add_numthreads, minthreads=None):
+        with self.regcond:
+            self.waiting.extend([self.workerClass(self.queue,
+                                                  logger=self.logger,
+                                                  ev_quit=self.ev_quit,
+                                                  tpool=self)
+                                 for i in range(add_numthreads)])
+            self.numthreads += add_numthreads
+            if minthreads is not None:
+                self.minthreads = max(0, minthreads)
 
     def workerStatus(self):
-        return list(map(lambda t: t.getstatus(), self.workers))
-
+        with self.regcond:
+            return list(map(lambda t: t.getstatus(), self.running))
 
     def addTask(self, task, priority=0):
         """Add a task to the queue of tasks.
@@ -1067,17 +963,93 @@ class ThreadPool(object):
         Tasks are executed in first-come-first-served order.
         """
         self.queue.put((priority, task))
+        with self.mp_cond:
+            # wake up pool attendant thread to check on things
+            self.mp_cond.notify()
 
+    def pool_attendant(self):
+        """Monitor the thread pool as the "pool attendant".
+
+        A thread is started in this method to monitor the thread pool and
+        clean up or activate new threads as needed.
+        """
+        self.logger.debug("starting the thread pool attendant loop...")
+        while not self.ev_quit.is_set():
+            # NOTE: enable once we are Python 3 only
+            # if self.analyze_interval is not None:
+            #     cur_time = time.time()
+            #     if cur_time - self._analyze_time > self.analyze_interval:
+            #         self._analyze_time = cur_time
+            #         self.analyze_threads()
+
+            worker = None
+            with self.regcond:
+                # join threads that have exited
+                while len(self.cleanup) > 0:
+                    dead_worker = self.cleanup.pop()
+                    dead_worker.cleanup()
+
+                num_running = len(self.running)
+                if (num_running < self.minthreads or
+                    self.queue.qsize() > 0 and num_running < self.numthreads):
+                    assert (len(self.waiting) > 0)
+                    worker = self.waiting[0]
+
+            if worker is not None:
+                worker.start(wait=True)
+            else:
+                with self.mp_cond:
+                    self.mp_cond.wait(timeout=0.25)
+
+        self.logger.debug("stopping the thread pool attendant loop...")
+
+    # NOTE: enable once we are Python 3 only
+    # def analyze_threads(self):
+    #     self.logger.info("--- analyzing active threads...")
+    #     count = 0
+    #     for thread in threading.enumerate():
+    #         count += 1
+    #         if thread.ident is None:
+    #             # Exclude threads that haven't started yet
+    #             self.logger.info(f"{count:3d}: thread named {thread.name} is initializing...")
+    #             continue
+
+    #         self.logger.info(f"{count:3d}: thread name: {thread.name}, thread id: {thread.ident}")
+    #         try:
+    #             # Get the top-level stack frame for the thread
+    #             frame = sys._current_frames().get(thread.ident)
+    #             if frame:
+    #                 # Iterate through the stack frames to find the current function
+    #                 while frame:
+    #                     function_name = frame.f_code.co_name
+    #                     self.logger.info(f"currently in function: {function_name}")
+    #                     frame = frame.f_back   # Move to the calling frame
+    #                     if function_name != '<module>':
+    #                         # Stop if we're not in the global scope
+    #                         break
+    #             else:
+    #                 self.logger.warning("could not retrieve stack frame for this thread (might be idle or finished).")
+    #         except Exception as e:
+    #             self.logger.error(f"error inspecting thread {thread.name}: {e}")
+    #     self.logger.info("--- done analyzing")
 
     def delTask(self, taskid):
         self.logger.error("delTask not yet implemented")
 
-
     def purgeTasks(self):
         self.logger.error("purgeTasks not yet implemented")
 
+    def offer_to_quit(self, worker):
+        """Called by WorkerThread objects when they have been idle
+        for a certain period.
+        """
+        with self.regcond:
+            if len(self.running) <= self.minthreads or self.queue.qsize() > 0:
+                return
 
-    def register_up(self):
+            worker.stop()
+
+    def register_up(self, worker):
         """Called by WorkerThread objects to register themselves.
 
         Acquire the condition variable for the WorkerThread objects.
@@ -1086,38 +1058,45 @@ class ThreadPool(object):
         if it was called with wait=True.
         """
         with self.regcond:
-            self.runningcount += 1
-            tid = thread.get_ident()
-            self.tids.append(tid)
-            self.logger.debug("register_up: (%d) count is %d" %
-                              (tid, self.runningcount))
-            if self.runningcount == self.numthreads:
+            self.waiting.remove(worker)
+            self.running.append(worker)
+            num_running = len(self.running)
+            self.logger.debug("register_up: (%d) count is %d" % (
+                worker.tid, num_running))
+            if num_running == self.minthreads:
                 self.status = 'up'
-            self.regcond.notify()
+                self.regcond.notify()
 
-
-    def register_dn(self):
-        """Called by WorkerThread objects to register themselves.
+    def register_dn(self, worker):
+        """Called by WorkerThread objects to de-register themselves.
 
         Acquire the condition variable for the WorkerThread objects.
         Decrement the running-thread count.  If we are the last thread to
         start, release the ThreadPool thread, which is stuck in start()
         """
         with self.regcond:
-            self.runningcount -= 1
-            tid = thread.get_ident()
-            self.tids.remove(tid)
-            self.logger.debug("register_dn: count_dn is %d" % self.runningcount)
-            self.logger.debug("register_dn: remaining: %s" % str(self.tids))
-            if self.runningcount == 0:
+            self.running.remove(worker)
+            self.waiting.append(worker)
+            self.cleanup.append(worker)
+            num_running = len(self.running)
+            self.logger.debug("register_dn: (%d) count is %d" % (
+                worker.tid, num_running))
+            with self.mp_cond:
+                # wake up pool attendant to clean up thread
+                self.mp_cond.notify()
+            if num_running == 0:
                 self.status = 'down'
-            self.regcond.notify()
+                self.regcond.notify()
+
+    # TO BE DEPRECATED
+    addThreads = add_threads
 
 
 # ------------ SUPPORT FUNCTIONS ------------
 
 _lock_seqnum = threading.Lock()
 _count_seqnum = 0
+
 
 def get_tag(taskParent):
     global _count_seqnum
@@ -1133,4 +1112,4 @@ def get_tag(taskParent):
     return tag
 
 
-#END
+# END
