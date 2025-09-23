@@ -954,7 +954,7 @@ class Instrument(object):
         self.logger.info("dtype=%s" % dtype)
 
         # encode numpy data as a buffer
-        data_buf = data_np.tostring(order='C')
+        data_buf = data_np.tobytes(order='C')
 
         return self.view_buffer(data_buf, data_np.shape, dtype, imname,
                                 chname=chname, header=header,
