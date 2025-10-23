@@ -91,7 +91,7 @@ def main(options, args):
     for (alias, cam) in camlist:
         caminst.loadPersonality(cam, alias=alias)
 
-    channels = [cmdchannel, 'sound']
+    channels = [cmdchannel, 'sound', 'alarm']
     if options.monitor:
         # Publish our channels to the specified monitor
         monitor.publish_to(options.monitor, channels, {})

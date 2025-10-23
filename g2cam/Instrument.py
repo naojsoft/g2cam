@@ -18,6 +18,9 @@ from g2cam.INS import INSdata as INSconfig
 # see doExecute()
 ASYNC_COMPLETE = 'async-complete'
 
+# see send_event()
+alarm_severities = ['critical', 'warning', 'error', 'info', 'debug', 'ok']
+
 
 class CamError(Exception):
     pass
@@ -1036,6 +1039,59 @@ class Instrument(object):
 
         return self.viewerint.display_fitsbuf3(imname, chname, buf, num_hdu,
                                                metadata)
+
+
+    #####################################
+    # EVENT/ALARM FUNCTIONS
+    #####################################
+
+    def send_event(self, alarm_dct):
+        """Send an alarm or event to Gen2.
+
+        Parameters
+        ----------
+        alarm_dct : dict
+            A dictionary of keywords indicating an event or alarm on this
+            instrument.
+
+        Required keyword/values in `alarm_dct`
+        --------------------------------------
+        alarm_id : An id beginning with a letter and consisting of letters,
+                   digits and underscores that uniquely identifies the alarm
+        name : A short name that identifies the alarm more generally
+        severity : A severity keyword in the set: 'critical', 'warning',
+                   'error', 'info', 'debug' or 'ok'.  The value 'ok' is unique
+                   in dismissing from the alarms a previous alarm with the same
+                   alarm_id whose value was not 'ok'.
+
+        Optional keyword/values in `alarm_dct`
+        --------------------------------------
+        timestamp : Unix seconds since the epoch in the local time zone
+        description : a terse description of the alarm that is more informative
+                      than the name
+        detail_text : A detailed string that indicates the detail of the event
+        """
+        # check for necessary keywords
+        for name in ['alarm_id', 'name', 'severity']:
+            if name not in alarm_dct:
+                raise CamError("missing keyword '%s' in alarm dict: %s" % (
+                    name, str(alarm_dct)))
+
+        severity = alarm_dct['severity'].lower()
+        if severity not in alarm_severities:
+            raise CamError("alarm severity '%s' not in allowed list: %s" % (
+                severity, str(alarm_severities)))
+
+        alarm_dct = alarm_dct.copy()
+        alarm_dct['source'] = self.insname
+
+        if 'description' not in alarm_dct:
+            alarm_dct['description'] = alarm_dct['name']
+        if 'timestamp' not in alarm_dct:
+            alarm_dct['timestamp'] = time.time()
+
+        tag = '.'.join(['mon', 'alarm', self.insname])
+        self.monitor.setvals(['alarm'], tag, **alarm_dct)
 
 
     #####################################

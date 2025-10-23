@@ -47,7 +47,7 @@ def main(options, args):
 
     with open(outfile, 'w', newline='') as csv_f:
         writer = csv.writer(csv_f, delimiter='|')
-        row = ['#FRAMEID', 'path', 'size_bytes']
+        row = ['frameid', 'path', 'size_bytes']
         if options.sha256sum:
             row.append('sha256sum')
         if options.md5sum:

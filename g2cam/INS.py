@@ -358,7 +358,7 @@ insinfo = {
         'name': 'CSW',
         'number': 35,
         'code': 'CSW',
-        'active': True,
+        'active': False,
         'interface': ('g2cam', 1.0),
         'fov': 0.007,
         'frametypes': 'AQ',
@@ -371,8 +371,18 @@ insinfo = {
         'active': True,
         'interface': ('g2cam', 1.0),
         'fov': 0.045,
-        'frametypes': 'ABCQV',
+        'frametypes': 'AQ',
         'description': u'AO188, HWC, IRD, CHARIS, IRCS, and SCEXAO',
+        },
+    'NINJA': {
+        'name': 'NINJA',
+        'number': 37,
+        'code': 'NJA',
+        'active': True,
+        'interface': ('g2cam', 1.0),
+        'fov': 0.045,
+        'frametypes': 'AQ',
+        'description': u'NINJA (Near-INfrared and optical Joint spectrograph with Adaptive optics)',
         },
     }
 
