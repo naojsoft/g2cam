@@ -19,7 +19,8 @@ from g2cam.INS import INSdata as INSconfig
 ASYNC_COMPLETE = 'async-complete'
 
 # see send_event()
-alarm_severities = ['critical', 'warning', 'error', 'info', 'debug', 'ok']
+alarm_severities = ['critical', 'warning', 'error', 'info', 'debug', 'normal',
+                    'ok']
 
 
 class CamError(Exception):
@@ -1090,7 +1091,7 @@ class Instrument(object):
         if 'timestamp' not in alarm_dct:
             alarm_dct['timestamp'] = time.time()
 
-        tag = '.'.join(['mon', 'alarm', self.insname])
+        tag = '.'.join(['mon', 'alarm', self.insname, alarm_dct['alarm_id']])
         self.monitor.setvals(['alarm'], tag, **alarm_dct)
 
 
