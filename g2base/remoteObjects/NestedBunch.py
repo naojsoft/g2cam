@@ -3,6 +3,8 @@ if six.PY2:
     from collections import Mapping
 else:
     from collections.abc import Mapping
+import ast
+import pprint
 
 from g2base import Bunch
 
@@ -49,15 +51,13 @@ class NestedBunch(object):
 
 
     def writeout(self, filepath):
-        out_f = open(filepath, 'w')
-        out_f.write(repr(self))
-        out_f.close()
+        with open(filepath, 'w') as out_f:
+            out_f.write(pprint.pformat(self.sb, indent=2))
 
 
     def readin(self, filepath):
-        in_f = open(filepath, 'r')
-        d = eval(in_f.read())
-        in_f.close()
+        with open(filepath, 'r') as in_f:
+            d = ast.literal_eval(in_f.read())
 
         # update
         self._lload(None, d)
