@@ -540,7 +540,7 @@ class PubSub(object):
         self.tfact.quit()
 
         # Stop our thread pool (if we created it)
-        if self.mythreadpool:
+        if self.mythreadpool and self.threadPool.status != 'down':
             self.threadPool.stopall(wait=wait)
 
         self.logger.info("PubSub background tasks stopped.")
