@@ -932,7 +932,7 @@ class ThreadPool(object):
         if wait:
             with self.regcond:
                 # Threads are on the way down.  Wait until last one quits.
-                while self.status != 'down':
+                while self.status not in ['down', 'stop']:
                     self.logger.debug("waiting for threads: count=%d" %
                                       len(self.running))
                     self.regcond.wait()
