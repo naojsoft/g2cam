@@ -384,6 +384,16 @@ insinfo = {
         'frametypes': 'AQ',
         'description': u'NINJA (Near-INfrared and optical Joint spectrograph with Adaptive optics)',
         },
+    'FIRSTPL': {
+        'name': 'FIRSTPL',
+        'number': 38,
+        'code': 'FPL',
+        'active': True,
+        'interface': ('g2cam', 1.0),
+        'fov': 0.000277778,  # 1 arcsec max
+        'frametypes': 'AQ',
+        'description': u'FIRST-PL (Fibered Imager foR a Single Telescope - Photonic Lantern)',
+        },
     }
 
 
