@@ -43,10 +43,6 @@ class TestRO(ro.remoteObjectServer):
 
 def client2(options, logger):
 
-    datafile = None
-    if options.datafile:
-        datafile = open(options.datafile, 'a')
-
     auth = None
     if options.auth:
         auth = options.auth.split(':')
@@ -68,13 +64,6 @@ def client2(options, logger):
 
     print("Time taken: %f secs total  %f sec per call  %d calls/sec" % \
           (tottime, time_per_call, calls_per_sec))
-
-    if datafile:
-        # total bytes, count, total time, encode time, avg rate
-        datafile.write("%d %d %f %f %f\n" % (
-            size*options.count, options.count, tottime, time2-time1,
-            amount/tottime))
-        datafile.close()
 
 
 def main(options, args):

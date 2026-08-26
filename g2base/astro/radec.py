@@ -1168,7 +1168,7 @@ def _gdeqrt(st,jd,eo,es,pr,r0,d0,rs,ds,cx,cy):
         fl=104227.61           # focal length 2000/05/23
         sg=0.015/0.334         # scale factor 2000/05/23
         ep=5.5                 # rotation angle of the CCD
-        r=fl*math.atan2(sqrt(x*x+y*y),z)
+        r=fl*math.atan2(math.sqrt(x*x+y*y),z)
         x=sg*(cx*math.cos(ep*rad)+cy*math.sin(ep*rad))
         y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad))
         z=math.sqrt(r*r-x*x); rd=z+y; th=math.atan2(x,z)/rad-90.0

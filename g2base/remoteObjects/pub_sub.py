@@ -128,8 +128,8 @@ class PubSub(Callback.Callbacks):
                     #self.pubsub.add_callback(channel, self.subscribe_update_cb)
 
                 except Exception as e:
-                    self.logger.error("Error pinging remote subscription %s: %s" % (
-                            str(tup), str(e)))
+                    self.logger.error("Error pinging remote subscription '%s': %s" % (
+                            str(channel), str(e)))
 
             # Sleep for remainder of desired interval.  We sleep in
             # small increments so we can be responsive to changes to

@@ -360,7 +360,7 @@ class SIMCAM(BASECAM):
             frame_no = '%3.3s%1.1s%08.8d' % (inst_code, frame_type, frame_cnt)
             templfile = os.path.abspath(template)
             if not os.path.exists(templfile):
-                raise SIMCAMError("File does not exist: %s" % (fitsfile))
+                raise SIMCAMError(f"File does not exist: {templfile}")
 
             fits_f = pyfits.open(templfile)
 
@@ -424,7 +424,7 @@ class SIMCAM(BASECAM):
 
         size_bytes = os.stat(path).st_size
 
-        framelist = [(frame_no, fitsfile, size_bytes)]
+        framelist = [(frame_id, path, size_bytes)]
         self.logger.info("Submitting frame '%s' for archiving" % frame_id)
         self.ocs.archive_framelist(framelist)
 

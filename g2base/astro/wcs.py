@@ -479,8 +479,8 @@ def parallactic_angle(ha_deg, dec_deg, lat_deg, az_deg):
                 math.sin(az_rad) * math.sin(ha_rad) * math.sin(lat_rad))
         parang = math.atan2(sinp, cosp)
     else:
-        if lat > 0.0:
-            parang = np.pi
+        if lat_rad > 0.0:
+            parang = math.pi
         else:
             parang = 0.0
 

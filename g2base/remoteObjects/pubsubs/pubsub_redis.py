@@ -185,7 +185,7 @@ class PubSub(Callback.Callbacks):
                 # subscribe or re-subscribe
                 with self.lock:
                     subscriptions = self.subscriptions.copy()
-                for name in subscriptions:
+                for channel in subscriptions:
                     self.pubsub.subscribe(channel)
 
                 while not ev_quit.is_set():

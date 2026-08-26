@@ -98,8 +98,8 @@ class remoteObjectNameService:
                     transport = options.get('transport', ro.default_transport)
                     encoding = options.get('encoding', ro.default_encoding)
                 else:
-                    raise nameServiceError("flags argument (%s) should be a dict" % (
-                        str(flags)))
+                    raise nameServiceError("options argument (%s) should be a dict" % (
+                        str(options)))
 
                 keep = options.get('keep', False)
                 rec.update(dict(name=name, host=host, port=port,
