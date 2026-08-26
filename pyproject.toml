@@ -11,7 +11,8 @@ version_scheme = "release-branch-semver"
 [tool.ruff]
 # scripts/ are Python but carry no .py suffix, so ruff would not glob them
 # -- and they are exactly the files that were straddling Python 2 and 3.
-# NOTE: target-version is set alongside requires-python, so the two agree.
+# target-version matches python_requires in setup.cfg; keep them together.
+target-version = "py311"
 extend-exclude = ["build"]
 extend-include = ["scripts/g2cam",
                   "scripts/get_status",
