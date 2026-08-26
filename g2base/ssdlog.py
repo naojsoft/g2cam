@@ -125,7 +125,7 @@ class FixedTimeRotatingFileHandler(logging.handlers.BaseRotatingHandler):
         """
         # Check for time-based rollover
         t = int(time.time())
-        if (self.rolloverAt != None) and (t >= self.rolloverAt):
+        if (self.rolloverAt is not None) and (t >= self.rolloverAt):
             return 1
 
         # check for size-based rollover

@@ -139,13 +139,13 @@ class SIMCAM(BASECAM):
         super().stop(wait=wait)
 
         # Terminate status generation task
-        if self.status_task != None:
+        if self.status_task is not None:
             self.status_task.stop()
 
         self.status_task = None
 
         # Terminate power check task
-        if self.power_task != None:
+        if self.power_task is not None:
             self.power_task.stop()
 
         self.power_task = None

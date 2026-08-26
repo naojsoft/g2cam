@@ -95,7 +95,7 @@ class NestedBunch:
     def getitem(self, path):
         try:
             (pfx, key) = self._rsplit(path)
-            if pfx == None:
+            if pfx is None:
                 sb = self.sb
             else:
                 sb = self.get_node(pfx, create=False)
@@ -183,7 +183,7 @@ class NestedBunch:
         """
 
         (pfx, key) = self._rsplit(path)
-        if pfx == None:
+        if pfx is None:
             sb = self.sb
         else:
             sb = self.get_node(pfx, create=True)
@@ -279,7 +279,7 @@ class NestedBunch:
         """Returns the bottom-level keys of _path_ in the nestedDict
         (or the bundle itself if no path==None).
         """
-        if path == None:
+        if path is None:
             idx = 0
         else:
             idx = len(path) + 1
@@ -295,7 +295,7 @@ class NestedBunch:
         """Returns the middle-level keys of _path_ in the nestedDict
         (or the bundle itself if no path==None).
         """
-        if path == None:
+        if path is None:
             idx = 0
         else:
             idx = len(path) + 1

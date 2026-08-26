@@ -55,7 +55,7 @@ class PubSub(Callback.Callbacks):
 
         # If we were passed in a thread pool, then use it.  If not,
         # make one.  Record whether we made our own or not.
-        if threadPool != None:
+        if threadPool is not None:
             self.threadPool = threadPool
             self.mythreadpool = False
 

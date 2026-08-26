@@ -409,7 +409,7 @@ class Instrument:
         # return value if it is one of these
         self.logger.debug("Return value is %s" % str(res))
 
-        if res == None:
+        if res is None:
             res = (0, 'OK')
 
         elif isinstance(res, Exception):
@@ -516,7 +516,7 @@ class Instrument:
         # If there is a mapping between the instrument aliases and
         # the OCS aliases, then transform the keys
         tblInfo = self._mystatus[tableName]
-        if tblInfo.mapping != None:
+        if tblInfo.mapping is not None:
             for ocsAlias, insAlias in tblInfo.mapping.items():
                 statusDict[ocsAlias] = tblInfo.table[insAlias]
         else:
@@ -558,7 +558,7 @@ class Instrument:
             formatStr = ''.join(['%%(%s)s' % var for var in keyOrder])
 
         # If no mapping is passed in, construct a default one
-        if mapping == None:
+        if mapping is None:
             inscode = self.insconfig.getCodeByNumber(self.obcpnum)
 
             mapping = {}
@@ -643,7 +643,7 @@ class Instrument:
         to fetch.  The dictionary is filled in with the values.
         """
 
-        if timeout == None:
+        if timeout is None:
             timeout = self.params.timeout_status
 
         # TODO: timeout not yet supported!
@@ -766,7 +766,7 @@ class Instrument:
         checksum of the file.
         """
 
-        if timeout == None:
+        if timeout is None:
             timeout = self.params.timeout_filexfr
 
         self.logger.debug("archiving %s" % (str(framelist)))
@@ -828,7 +828,7 @@ class Instrument:
         purpose.  Currently only filetype=='fits' is supported.
         """
 
-        if timeout == None:
+        if timeout is None:
             timeout = self.params.timeout_status
 
         if filetype.lower() != 'fits':
@@ -850,7 +850,7 @@ class Instrument:
         Obtain 'num' frame ids of type 'frtype'.  Returns a list of 'num'
         frames.  'frtype' should be 'A' or 'Q'.
         """
-        if self.frameint == None:
+        if self.frameint is None:
             errmsg = "No frame interface found!"
             #self.logger.error(errmsg)
             raise CamInterfaceError(errmsg)
@@ -897,13 +897,13 @@ class Instrument:
     #####################################
 
     def playLocalSoundFile(self, filepath, format=None):
-        if self.soundsink != None:
+        if self.soundsink is not None:
             self.soundsink.playFile(filepath, format=format)
         else:
             raise CamInterfaceError("This cam was not configured with a SoundSink")
 
     def playSoundBuffer(self, buffer, format='ogg'):
-        if self.soundsink != None:
+        if self.soundsink is not None:
             self.soundsink.playSound(buffer, format=format)
         else:
             raise CamInterfaceError("This cam was not configured with a SoundSink")

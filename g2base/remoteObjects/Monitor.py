@@ -473,7 +473,7 @@ class Minimon(Monitor):
                 return res
 
             # Quick check on timeout to avoid a lot of work
-            if (timeout != None) and (time.time() - start_time >= timeout):
+            if (timeout is not None) and (time.time() - start_time >= timeout):
                 raise TimeoutError("Timed out waiting for keys: %s" % (
                     str(tags)))
 
@@ -490,10 +490,10 @@ class Minimon(Monitor):
                 #if not (cond in l):
                 l.append((ev_store, cond))
 
-            if eventlist == None:
+            if eventlist is None:
                 eventlist = []
 
-            if timeout != None:
+            if timeout is not None:
                 deadline = start_time + timeout
 
             while not ev_store.is_set():
@@ -505,7 +505,7 @@ class Minimon(Monitor):
                 wait_time = self.wait_interval
 
                 # Check for timeout
-                if (timeout != None):
+                if (timeout is not None):
                     time_left = deadline - time.time()
                     if time_left <= 0:
                         raise TimeoutError("Timed out waiting for keys: %s" % (
@@ -529,7 +529,7 @@ class Minimon(Monitor):
 
         start_time = time.time()
         # Calculate deadline if timeout was specified
-        if timeout != None:
+        if timeout is not None:
             deadline = time.time() + timeout
 
         stags = set(tags)
@@ -538,7 +538,7 @@ class Minimon(Monitor):
         res = {}
 
         while len(stags) > 0:
-            if timeout != None:
+            if timeout is not None:
                 wait_time = deadline - time.time()
                 if wait_time <= 0:
                     raise TimeoutError("Timed out waiting for keys %s" % str(stags))

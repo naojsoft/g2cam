@@ -60,7 +60,7 @@ class Frame:
         self.prefix = None
         self.number = None
 
-        if path != None:
+        if path is not None:
             self.create_from_path(path)
 
     # this is like the number but includes the prefix

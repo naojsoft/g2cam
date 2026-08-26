@@ -268,7 +268,7 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
             self.queue = queue.Queue()
 
             for i in range(self._num_threads):
-                if self.threadPool == None:
+                if self.threadPool is None:
                     thread = threading.Thread(target=self.worker,
                                               name="RPC-Worker-%d" % (i+1),
                                               args=[i, self.queue])
@@ -282,7 +282,7 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
             self.serve_forever()
 
         else:
-            if self.threadPool == None:
+            if self.threadPool is None:
                 thread = threading.Thread(target=self.serve_forever)
                 thread.daemon=True
                 thread.start()
@@ -318,7 +318,7 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
                        Error("Invalid queue contents: len(tup) != 2 (%d)" % (
                                     len(tup)))
                 request, client_address = tup
-                if request == None:
+                if request is None:
                     # Put termination sentinal back on the queue for other
                     # workers to discover and terminate
                     queue.put(tup)

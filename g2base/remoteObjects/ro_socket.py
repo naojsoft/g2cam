@@ -234,11 +234,11 @@ class SocketRPCServer:
         # to communicate between server and workers
         self.queue = queue.Queue()
 
-        if ev_quit == None:
+        if ev_quit is None:
             ev_quit = threading.Event()
         self.ev_quit = ev_quit
 
-        if logger == None:
+        if logger is None:
             logger = logging.getLogger("RPCServer")
         self.logger = logger
         self.threaded = threaded
@@ -262,7 +262,7 @@ class SocketRPCServer:
         of (username, password).  Returns True if authentication succeeded,
         False otherwise.
         """
-        if self.authDict == None:
+        if self.authDict is None:
             return True
 
         if len(req.auth) != 2:
@@ -300,7 +300,7 @@ class SocketRPCServer:
             resp.status = -1
             resp.error = "Authentication error"
 
-        elif service == None:
+        elif service is None:
             resp.result = None
             resp.status = -1
             resp.error = "Non-existant service: %s" % req.method
@@ -331,7 +331,7 @@ class SocketRPCServer:
                        Error("Invalid queue contents: len(tup) != 2 (%d)" % (
                                     len(tup)))
                 sock, req = tup
-                if sock == None:
+                if sock is None:
                     # Termination sentinal
                     queue.put(tup)
                     break
@@ -442,7 +442,7 @@ class SocketRPCServer:
         # the thread pool, if we have one.
         if self.threaded:
             for i in range(self._num_threads):
-                if self.threadPool == None:
+                if self.threadPool is None:
                     thread = threading.Thread(target=self.worker,
                                               name="RPC-Worker-%d" % (i+1),
                                               args=[i, work_q])
@@ -457,7 +457,7 @@ class SocketRPCServer:
             self.server(work_q)
 
         else:
-            if self.threadPool == None:
+            if self.threadPool is None:
                 thread = threading.Thread(target=self.server,
                                           name="RPC-Device",
                                           args=[work_q])
@@ -537,7 +537,7 @@ class ClientProxy:
         self._sender = None
         self.timeout = 5.0
 
-        if logger == None:
+        if logger is None:
             logger = logging.getLogger("SocketRPC")
         self.logger = logger
         self._lock = threading.RLock()
@@ -551,7 +551,7 @@ class ClientProxy:
         """
         Close the client connection.
         """
-        if self._sender != None:
+        if self._sender is not None:
             self._sender.close()
 
     def availableServices(self):
@@ -598,7 +598,7 @@ class ClientProxy:
 
         self.logger.debug("Sending a RPC call to method: %s" % method)
         # we are running this as a blocking call
-        if self._sender == None:
+        if self._sender is None:
             self.reset()
 
         with self._lock:

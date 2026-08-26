@@ -407,7 +407,7 @@ class INSdata:
         self.nameMap = insinfo
 
         # Update from supplementary info provided by config file
-        if info == None:
+        if info is None:
             try:
                 infopath = os.path.join(os.environ['GEN2COMMON'],
                                         'db', 'inscfg.yml')

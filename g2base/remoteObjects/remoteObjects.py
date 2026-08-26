@@ -117,7 +117,7 @@ class remoteObjectServer:
         else:
             self.ev_quit = ev_quit
 
-        if obj == None:
+        if obj is None:
             self.obj = self
         else:
             self.obj = obj
@@ -134,7 +134,7 @@ class remoteObjectServer:
                 if callable(getattr(self.obj, attrName)):
                     # if user specified a method prefix, then only
                     # register methods that begin with that prefix
-                    if (method_prefix != None):
+                    if (method_prefix is not None):
                         if attrName.startswith(method_prefix):
                             methodNames.append(attrName)
                     elif not attrName.startswith('_'):
@@ -894,13 +894,13 @@ class servicePack:
     def _get_auth_secure(self, auth, secure, transport):
         # If no authorization passed, default to servicePack default
         # (note that None != False)
-        if auth == None:
+        if auth is None:
             auth = self.auth
         # If no secure flag passed, default to servicePack default
         # (note that None != False)
-        if secure == None:
+        if secure is None:
             secure = self.secure
-        if transport == None:
+        if transport is None:
             transport = self.transport
 
         return (auth, secure, transport)
@@ -913,7 +913,7 @@ class servicePack:
         key = (host, port)
         if key in self.clients and not replace:
             return
-        if timeout == None:
+        if timeout is None:
             timeout = self.timeout
         client = remoteObjectClient(host, port, name=name, auth=auth,
                                     secure=secure, transport=transport,

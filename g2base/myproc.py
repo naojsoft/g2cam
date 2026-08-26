@@ -288,7 +288,7 @@ class myproc:
 
                 # If we were created with a callable, then call it
                 if callable(fn):
-                    if addenv and (env != None):
+                    if addenv and (env is not None):
                         # augment the current environment.
                         os.environ.update(env)
 
@@ -324,7 +324,7 @@ class myproc:
                     self.pid = pid
                     self.dead = False
 
-                if pidfile != None:
+                if pidfile is not None:
                     write_pidfile(pidfile, self.pid)
 
                 # Map pipe descriptors to Python file objects
@@ -378,7 +378,7 @@ class myproc:
         """Wait for completion of child process and return its status.
         """
 
-        if timeout == None:
+        if timeout is None:
             self.__update_status(waitflag=1)
             return self.stat
 
@@ -397,7 +397,7 @@ class myproc:
         """Wait for completion of process group and return its status.
         """
 
-        if timeout == None:
+        if timeout is None:
             # Wait for main process
             status = self.wait(timeout=None)
 
@@ -661,7 +661,7 @@ class getproc:
     #
     def __init__(self, pid=os.getpid(), pidfile=None):
 
-        if pidfile != None:
+        if pidfile is not None:
             self.pid = read_pidfile(pidfile)
         else:
             self.pid = pid

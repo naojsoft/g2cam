@@ -1458,7 +1458,7 @@ def pa_stars(ra0, dec0, ra1, dec1, delta=None):
         swap = True
 
     # if stars' delta is not figued out yet
-    if delta == None:
+    if delta is None:
         delta = delta_stars(ra0, dec0, ra1, dec1)
         #print 'delta_stars called  d:%f' %(d)
 

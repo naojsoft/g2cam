@@ -177,12 +177,12 @@ class ZMQRPCServer:
         self.timeout = 0.25
         self.authDict = authDict
 
-        if ev_quit == None:
+        if ev_quit is None:
             ev_quit = threading.Event()
         self.ev_quit = ev_quit
         self.device_ready = threading.Event()
 
-        if logger == None:
+        if logger is None:
             logger = logging.getLogger("ZMQRPC")
         self.logger = logger
         self.useThread = threaded
@@ -214,7 +214,7 @@ class ZMQRPCServer:
         of (username, password).  Returns True if authentication succeeded,
         False otherwise.
         """
-        if self.authDict == None:
+        if self.authDict is None:
             return True
 
         if len(req.auth) != 2:
@@ -249,7 +249,7 @@ class ZMQRPCServer:
             resp.status = -1
             resp.error = "Authentication error"
 
-        elif service == None:
+        elif service is None:
             resp.result = None
             resp.status = -1
             resp.error = "Non-existant service: %s" % req.method
@@ -386,7 +386,7 @@ class ZMQRPCServer:
                         self.logger.debug("recv: %s" % (str(req)))
 
                         if self.useThread:
-                            if self.threadPool != None:
+                            if self.threadPool is not None:
                                 # hand it to a thread in our threadpool to handle it
                                 self.logger.debug("handing off request to threadPool")
                                 task = Task.FuncTask2(self._worker2, req, _id, queue)
@@ -491,7 +491,7 @@ class ZMQRPCServer:
 
         if not self.useThread:
             for i in range(self._num_threads):
-                if self.threadPool == None:
+                if self.threadPool is None:
                     thread = threading.Thread(target=self.worker,
                                               name="RPC-Worker-%d" % (i+1),
                                               args=[i])
@@ -503,7 +503,7 @@ class ZMQRPCServer:
                     self.threadPool.addTask(task)
 
         # Start the server
-        if self.threadPool == None:
+        if self.threadPool is None:
             thread = threading.Thread(target=self.server,
                                       name="RPC-Device",
                                       args=[queue])
@@ -592,7 +592,7 @@ class ClientProxy:
         self.retries = 3
         self._lock = threading.RLock()
 
-        if logger == None:
+        if logger is None:
             logger = logging.getLogger("ZMQRPC")
         self.logger = logger
 
@@ -605,7 +605,7 @@ class ClientProxy:
         Close the client connection.
         """
         try:
-            if self._sender != None:
+            if self._sender is not None:
                 self._sender.close()
         except:
             pass
@@ -658,7 +658,7 @@ class ClientProxy:
         req.auth = self.auth
         req.isasync  = isasync
 
-        if self._sender == None:
+        if self._sender is None:
             self.reset()
 
         retries = self.retries
