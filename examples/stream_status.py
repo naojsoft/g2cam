@@ -20,7 +20,7 @@ The implementation details are subject to change suddenly!
 import sys
 import argparse
 import threading
-import queue as Queue
+import queue
 
 from g2cam.status.client import StatusClient
 from g2cam.status.stream import StatusStream
@@ -42,7 +42,7 @@ def main(options, args):
     ss.connect()
 
     # create a queue to receive the status updates
-    status_q = Queue.Queue()
+    status_q = queue.Queue()
     # shared event to signal termination of processing
     ev_quit = threading.Event()
 

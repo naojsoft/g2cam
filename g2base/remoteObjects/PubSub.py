@@ -15,11 +15,7 @@ from __future__ import print_function
 import sys, os, time
 import threading
 from collections import deque as Deque
-from g2base import six
-if six.PY2:
-    import Queue
-else:
-    import queue as Queue
+import queue
 
 from g2base import Bunch, Task, ssdlog
 from g2base.remoteObjects import remoteObjects as ro
@@ -64,7 +60,7 @@ class PubSub(object):
         # this limits the number of incoming and outgoing connections
         self.outlimit = outlimit
         self.inlimit = inlimit
-        self.outqueue = Queue.PriorityQueue()
+        self.outqueue = queue.PriorityQueue()
 
         # Handles to subscriber remote proxies
         self._partner = {}
@@ -502,7 +498,7 @@ class PubSub(object):
 
                 self._individual_update(queue_record)
 
-            except Queue.Empty:
+            except queue.Empty:
                 continue
 
     def get_qlen(self):
@@ -663,7 +659,7 @@ class PubSub(object):
         a given channel or channels AND get the list of all channels that
         this aggregates to.
         """
-        if isinstance(channels, six.string_types):
+        if isinstance(channels, str):
             channels = [channels]
         self.logger.debug("channels=%s" % str(channels))
 
@@ -839,7 +835,7 @@ class PubSub(object):
             if not options:
                 options = {}
 
-            if isinstance(channels, six.string_types):
+            if isinstance(channels, str):
                 channels = [channels]
 
             try:
@@ -872,7 +868,7 @@ class PubSub(object):
             if not options:
                 options = {}
 
-            if isinstance(channels, six.string_types):
+            if isinstance(channels, str):
                 channels = [channels]
 
             try:

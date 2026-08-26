@@ -4,24 +4,16 @@
 # This is open-source software licensed under a BSD license.
 # Please see the file LICENSE.txt for details.
 #
-from __future__ import absolute_import, print_function
-from . import six
-
 import sys
 import time
 import threading
+import queue
 
-if six.PY2:
-    import Queue
-else:
-    import queue as Queue
-
-    # NOTE: See http://bugs.python.org/issue7946
-    # we cannot effectively use threading for loading files/network/etc.
-    # without setting the switchinterval down on python 3 due to the new
-    # GIL implementation
-    _swival = 0.000001
-    sys.setswitchinterval(_swival)
+# NOTE: See http://bugs.python.org/issue7946
+# we cannot effectively use threading for loading files/network/etc.
+# without setting the switchinterval down due to the GIL implementation
+_swival = 0.000001
+sys.setswitchinterval(_swival)
 
 from . import Callback  # noqa
 
@@ -606,7 +598,7 @@ class QueueTaskset(Task):
         while True:
             try:
                 self.queue.get(block=False)
-            except Queue.Empty:
+            except queue.Empty:
                 break
 
     def stop(self):
@@ -674,7 +666,7 @@ class QueueTaskset(Task):
                     # If task raised exception then it didn't call done,
                     task.done(e, noraise=True)
 
-            except Queue.Empty:
+            except queue.Empty:
                 # No task available.  Continue trying to get one.
                 continue
 
@@ -700,7 +692,7 @@ class QueueTaskset(Task):
 
 # ------------ PRIORITY QUEUES ------------
 
-class PriorityQueue(Queue.PriorityQueue):
+class PriorityQueue(queue.PriorityQueue):
     pass
 
 
@@ -811,7 +803,7 @@ class WorkerThread(object):
 
                     self.execute(task)
 
-                except Queue.Empty as e:
+                except queue.Empty as e:
                     # Reach here when we time out waiting for a task
                     if self.tpool is not None and self.time_idle is not None:
                         idle_sec = time.time() - self.time_idle

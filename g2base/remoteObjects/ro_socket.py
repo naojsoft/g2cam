@@ -9,11 +9,10 @@ import logging
 import zlib
 import socket
 import select
-import Queue
+import queue
 
 from g2base import Task
 from . import ro_codec
-import six
 
 # Timeout value for RPC sockets
 socket_timeout = 0.25
@@ -233,7 +232,7 @@ class SocketRPCServer(object):
 
         self.authDict = authDict
         # to communicate between server and workers
-        self.queue = Queue.Queue()
+        self.queue = queue.Queue()
 
         if ev_quit == None:
             ev_quit = threading.Event()
@@ -337,7 +336,7 @@ class SocketRPCServer(object):
                     queue.put(tup)
                     break
 
-            except Queue.Empty:
+            except queue.Empty:
                 continue
 
             try:
@@ -437,7 +436,7 @@ class SocketRPCServer(object):
             self._num_threads))
 
         # queue for communicating with workers
-        queue = Queue.Queue()
+        queue = queue.Queue()
 
         # Threaded server.  Start N workers either as new threads or using
         # the thread pool, if we have one.
@@ -518,7 +517,7 @@ class SocketRPCServer(object):
 
     def _serviceListReq(self):
         services = []
-        for name, v in six.iteritems(self.services):
+        for name, v in self.services.items():
             services.append({'service' : name, 'format' : v['format'], 'doc' : v['doc']})
         return services
 

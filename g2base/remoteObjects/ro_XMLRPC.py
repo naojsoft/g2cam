@@ -5,24 +5,14 @@ import sys
 import threading
 import traceback
 import base64
-from g2base import six
+import queue
 
 def dump_int(_, v, w):
     w("<value><int>%d</int></value>" % (v))
 
-if six.PY2:
-    import Queue
-    from SimpleXMLRPCServer import (SimpleXMLRPCServer,
-                                    SimpleXMLRPCRequestHandler,
-                                    SimpleXMLRPCDispatcher)
-    from xmlrpclib import ServerProxy, Transport, Marshaller
-    Marshaller.dispatch[long] = dump_int
-
-else:
-    import queue as Queue
-    from xmlrpc.server import (SimpleXMLRPCServer, SimpleXMLRPCRequestHandler,
-                               SimpleXMLRPCDispatcher)
-    from xmlrpc.client import ServerProxy, Transport, Marshaller
+from xmlrpc.server import (SimpleXMLRPCServer, SimpleXMLRPCRequestHandler,
+                           SimpleXMLRPCDispatcher)
+from xmlrpc.client import ServerProxy, Transport, Marshaller
 
 # monkey-patch to allow python xml-rpc not to complain about large
 # integers
@@ -273,7 +263,7 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
         # the thread pool, if we have one.
         if self.threaded:
             # queue for communicating with workers
-            self.queue = Queue.Queue()
+            self.queue = queue.Queue()
 
             for i in range(self._num_threads):
                 if self.threadPool == None:
@@ -332,7 +322,7 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
                     queue.put(tup)
                     break
 
-            except Queue.Empty:
+            except queue.Empty:
                 continue
 
             try:

@@ -51,11 +51,7 @@ import time
 import string
 import threading
 import logging
-from g2base import six
-if six.PY2:
-    import Queue
-else:
-    import queue as Queue
+import queue
 
 from g2base import Task, Bunch
 from g2base import ssdlog
@@ -578,16 +574,12 @@ class MonitorHandler(logging.Handler):
         printable = set(string.printable) - set('<>&"!\x0b\x0c')
 
         # Used to strip out bogus characters from log buffers
-        if six.PY2:
-            self.deletechars = ''.join(set(string.maketrans('', '')) -
-                                  printable)
-        else:
-            self.deletechars = ''.join(set(map(chr,
-                                               bytes.maketrans(b'', b''))) -
-                                       printable)
+        self.deletechars = ''.join(set(map(chr,
+                                           bytes.maketrans(b'', b''))) -
+                                   printable)
 
         self.lock = threading.RLock()
-        self.queue = Queue.Queue()
+        self.queue = queue.Queue()
 
         logging.Handler.__init__(self, level=level)
 
@@ -625,17 +617,13 @@ class MonitorHandler(logging.Handler):
 
     def process_queue(self, ev_quit):
 
-        if six.PY3:
-            trans_tbl = str.maketrans(dict.fromkeys(self.deletechars))
+        trans_tbl = str.maketrans(dict.fromkeys(self.deletechars))
 
         while not ev_quit.isSet():
             try:
                 msgstr = self.queue.get(block=True, timeout=self.interval)
                 # Strip out bogus characters
-                if six.PY2:
-                    msgstr = msgstr.translate(None, self.deletechars)
-                else:
-                    msgstr = msgstr.translate(trans_tbl)
+                msgstr = msgstr.translate(trans_tbl)
                 msglen = len(msgstr) + 1
 
                 # Would message size exceed buffer limit?
@@ -646,7 +634,7 @@ class MonitorHandler(logging.Handler):
                 self.buffer.append(msgstr)
                 self.bufsize += msglen
 
-            except Queue.Empty:
+            except queue.Empty:
                 pass
 
             # if there is anything in the buffer, and it has reached

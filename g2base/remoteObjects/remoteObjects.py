@@ -26,11 +26,6 @@ This will output them both in the same file named server.pem
 import sys, os, time
 import socket
 import threading
-from g2base import six
-if six.PY2:
-    import Queue
-else:
-    import queue as Queue
 # binascii encoding/decoding is much faster than xmlrpclib's
 # built-in Binary class
 import binascii

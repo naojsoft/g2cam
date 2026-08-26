@@ -7,11 +7,7 @@ import time
 import logging, logging.handlers
 import socket
 import threading
-from g2base import six
-if six.PY2:
-    import Queue
-else:
-    import queue as Queue
+import queue
 
 if sys.hexversion < 0x02050000:
     STD_FORMAT = '%(asctime)s | %(levelname)1.1s | %(filename)s:%(lineno)d | %(message)s'
@@ -39,7 +35,7 @@ class LoggingError(Exception):
 # Special Handlers
 
 class QueueHandler(logging.Handler):
-    """Logs to a Queue.Queue object."""
+    """Logs to a queue.Queue object."""
 
     def __init__(self, queue, level=logging.NOTSET):
         self.queue = queue
@@ -51,7 +47,7 @@ class QueueHandler(logging.Handler):
 
 
 class QueueHandler2(logging.Handler):
-    """Logs to a Queue.Queue object."""
+    """Logs to a queue.Queue object."""
 
     def __init__(self, queue, level=logging.NOTSET):
         self.queue = queue
@@ -73,7 +69,7 @@ class QueueHandler2(logging.Handler):
                 record = self.queue.get(block=False, timeout=timeout)
                 logger.handle(record)
 
-            except Queue.Empty:
+            except queue.Empty:
                 pass
 
 

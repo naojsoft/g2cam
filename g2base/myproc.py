@@ -22,8 +22,6 @@ myproc.
            unless one was passed in, in which case this is null
 
 """
-from __future__ import print_function
-from g2base import six
 
 import os, sys, time
 
@@ -66,7 +64,7 @@ def exec_cmd(cmd, env=None, addenv=False, close_fds=False):
 
     # If cmd is a list, then that's the list for execv, otherwise
     # user probably wants a shell to run the command
-    if isinstance(cmd, six.string_types):
+    if isinstance(cmd, str):
         shell = os.environ['SHELL']
         if not shell:
             shell = default_shell

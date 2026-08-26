@@ -7,11 +7,7 @@
 import sys, os, time
 import threading
 
-from g2base import six
-if six.PY2:
-    import Queue
-else:
-    import queue as Queue
+import queue
 
 from g2base import Bunch, Task, Callback, ssdlog
 from .ro_pubsub import PubSub as InternalPS
@@ -50,7 +46,7 @@ class PubSub(Callback.Callbacks):
         # this limits the number of incoming and outgoing connections
         self.outlimit = outlimit
         self.inlimit = inlimit
-        self.outqueue = Queue.PriorityQueue()
+        self.outqueue = queue.PriorityQueue()
 
         # Termination event
         if not ev_quit:
@@ -112,7 +108,7 @@ class PubSub(Callback.Callbacks):
 
                 self.make_callback('update', msg)
 
-            except Queue.Empty:
+            except queue.Empty:
                 continue
 
     def get_qlen(self):

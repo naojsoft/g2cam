@@ -12,8 +12,8 @@ import zlib
 import zmq
 from zmq import ZMQError
 
-from g2base.six.queue import queue as Queue
-from g2base import six
+import queue
+
 from g2base import Task
 
 from . import ro_codec
@@ -410,7 +410,7 @@ class ZMQRPCServer(object):
                             resp.send(frontend, flags=zmq.NOBLOCK)
                             self.logger.debug("sent response: %s" % resp)
 
-                        except Queue.Empty:
+                        except queue.Empty:
                             #print("no responses")
                             have_responses = False
 
@@ -454,7 +454,7 @@ class ZMQRPCServer(object):
                             resp.send(backend, flags=zmq.NOBLOCK)
                             self.logger.debug("sent response: %s" % resp)
 
-                        except Queue.Empty:
+                        except queue.Empty:
                             print("no responses")
                             have_responses = False
 
@@ -565,7 +565,7 @@ class ZMQRPCServer(object):
 
     def _serviceListReq(self):
         services = []
-        for name, v in six.iteritems(self.services):
+        for name, v in self.services.items():
             services.append({'service' : name, 'format' : v['format'], 'doc' : v['doc']})
         return services
 

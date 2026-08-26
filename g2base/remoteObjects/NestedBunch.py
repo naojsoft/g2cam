@@ -1,8 +1,4 @@
-from g2base import six
-if six.PY2:
-    from collections import Mapping
-else:
-    from collections.abc import Mapping
+from collections.abc import Mapping
 import ast
 import pprint
 
