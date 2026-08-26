@@ -43,7 +43,7 @@ class socketTimeout(Error):
 #
 # ------------------ CONVENIENCE FUNCTIONS ------------------
 #
-class ServiceProxy(object):
+class ServiceProxy:
 
     def __init__(self, url):
         self.url = url
@@ -108,7 +108,7 @@ class MyTransport(Transport):
 #
 # ------------------ THREADING EXTENSIONS ------------------
 #
-class ProcessingMixin(object):
+class ProcessingMixin:
     """Mix-in class to handle each request in a new thread."""
 
     def __init__(self, daemon=False, threaded=False, threadPool=None):

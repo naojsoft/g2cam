@@ -56,7 +56,7 @@ class Task(Callback.Callbacks):
         # task.
         self.shares = ['logger', 'threadPool', 'shares']
 
-        super(Task, self).__init__()
+        super().__init__()
 
         self.enable_callback('resolved')
 
@@ -287,7 +287,7 @@ class printTask(Task):
     """Simple task that prints msg."""
     def __init__(self, msg):
         self.msg = msg
-        super(printTask, self).__init__()
+        super().__init__()
 
     def execute(self):
         print(self.msg)
@@ -297,7 +297,7 @@ class sleepTask(Task):
     """Simple task that sleeps for delay seconds."""
     def __init__(self, delay):
         self.delay = delay
-        super(sleepTask, self).__init__()
+        super().__init__()
 
     def execute(self):
         self.ev_done.wait(timeout=self.delay)
@@ -310,7 +310,7 @@ class FuncTask(Task):
         self.args = args
         self.kwdargs = kwdargs
         self.logger = logger
-        super(FuncTask, self).__init__()
+        super().__init__()
 
     def execute(self):
         if self.logger:
@@ -347,7 +347,7 @@ class FuncTask2(FuncTask):
     more naturally 'in place' in the constructor.
     """
     def __init__(self, func, *args, **kwdargs):
-        super(FuncTask2, self).__init__(func, args, kwdargs)
+        super().__init__(func, args, kwdargs)
 
     def set_logger(self, logger):
         self.logger = logger
@@ -390,14 +390,14 @@ class SequentialTaskset(Task):
 
     def __init__(self, taskseq):
 
-        super(SequentialTaskset, self).__init__()
+        super().__init__()
 
         self.tasklist = list(taskseq)
 
     def initialize(self, taskParent, **kwdargs):
         self.index = 0
 
-        super(SequentialTaskset, self).initialize(taskParent, **kwdargs)
+        super().initialize(taskParent, **kwdargs)
 
     def step(self):
         """Run the next child task and wait for completion (no timeout)."""
@@ -450,7 +450,7 @@ class ConcurrentAndTaskset(Task):
 
     def __init__(self, taskseq):
 
-        super(ConcurrentAndTaskset, self).__init__()
+        super().__init__()
 
         self.taskseq = taskseq
         # tuning value for polling inefficiency
@@ -579,7 +579,7 @@ class QueueTaskset(Task):
 
     def __init__(self, queue, waitflag=True, timeout=0.1, ev_quit=None):
 
-        super(QueueTaskset, self).__init__()
+        super().__init__()
 
         self.queue = queue
         self.waitflag = waitflag
@@ -684,7 +684,7 @@ class QueueTaskset(Task):
     def cancel(self):
         self.flush()
 
-        super(QueueTaskset, self).cancel()
+        super().cancel()
 
     def addTask(self, task):
         self.queue.put(task)
@@ -698,7 +698,7 @@ class PriorityQueue(queue.PriorityQueue):
 
 # ------------ WORKER THREADS ------------
 
-class WorkerThread(object):
+class WorkerThread:
     """Container for a thread in which to call the execute() method of a task.
     A WorkerThread object waits on the task queue, executes a task when it
     appears, and repeats.  A call to start() is necessary to start servicing
@@ -845,7 +845,7 @@ class WorkerThread(object):
 
 # ------------ THREAD POOL ------------
 
-class ThreadPool(object):
+class ThreadPool:
     """A simple thread pool for executing tasks asynchronously.
 
     self.status states:

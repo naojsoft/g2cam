@@ -33,7 +33,7 @@ class PubSubError(Exception):
     """
     pass
 
-class PubSub(object):
+class PubSub:
     """Base class for publish/subscribe entities.
     """
 
@@ -51,7 +51,7 @@ class PubSub(object):
                           threads to allocate
         """
 
-        super(PubSub, self).__init__()
+        super().__init__()
 
         self.logger = logger
         self.name = name
@@ -1005,7 +1005,7 @@ class PubSub(object):
         self.logger.debug("registering '%s' as a subscriber for '%s'." % (
             subscriber, channels))
 
-        class anonClass(object):
+        class anonClass:
             def __init__(self, update, parent):
                 self.update = update
                 self.parent = parent

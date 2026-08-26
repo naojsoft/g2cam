@@ -16,7 +16,7 @@ class DelayedSendTask(Task.Task):
         self.waittime = float(waittime)
         self.framelist = framelist
 
-        super(DelayedSendTask, self).__init__()
+        super().__init__()
 
     def execute(self):
         self.logger.info("DelayedSendTask: %f, %s" % (self.waittime,
@@ -45,7 +45,7 @@ class IntervalTask(Task.Task):
         if not kwdargs:
             kwdargs = {}
         self.kwdargs = kwdargs
-        super(IntervalTask, self).__init__()
+        super().__init__()
 
     def stop(self):
         self.ev_quit.set()
@@ -99,7 +99,7 @@ class PowerMonTask(IntervalTask):
         self.statusDict = {'TSCV.DOMEUPS': 0}
         self.on_ups_start_time = None
 
-        super(PowerMonTask, self).__init__(self._check_power,
+        super().__init__(self._check_power,
                                            self.interval)
 
     def _power_dn(self):
@@ -175,7 +175,7 @@ class FuncTask(Task.FuncTask):
         args: tuple or list of positional arguments
         kwdargs: any keyword arguments
         """
-        super(FuncTask, self).__init__(func, args, kwdargs)
+        super().__init__(func, args, kwdargs)
 
 
 #END

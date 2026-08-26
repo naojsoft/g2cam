@@ -23,7 +23,7 @@ class Alarm(Callback.Callbacks):
 
     def __init__(self, key, name=None, check_fn=None,
                  priority=10, description="", superceded_by=None):
-        super(Alarm, self).__init__()
+        super().__init__()
 
         # our name, must be unique
         self.key = key
@@ -82,7 +82,7 @@ class AlarmProcessor(Callback.Callbacks):
     """
 
     def __init__(self, logger):
-        super(AlarmProcessor, self).__init__()
+        super().__init__()
 
         self.logger = logger
 

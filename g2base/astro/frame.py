@@ -40,7 +40,7 @@ def getFrameInfoFromPath(fitspath):
 # NEW STYLE
 # Use this class over the old module method if possible
 
-class Frame(object):
+class Frame:
     """
     Class to extract Subaru telescope frame information from a file
     path which contains a name conforming to the Subaru telescope naming

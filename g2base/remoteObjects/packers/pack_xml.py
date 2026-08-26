@@ -12,7 +12,7 @@ from xmlrpc.client import Marshaller
 # integers
 Marshaller.dispatch[int] = dump_int
 
-class Packer(object):
+class Packer:
 
     def __init__(self):
         self.kind = 'xml'

@@ -132,7 +132,7 @@ def testloop():
         time.sleep(1.0)
 
 
-class myproc(object):
+class myproc:
 
     # myproc constructor.
     #
@@ -632,7 +632,7 @@ class myproc(object):
 
 #END myproc
 
-class getproc(object):
+class getproc:
 
     # Get information about a process.
     # TODO: this should eventually harvest information from the /proc

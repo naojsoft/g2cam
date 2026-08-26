@@ -20,7 +20,7 @@ def decode_special(code, data):
     return msgpack.ExtType(code, data)
 
 
-class Packer(object):
+class Packer:
 
     def __init__(self):
         self.kind = 'msgpack'

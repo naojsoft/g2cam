@@ -13,7 +13,7 @@ from .heaptimer import Timer as HeapTimer, TimerHeap
 class TimerError(Exception):
     pass
 
-class TimerFactory(object):
+class TimerFactory:
 
     def __init__(self, ev_quit=None, logger=None):
         # ev_quit retained for past and possible future use
@@ -65,7 +65,7 @@ class TimerFactory(object):
 class Timer(Callback.Callbacks):
 
     def __init__(self, factory):
-        super(Timer, self).__init__()
+        super().__init__()
 
         self.tfact = factory
         # For storing aritrary data with timers

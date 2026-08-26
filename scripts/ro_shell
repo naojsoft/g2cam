@@ -30,7 +30,7 @@ hist_file = os.path.join(os.environ['HOME'], '.roshrc')
 prompt_templ = '%s> '
 
 
-class Shell(object):
+class Shell:
     """Remote Object Shell class.  Encapsulates methods for interacting
     with a set of remote object proxy objects.
     """

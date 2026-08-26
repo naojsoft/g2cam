@@ -4,7 +4,7 @@
 #
 import pickle
 
-class Packer(object):
+class Packer:
 
     def __init__(self):
         self.kind = 'pickle'

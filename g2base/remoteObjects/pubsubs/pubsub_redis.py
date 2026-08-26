@@ -24,7 +24,7 @@ class BufferedRedis(redis.Redis):
     """
 
     def __init__(self, *args, **kwargs):
-        super(BufferedRedis, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.flush_interval = 0.001
         self.flush_size = 1000

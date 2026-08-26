@@ -8,7 +8,7 @@ from g2base import Bunch
 Klass = Bunch.threadSafeBunch
 
 
-class NestedBunch(object):
+class NestedBunch:
     """Basically a dictionaries of dictionaries with a few convenience methods
     for getting data in and out.
     """
@@ -21,7 +21,7 @@ class NestedBunch(object):
         if fillDict:
             self._lload(None, fillDict)
 
-        super(NestedBunch, self).__init__()
+        super().__init__()
 
 
     def _rsplit(self, path):

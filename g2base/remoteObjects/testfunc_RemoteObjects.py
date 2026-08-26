@@ -39,7 +39,7 @@ class TestRONameServerOnly(unittest.TestCase):
     pass
 
 
-class FakeServer(object):
+class FakeServer:
     def __init__(self,initval):
       self.initval = initval
     def test(self, value):

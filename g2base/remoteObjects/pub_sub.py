@@ -38,7 +38,7 @@ class PubSub(Callback.Callbacks):
                           threads to allocate
         """
 
-        super(PubSub, self).__init__()
+        super().__init__()
 
         self.logger = logger
         self.name = name
@@ -295,7 +295,7 @@ class PubSub(Callback.Callbacks):
         self.pubsub.stop()
 
 
-class ChannelMap(object):
+class ChannelMap:
 
     def __init__(self):
         self.channels = set([])

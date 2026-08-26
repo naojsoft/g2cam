@@ -46,7 +46,7 @@ class nameServiceError(Exception):
     pass
 
 
-class remoteObjectNameService(object):
+class remoteObjectNameService:
 
     def __init__(self, svcname, pubsub, logger, myhost, purge_delta=30.0):
 

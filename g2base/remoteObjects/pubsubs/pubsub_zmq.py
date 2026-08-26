@@ -199,7 +199,7 @@ class PubSub(Callback.Callbacks):
         self.redis = None
 
 
-class Server(object):
+class Server:
 
     def __init__(self, host='localhost', port=5562, logger=None):
 

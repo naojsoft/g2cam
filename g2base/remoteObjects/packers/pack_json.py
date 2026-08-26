@@ -4,7 +4,7 @@
 #
 import json
 
-class Packer(object):
+class Packer:
 
     def __init__(self):
         self.kind = 'json'

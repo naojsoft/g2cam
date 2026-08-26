@@ -397,7 +397,7 @@ insinfo = {
     }
 
 
-class INSdata(object):
+class INSdata:
     """Class that allows you to query various information about Subaru instruments.
     """
 

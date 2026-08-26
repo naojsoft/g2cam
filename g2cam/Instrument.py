@@ -31,7 +31,7 @@ class CamInterfaceError(CamError):
 class CamCommandError(CamError):
     pass
 
-class BASECAM(object):
+class BASECAM:
     """For future use, common instrument base class.
     """
 
@@ -63,7 +63,7 @@ class BASECAM(object):
             ev_quit.wait(0.01)
 
 
-class Instrument(object):
+class Instrument:
 
     def __init__(self, logger, threadPool, monitor, monchannels,
                  ev_quit=None, timeout=0.1,

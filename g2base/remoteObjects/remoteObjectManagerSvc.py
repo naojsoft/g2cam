@@ -65,7 +65,7 @@ def getProcInfo(pid):
     return res
 
 
-class processObj(object):
+class processObj:
 
     def __init__(self, name, start_cmd, stop_cmd=None, logger=None,
                  stdout=None, stderr=None,

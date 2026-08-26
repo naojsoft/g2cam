@@ -41,10 +41,10 @@ def bump_worker_group():
     worker_group += 1
     return worker_group
 
-class RpcMessage(object):
+class RpcMessage:
 
     def __init__(self):
-        super(RpcMessage, self).__init__()
+        super().__init__()
         self.compress = False
         self.rpc_version = rpc_version
 
@@ -94,7 +94,7 @@ class RpcRequest(RpcMessage):
     """
 
     def __init__(self):
-        super(RpcRequest, self).__init__()
+        super().__init__()
         self.method = ""
         self.args = []
         self.kwdargs = {}
@@ -139,7 +139,7 @@ class RpcResponse(RpcMessage):
     """
 
     def __init__(self, result=None, status=-1, error=None):
-        super(RpcResponse, self).__init__()
+        super().__init__()
         self.status = status
         self.result = result
         self.error  = error
@@ -160,7 +160,7 @@ class RpcResponse(RpcMessage):
         return "<%s: status:%d>" % (self.__class__.__name__, self.status)
 
 
-class ZMQRPCServer(object):
+class ZMQRPCServer:
     """
     Basic ZMQ-RPC server.
     """
@@ -572,7 +572,7 @@ class ZMQRPCServer(object):
         return self._services
 
 
-class ClientProxy(object):
+class ClientProxy:
     """
         rpc.call("myFunction", callback=processResponse, args=(1, "a"), kwdargs={'flag':True, 'option':"blarg"})
     """
@@ -704,7 +704,7 @@ class ClientProxy(object):
 # ------------------ CONVENIENCE FUNCTIONS ------------------
 #
 
-class ServiceProxy(object):
+class ServiceProxy:
 
     def __init__(self, proxy):
         self.proxy = proxy

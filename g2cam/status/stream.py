@@ -9,7 +9,7 @@ from g2base.remoteObjects import ro_packer
 from g2base import Bunch
 
 
-class StatusStream(object):
+class StatusStream:
     """
     Status streaming client for Subaru Gen2 Observation Control System.
 

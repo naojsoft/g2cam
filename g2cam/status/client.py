@@ -9,7 +9,7 @@ from g2cam.status import common
 status_not_found = common.STATNONE
 
 
-class StatusClient(object):
+class StatusClient:
     """
     Status client for Subaru Gen2 Observation Control System
 

@@ -5,11 +5,11 @@
 #
 # -*- coding: utf-8 -*-
 #
-class Notification(object):
+class Notification:
     """Notification base class for an alarm."""
 
     def __init__(self, interval=60.0):
-        super(Notification, self).__init__()
+        super().__init__()
 
         # time to wait between notifications
         self.interval = interval
@@ -26,7 +26,7 @@ class TTYNotification(Notification):
     """A text notification.  Prints itself to stdout."""
 
     def __init__(self, text=None, **kwargs):
-        super(TTYNotification, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         # text to print for the alarm in terminal
         self.text = text
 
@@ -44,7 +44,7 @@ class Gen2SoundFileNotification(SoundNotification):
     """A notification that plays a sound file."""
 
     def __init__(self, sound_file=None, volume=0, dst='all', **kwargs):
-        super(Gen2SoundFileNotification, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
         # sound file to play, full path
         self.sound_file = sound_file
@@ -66,7 +66,7 @@ class Gen2TTSNotification(SoundNotification):
 
     def __init__(self, sound_text=None,
                  voice='slt', volume=12, dst='all', **kwargs):
-        super(Gen2TTSNotification, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
         # sound text to synthesize
         self.sound_text = sound_text
@@ -92,7 +92,7 @@ class TwilioSMSNotification(PhoneNotification):
     """
 
     def __init__(self, sms_text=None, phone_number=None, **kwargs):
-        super(TwilioSMSNotification, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
         # sound text to synthesize
         self.sms_text = sms_text
@@ -119,7 +119,7 @@ class TwilioRoboCallNotification(PhoneNotification):
     """
 
     def __init__(self, sound_file=None, volume=0, phone_number=None, **kwargs):
-        super(TwilioRoboCallNotification, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
         # sound file to play, full path
         self.sound_file = sound_file

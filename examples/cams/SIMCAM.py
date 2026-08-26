@@ -37,7 +37,7 @@ class SIMCAM(BASECAM):
 
     def __init__(self, logger, env, ev_quit=None):
 
-        super(SIMCAM, self).__init__()
+        super().__init__()
 
         self.logger = logger
         self.env = env
@@ -71,7 +71,7 @@ class SIMCAM(BASECAM):
     def initialize(self, ocsint):
         '''Initialize instrument.
         '''
-        super(SIMCAM, self).initialize(ocsint)
+        super().initialize(ocsint)
         self.logger.info('***** INITIALIZE CALLED *****')
         # Grab my handle to the OCS interface.
         self.ocs = ocsint
@@ -116,7 +116,7 @@ class SIMCAM(BASECAM):
 
 
     def start(self, wait=True):
-        super(SIMCAM, self).start(wait=wait)
+        super().start(wait=wait)
 
         self.logger.info('SIMCAM STARTED.')
 
@@ -134,7 +134,7 @@ class SIMCAM(BASECAM):
 
 
     def stop(self, wait=True):
-        super(SIMCAM, self).stop(wait=wait)
+        super().stop(wait=wait)
 
         # Terminate status generation task
         if self.status_task != None:

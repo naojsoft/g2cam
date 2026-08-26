@@ -114,7 +114,7 @@ class Monitor(ps.PubSub):
         self.lock = threading.RLock()
 
         # Superclass initialization
-        super(Monitor, self).__init__(name, logger,
+        super().__init__(name, logger,
 #                                      ev_quit=None, threadPool=None,
                                       ev_quit=ev_quit, threadPool=threadPool,
                                       numthreads=numthreads)
@@ -398,7 +398,7 @@ class Minimon(Monitor):
         # Intervals to wait between checks for interruptions
         self.wait_interval = 0.1
 
-        super(Minimon, self).__init__(name, logger,
+        super().__init__(name, logger,
                                       ev_quit=ev_quit,
                                       threadPool=threadPool,
                                       numthreads=numthreads)
@@ -563,7 +563,7 @@ class Minimon(Monitor):
     def do_update(self, path, value):
 
         with self.lock:
-            res = super(Minimon, self).do_update(path, value)
+            res = super().do_update(path, value)
 
             # release all waiters
             if isinstance(value, dict):

@@ -85,7 +85,7 @@ class ManagerServiceWarning(RuntimeWarning):
 # Remote object server implementation
 #
 
-class remoteObjectServer(object):
+class remoteObjectServer:
 
     '''This module implements the interface for the remote calling of
     object methods.  i.e. it implements the "server" side.
@@ -556,7 +556,7 @@ def call_remote(client, attrname, args, kwdargs):
         return (ERROR_FATAL, errstr)
 
 
-class remoteObjectClient(object):
+class remoteObjectClient:
 
     """This class implements the interface for the remote calling of
     object methods.  i.e. it implements the "client" side as a proxy object.
@@ -610,7 +610,7 @@ class remoteObjectClient(object):
         return ("remoteObjectClient(%s, %d)" % (self.host, self.port))
 
 
-class remoteObjectSP(object):
+class remoteObjectSP:
 
     """Base class for 'SP' (Service Pack)-based remote objects.
 
@@ -857,7 +857,7 @@ class remoteObjectSPFailoverRR(remoteObjectSP):
 # Service pack interface
 #
 
-class servicePack(object):
+class servicePack:
 
     def __init__(self, auth=None, secure=default_secure, timeout=None,
                  transport=default_transport):
@@ -1071,7 +1071,7 @@ class servicePack(object):
 
 # Null logger in case a logger is not passed to the remoteObjectServer
 #
-class nullLogger(object):
+class nullLogger:
     def __init__(self, f_out=None):
         self.f_out = f_out
 
