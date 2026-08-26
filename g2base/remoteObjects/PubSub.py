@@ -760,9 +760,6 @@ class PubSub:
 
         task.init_and_start(self)
 
-    def proxy_error(self, subscriber, partner):
-        pass
-
     def clear_proxy_cache(self):
         with self._lock:
             self._proxyCache = {}
@@ -957,11 +954,11 @@ class PubSub:
     def subscribe_remote(self, publisher, channels, options):
 
         # Necessary to add to a set; list objects are not hashable
-        if type(channels) == str:
+        if type(channels) is str:
             channels = (channels,)
-        elif type(channels) == list:
+        elif type(channels) is list:
             channels = tuple(channels)
-        assert(type(channels) == tuple)
+        assert(type(channels) is tuple)
 
         if not options:
             options = {}
@@ -977,11 +974,11 @@ class PubSub:
     def unsubscribe_remote(self, publisher, channels, options):
 
         # Necessary to add to a set; list objects are not hashable
-        if type(channels) == str:
+        if type(channels) is str:
             channels = (channels)
-        elif type(channels) == list:
+        elif type(channels) is list:
             channels = tuple(channels)
-        assert(type(channels) == tuple)
+        assert(type(channels) is tuple)
 
         with self._lock:
             #self._remote_sub_info.remove((publisher, channels, options))

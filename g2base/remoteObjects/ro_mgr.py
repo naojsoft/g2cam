@@ -28,7 +28,7 @@ Instructions:
 
      Also, try killing the pid of one of the processes and watch it
      restart.
-     
+
      In your program just copy the get_ms_handle() function and use it
      as illustrated in the examples below.
 """

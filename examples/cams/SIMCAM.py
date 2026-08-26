@@ -397,7 +397,7 @@ class SIMCAM(BASECAM):
         # If there was a non-negligible delay specified, then queue up
         # a task for later archiving of the file and terminate this command.
         if delay:
-            if type(delay) == type(""):
+            if type(delay) is str:
                 delay = float(delay)
             if delay > 0.1:
                 # Add a task to delay and then archive_framelist

@@ -413,7 +413,7 @@ class INSdata:
                                         'db', 'inscfg.yml')
                 if os.path.exists(infopath):
                     info = infopath
-            except:
+            except Exception:
                 pass
 
         # Update from supplementary info provided by the user

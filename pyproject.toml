@@ -25,3 +25,15 @@ extend-include = ["scripts/g2cam",
 [tool.ruff.lint]
 select = ["E", "F", "W"]
 ignore = ["E265", "E266", "E402", "E741", "E501", "F841"]
+
+[tool.ruff.lint.per-file-ignores]
+# radec.py is dense coordinate and precession arithmetic carried over
+# from an older language, where the semicolons group the terms of one
+# formula onto one line.  Splitting 71 of those would churn numerically
+# fiddly code for no gain in what it says.
+"g2base/astro/radec.py" = ["E701", "E702"]
+# both do `from ro_config import *` to pull in the configuration
+# defaults, which is what makes every name that comes from there
+# undefined as far as ruff can see
+"g2base/remoteObjects/PubSub.py" = ["F403", "F405"]
+"g2base/remoteObjects/remoteObjects.py" = ["F403", "F405"]

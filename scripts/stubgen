@@ -161,7 +161,7 @@ unimplemented_res = 2
                         # see if we should format as int instead of float
                         if paramDefs[param].defaultDef['FORMAT'].endswith('d'):
                             formatting = 'd'
-                    except:
+                    except Exception:
                         # Assume float if we run into trouble.
                         pass
             except TypeError:

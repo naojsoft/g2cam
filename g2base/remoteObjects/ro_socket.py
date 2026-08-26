@@ -359,7 +359,7 @@ class SocketRPCServer:
             finally:
                 try:
                     sock.close()
-                except:
+                except Exception:
                     pass
 
         self.logger.info("worker %d shutting down..." % (i))

@@ -607,7 +607,7 @@ class ClientProxy:
         try:
             if self._sender is not None:
                 self._sender.close()
-        except:
+        except Exception:
             pass
         finally:
             self._sender = None

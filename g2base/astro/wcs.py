@@ -274,7 +274,8 @@ def hmsToDeg (ra):
 # dec dms to dec degree
 def dmsToDeg (dec):
     sign_deg, min, sec = dec.split(':')
-    sign=sign_deg[0:1]; deg =sign_deg[1:]
+    sign = sign_deg[0:1]
+    deg = sign_deg[1:]
     dec_deg=radec.decTimeToDeg(sign, int(deg), int(min), float(sec) )
     return dec_deg
 

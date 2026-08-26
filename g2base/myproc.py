@@ -248,7 +248,7 @@ class myproc:
                     # If stdin is a string then treat it as a file to open
                     # for stdin, otherwise we assume it is an already open
                     # file object
-                    if type(stdin) == str:
+                    if type(stdin) is str:
                         stdin = open(stdin, 'r')
                     if stdin.fileno() != sys.stdin.fileno():
                         os.dup2(stdin.fileno(), sys.stdin.fileno())
@@ -258,7 +258,7 @@ class myproc:
                     os.dup2(woutfd, sys.stdout.fileno())
                     os.close(routfd)
                 else:
-                    if type(stdout) == str:
+                    if type(stdout) is str:
                         stdout_name = stdout
                         stdout = open(stdout, 'a')
                         # If user specified same name for stderr, then share
@@ -273,7 +273,7 @@ class myproc:
                     os.dup2(werrfd, sys.stderr.fileno())
                     os.close(rerrfd)
                 else:
-                    if type(stderr) == str:
+                    if type(stderr) is str:
                         stderr = open(stderr, 'a')
                     if stderr.fileno() != sys.stderr.fileno():
                         os.dup2(stderr.fileno(), sys.stderr.fileno())

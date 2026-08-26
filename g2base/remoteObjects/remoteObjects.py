@@ -481,7 +481,7 @@ class remoteObjectServer:
         # Unregister our service
         try:
             self.__ns_unregister()
-        except:
+        except Exception:
             pass
 
         self.logger.info("Stopping remote object server on %s:%d." % \
@@ -1208,7 +1208,7 @@ def find_free_port(host, start_port, end_port):
     else:
         try:
             sock.close()
-        except:
+        except Exception:
             pass
         return port
 

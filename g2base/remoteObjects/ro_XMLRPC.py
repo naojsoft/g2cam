@@ -104,7 +104,7 @@ class MyTransport(Transport):
         finally:
             try:
                 self.close()
-            except:
+            except Exception:
                 pass
 
 #
@@ -392,7 +392,7 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
                 (type, value, tb) = sys.exc_info()
                 tb_str = ("Traceback:\n%s" % '\n'.join(traceback.format_tb(tb)))
                 self.logger.error(tb_str)
-            except:
+            except Exception:
                 self.logger.error("Traceback information unavailable")
             raise e
 
