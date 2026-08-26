@@ -4,8 +4,8 @@ import re
 from g2base import Bunch
 
 
-frame_regex1 = re.compile('^(\w{3})([A-Za-z])(\d{8})$')
-frame_regex2 = re.compile('^(\w{3})([A-Za-z])(\d{1})(\d{7})$')
+frame_regex1 = re.compile(r'^(\w{3})([A-Za-z])(\d{8})$')
+frame_regex2 = re.compile(r'^(\w{3})([A-Za-z])(\d{1})(\d{7})$')
 frame_templ = "%3.3s%1.1s%1.1s%07d"
 max_frame_count = 9999999
 

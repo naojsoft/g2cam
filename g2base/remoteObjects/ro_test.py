@@ -2,7 +2,6 @@
 #
 # Remote objects tests
 #
-from __future__ import print_function
 import sys, time
 import logging
 

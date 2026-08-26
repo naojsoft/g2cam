@@ -10,7 +10,6 @@ Example use:
 $ ro_shell.py
 names>getNames()
 """
-from __future__ import print_function
 
 import sys, os
 import socket, time

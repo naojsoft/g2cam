@@ -31,7 +31,6 @@ Using SSL encryption + authentication:
    (client) ./ro_example.py --secure --auth=bob:foo
 
 """
-from __future__ import print_function
 import sys, time
 from . import remoteObjects as ro
 

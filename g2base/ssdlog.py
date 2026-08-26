@@ -9,10 +9,7 @@ import socket
 import threading
 import queue
 
-if sys.hexversion < 0x02050000:
-    STD_FORMAT = '%(asctime)s | %(levelname)1.1s | %(filename)s:%(lineno)d | %(message)s'
-else:
-    STD_FORMAT = '%(asctime)s | %(levelname)1.1s | %(filename)s:%(lineno)d (%(funcName)s) | %(message)s'
+STD_FORMAT = '%(asctime)s | %(levelname)1.1s | %(filename)s:%(lineno)d (%(funcName)s) | %(message)s'
 
 # Can't do this because behind the scenes somewhere it sets some
 # characteristics for logging to the terminal--and that causes problems
@@ -95,12 +92,8 @@ class FixedTimeRotatingFileHandler(logging.handlers.BaseRotatingHandler):
         if maxBytes > 0:
             mode = 'a' # doesn't make sense otherwise!
 
-        if sys.hexversion <= 0x02060000:
-            logging.handlers.BaseRotatingHandler.__init__(self, filename,
-                                                          mode, encoding)
-        else:
-            logging.handlers.BaseRotatingHandler.__init__(self, filename,
-                                                          mode, encoding, delay)
+        logging.handlers.BaseRotatingHandler.__init__(self, filename,
+                                                      mode, encoding, delay)
 
         self.maxBytes = maxBytes
         self.backupCount = backupCount

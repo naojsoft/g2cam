@@ -2,7 +2,6 @@
 #
 # g2cam -- instrument using OCS Gen2 interface
 #
-from __future__ import print_function
 
 # stdlib imports
 import sys, os

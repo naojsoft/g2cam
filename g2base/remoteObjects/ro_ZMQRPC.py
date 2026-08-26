@@ -1,7 +1,6 @@
 #
 # ro_ZMQRPC.py -- ZeroMQ-based RPC services for remoteObjects system
 #
-from __future__ import print_function
 import sys, os, time
 import threading
 from uuid import uuid4

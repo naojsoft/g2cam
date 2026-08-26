@@ -7,23 +7,13 @@ encoding = ro_config.default_encoding.lower()
 
 codecs = {}
 
-try:
-    # faster
-    import cjson
-    codecs['json'] = (cjson.encode, cjson.decode)
-except ImportError:
-    # slower
-    import json
-    codecs['json'] = (json.dumps, json.loads)
+# cjson and cPickle were the fast Python 2 alternatives; on Python 3
+# the stdlib json is the same code, and pickle picks up _pickle itself.
+import json
+codecs['json'] = (json.dumps, json.loads)
 
-try:
-    # faster
-    import cPickle
-    codecs['pickle'] = (cPickle.dumps, cPickle.loads)
-except ImportError:
-    # slower
-    import pickle
-    codecs['pickle'] = (pickle.dumps, pickle.loads)
+import pickle
+codecs['pickle'] = (pickle.dumps, pickle.loads)
 
 def get_codecs():
     return list(codecs.keys())

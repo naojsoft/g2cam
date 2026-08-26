@@ -32,8 +32,6 @@ Instructions:
      In your program just copy the get_ms_handle() function and use it
      as illustrated in the examples below.
 """
-from __future__ import print_function
-from __future__ import print_function
 import sys
 from g2base.remoteObjects import remoteObjects as ro
 

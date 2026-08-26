@@ -5,7 +5,6 @@
 #
 """This file implements a simulator for a simulated instrument (SIMCAM).
 """
-from __future__ import print_function
 import sys, os, time
 import re
 import threading
@@ -326,7 +325,7 @@ class SIMCAM(BASECAM):
             num_frames = 1
 
         # Check frame_no
-        match = re.match('^(\w{3})(\w)(\d{8})$', frame_no)
+        match = re.match(r'^(\w{3})(\w)(\d{8})$', frame_no)
         if not match:
             raise SIMCAMError("Error in frame_no: '%s'" % frame_no)
 

@@ -10,7 +10,6 @@ Main issues to think about/resolve:
         e.g. TaskManager needs to pull combined feed
   [ ] Permissions/access issues
 """
-from __future__ import print_function
 
 import sys, os, time
 import threading

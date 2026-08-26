@@ -50,7 +50,6 @@ Main issues to think about/resolve:
        is it even necessary (or desirable)?
   [ ] Clumping updates together to improve network efficiency (i.e. caching)
 """
-from __future__ import print_function
 import sys, re
 import time
 import string
