@@ -436,7 +436,7 @@ class SocketRPCServer:
             self._num_threads))
 
         # queue for communicating with workers
-        queue = queue.Queue()
+        work_q = queue.Queue()
 
         # Threaded server.  Start N workers either as new threads or using
         # the thread pool, if we have one.
@@ -445,27 +445,27 @@ class SocketRPCServer:
                 if self.threadPool == None:
                     thread = threading.Thread(target=self.worker,
                                               name="RPC-Worker-%d" % (i+1),
-                                              args=[i, queue])
+                                              args=[i, work_q])
                     thread.daemon = False
                     thread.start()
                 else:
-                    task = Task.FuncTask2(self.worker, i, queue)
+                    task = Task.FuncTask2(self.worker, i, work_q)
                     self.threadPool.addTask(task)
 
         # Start the server
         if not use_thread:
-            self.server(queue)
+            self.server(work_q)
 
         else:
             if self.threadPool == None:
                 thread = threading.Thread(target=self.server,
                                           name="RPC-Device",
-                                          args=[queue])
+                                          args=[work_q])
                 thread.daemon = False
                 thread.start()
 
             else:
-                task = Task.FuncTask2(self.server, queue)
+                task = Task.FuncTask2(self.server, work_q)
                 self.threadPool.addTask(task)
 
 

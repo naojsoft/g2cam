@@ -7,6 +7,7 @@ import os
 import time
 import re
 import threading
+import importlib
 
 from g2base import Task
 from g2base.Bunch import Bunch, threadSafeBunch
@@ -161,7 +162,7 @@ class Instrument:
                 self.logger.info("Reloading instrument personality '%s'" % \
                                  camName)
                 module = camInfo.module
-                reload(module)
+                importlib.reload(module)
 
             else:
                 self.logger.debug("Loading instrument personality '%s'" % \
@@ -315,7 +316,7 @@ class Instrument:
         return camInfo.cam.ui(options, args, ev_quit, logger=logger)
 
     def reload_module(self, moduleName):
-        reload(sys.modules[moduleName])
+        importlib.reload(sys.modules[moduleName])
 
     #####################################
     # COMMAND FUNCTIONS
@@ -454,7 +455,7 @@ class Instrument:
         try:
             bnch = Monitor.unpack_payload(payload)
 
-        except Monitor.MonitorError:
+        except Monitor.MonitorError as e:
             self.logger.error("malformed packet '%s': %s" % (
                 str(payload), str(e)))
             return
