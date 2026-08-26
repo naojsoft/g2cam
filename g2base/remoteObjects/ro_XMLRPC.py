@@ -2,6 +2,8 @@
 # ro_XMLRPC.py -- enhanced XML-RPC services for remoteObjects system
 #
 import sys
+import time
+import logging
 import threading
 import traceback
 import base64
