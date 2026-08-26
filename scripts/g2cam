@@ -11,7 +11,7 @@ import threading
 import traceback
 # profile imported below (if needed)
 # pdb imported below (if needed)
-# optparse imported below (if needed)
+# argparse imported below (if needed)
 
 # g2base imports
 from g2base import Task, ssdlog

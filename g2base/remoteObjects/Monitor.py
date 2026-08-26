@@ -706,12 +706,7 @@ def config_monitor(monitor, channels, aggregates):
 
 def addlogopts(optprs):
     """Add special options used in Monitor applications."""
-    if hasattr(optprs, 'add_option'):
-        # older optparse
-        add_argument = optprs.add_option
-    else:
-        # newer argparse
-        add_argument = optprs.add_argument
+    add_argument = optprs.add_argument
 
     add_argument("--monitor", dest="monitor",
                  help="Use NAME or HOST:PORT for publish/subscribe",

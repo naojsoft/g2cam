@@ -77,7 +77,8 @@ def main(options, args):
 
     if select == 'server':
 
-        threadPool = Task.ThreadPool(numthreads=10, logger=logger)
+        threadPool = Task.ThreadPool(numthreads=options.numthreads,
+                                     logger=logger)
         threadPool.startall(wait=True)
 
         testro = TestRO(options, logger, threadPool=threadPool,
@@ -104,43 +105,46 @@ def main(options, args):
 
 if __name__ == '__main__':
 
-    # Parse command line options with nifty new optparse module
-    from optparse import OptionParser
+    # Parse command line options
+    from argparse import ArgumentParser
 
-    usage = "usage: %prog [options]"
-    parser = OptionParser(usage=usage, version=('%%prog'))
+    usage = "%(prog)s [options]"
+    parser = ArgumentParser(usage=usage)
+    parser.add_argument('--version', action='version',
+                        version='%(prog)s')
 
-    parser.add_option("--action", dest="action",
+    parser.add_argument("--action", dest="action",
                       help="Action is server|calls")
-    parser.add_option("--auth", dest="auth",
+    parser.add_argument("--auth", dest="auth",
                       help="Use authorization; arg should be user:passwd")
-    parser.add_option("--cert", dest="cert",
+    parser.add_argument("--cert", dest="cert",
                       help="Path to key/certificate file")
-    parser.add_option("--count", dest="count", type="int",
+    parser.add_argument("--count", dest="count", type=int,
                       default=1,
                       help="Iterate NUM times", metavar="NUM")
-    parser.add_option("--datafile", dest="datafile", metavar='FILE',
-                      help="Write statistics to FILE")
-    parser.add_option("--debug", dest="debug", default=False,
+    parser.add_argument("--debug", dest="debug", default=False,
                       action="store_true",
                       help="Enter the pdb debugger on main()")
-    parser.add_option("--port", dest="port", type="int",
+    parser.add_argument("--numthreads", dest="numthreads", type=int,
+                      default=10, metavar="NUM",
+                      help="Use NUM threads in thread pool")
+    parser.add_argument("--port", dest="port", type=int,
                       help="Register using PORT", metavar="PORT")
-    parser.add_option("--profile", dest="profile", action="store_true",
+    parser.add_argument("--profile", dest="profile", action="store_true",
                       default=False,
                       help="Run the profiler on main()")
-    parser.add_option("--secure", dest="secure", action="store_true",
+    parser.add_argument("--secure", dest="secure", action="store_true",
                       default=False,
                       help="Use SSL encryption")
-    parser.add_option("--svcname", dest="svcname",
+    parser.add_argument("--svcname", dest="svcname",
                       default='ro_test',
                       help="Register using service NAME", metavar="NAME")
-    parser.add_option("--transport", dest="transport", metavar='PROTOCOL',
+    parser.add_argument("--transport", dest="transport", metavar='PROTOCOL',
                       default=ro.default_transport,
                       help="Choose PROTOCOL for transport")
     ssdlog.addlogopts(parser)
 
-    (options, args) = parser.parse_args(sys.argv[1:])
+    (options, args) = parser.parse_known_args(sys.argv[1:])
 
     # Are we debugging this?
     if options.debug:

@@ -48,23 +48,25 @@ def get_ms_handle(host=None):
 
 if __name__ == '__main__':
 
-    # Parse command line options with nifty new optparse module
-    from optparse import OptionParser
+    # Parse command line options
+    from argparse import ArgumentParser
 
-    usage = "usage: %prog [options] command [args]"
-    parser = OptionParser(usage=usage, version=('%%prog'))
+    usage = "%(prog)s [options] command [args]"
+    parser = ArgumentParser(usage=usage)
+    parser.add_argument('--version', action='version',
+                        version='%(prog)s')
 
-    parser.add_option("--action", dest="action", default='nop',
+    parser.add_argument("--action", dest="action", default='nop',
                       metavar="ACTION",
                       help="Action is ACTION")
-    parser.add_option("--cmd", dest="cmdline", default=None,
+    parser.add_argument("--cmd", dest="cmdline", default=None,
                       metavar="CMD",
                       help="Specify command to be run.")
-    parser.add_option("--name", dest="name", default=None,
+    parser.add_argument("--name", dest="name", default=None,
                       metavar="NAME",
                       help="Perform action on NAME")
 
-    (options, args) = parser.parse_args(sys.argv[1:])
+    (options, args) = parser.parse_known_args(sys.argv[1:])
 
     ms = get_ms_handle()
 

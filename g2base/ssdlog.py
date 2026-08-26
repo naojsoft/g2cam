@@ -388,12 +388,7 @@ def mklog(logname, queue, level, format=STD_FORMAT):
 
 
 def addlogopts(optprs):
-    if hasattr(optprs, 'add_option'):
-        # older optparse
-        add_argument = optprs.add_option
-    else:
-        # newer argparse
-        add_argument = optprs.add_argument
+    add_argument = optprs.add_argument
 
     add_argument("--log", dest="logfile", metavar="FILE",
                  help="Write logging output to FILE")

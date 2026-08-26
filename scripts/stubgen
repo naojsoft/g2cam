@@ -19,7 +19,7 @@ more complete simulation or task definition.
 """
 import sys
 import time
-from optparse import OptionParser
+from argparse import ArgumentParser
 
 from g2base import ssdlog
 
@@ -261,18 +261,20 @@ class %sTask(InsTask.Ins2Task):
 
 if __name__ == '__main__':
 
-    usage = "usage: %prog [options]"
-    optprs = OptionParser(usage=usage, version=('%%prog'))
+    usage = "%(prog)s [options]"
+    optprs = ArgumentParser(usage=usage)
+    optprs.add_argument('--version', action='version',
+                        version='%(prog)s')
 
-    optprs.add_option("--inst", dest="inst", metavar="NAME",
+    optprs.add_argument("--inst", dest="inst", metavar="NAME",
                       help="Use NAME for instrument")
-    optprs.add_option("--paradir", dest="paradir", metavar="DIR",
+    optprs.add_argument("--paradir", dest="paradir", metavar="DIR",
                       help="Use DIR for retrieving instrument PARA files")
-    optprs.add_option("--type", dest="type", metavar="TYPE",
+    optprs.add_argument("--type", dest="type", metavar="TYPE",
                       help="Generate stubs of TYPE (simcam|task|g2task)")
     ssdlog.addlogopts(optprs)
 
-    (options, args) = optprs.parse_args(sys.argv[1:])
+    (options, args) = optprs.parse_known_args(sys.argv[1:])
 
     if len(args) != 0:
         optprs.error("incorrect number of arguments")

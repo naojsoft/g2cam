@@ -1399,12 +1399,7 @@ def init(ro_hosts=None,
 
 def addlogopts(optprs):
     """Add special options used in remoteObjects applications."""
-    if hasattr(optprs, 'add_option'):
-        # older optparse
-        add_argument = optprs.add_option
-    else:
-        # newer argparse
-        add_argument = optprs.add_argument
+    add_argument = optprs.add_argument
 
     add_argument("--auth", dest="auth",
                  help="Use authorization; arg should be user:passwd")

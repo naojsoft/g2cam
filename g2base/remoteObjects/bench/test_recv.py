@@ -67,23 +67,23 @@ def main(options, args):
 
 
 if __name__ == '__main__':
-    from optparse import OptionParser
+    from argparse import ArgumentParser
 
-    usage = "usage: %prog [options]"
-    optprs = OptionParser(usage=usage)
+    usage = "%(prog)s [options]"
+    optprs = ArgumentParser(usage=usage)
 
-    optprs.add_option("--backend", dest="backend", metavar="NAME",
+    optprs.add_argument("--backend", dest="backend", metavar="NAME",
                       default=None,
                       help="Specify backend transport")
-    optprs.add_option("--debug", dest="debug", default=False,
+    optprs.add_argument("--debug", dest="debug", default=False,
                       action="store_true",
                       help="Enter the pdb debugger on main()")
-    optprs.add_option("--profile", dest="profile", action="store_true",
+    optprs.add_argument("--profile", dest="profile", action="store_true",
                       default=False,
                       help="Run the profiler on main()")
     ssdlog.addlogopts(optprs)
 
-    (options, args) = optprs.parse_args(sys.argv[1:])
+    (options, args) = optprs.parse_known_args(sys.argv[1:])
 
     if len(args) != 0:
         optprs.error("incorrect number of arguments")

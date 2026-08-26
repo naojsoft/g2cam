@@ -127,42 +127,44 @@ def main(options, args):
 
 if __name__ == '__main__':
 
-    # Parse command line options with nifty new optparse module
-    from optparse import OptionParser
+    # Parse command line options
+    from argparse import ArgumentParser
 
-    usage = "usage: %prog [options]"
-    parser = OptionParser(usage=usage, version=('%%prog'))
+    usage = "%(prog)s [options]"
+    parser = ArgumentParser(usage=usage)
+    parser.add_argument('--version', action='version',
+                        version='%(prog)s')
 
-    parser.add_option("--auth", dest="auth",
+    parser.add_argument("--auth", dest="auth",
                       help="Use authorization; arg should be user:passwd")
-    parser.add_option("--cert", dest="cert",
+    parser.add_argument("--cert", dest="cert",
                       help="Path to key/certificate file")
-    parser.add_option("--count", dest="count", type="int",
+    parser.add_argument("--count", dest="count", type=int,
                       default=1,
                       help="Make NUM calls", metavar="NUM")
-    parser.add_option("--debug", dest="debug", default=False,
+    parser.add_argument("--debug", dest="debug", default=False,
                       action="store_true",
                       help="Enter the pdb debugger on main()")
-    parser.add_option("--interval", dest="interval", type="float",
+    parser.add_argument("--interval", dest="interval", type=float,
                       default=1.0,
                       help="Wait VAL seconds between calls",
                       metavar="VAL")
-    parser.add_option("--port", dest="port", type="int",
+    parser.add_argument("--port", dest="port", type=int,
                       help="Register using PORT", metavar="PORT")
-    parser.add_option("--profile", dest="profile", action="store_true",
+    parser.add_argument("--profile", dest="profile", action="store_true",
                       default=False,
                       help="Run the profiler on main()")
-    parser.add_option("--secure", dest="secure", action="store_true",
+    parser.add_argument("--secure", dest="secure", action="store_true",
                       default=False,
                       help="Use SSL encryption")
-    parser.add_option("--server", dest="server", action="store_true",
+    parser.add_argument("--server", dest="server", action="store_true",
                       default=False,
                       help="Run as a server")
-    parser.add_option("--svcname", dest="svcname",
+    parser.add_argument("--svcname", dest="svcname",
                       default='ro_example',
                       help="Register using service NAME", metavar="NAME")
 
-    (options, args) = parser.parse_args(sys.argv[1:])
+    (options, args) = parser.parse_known_args(sys.argv[1:])
 
     if len(args) != 0:
         parser.error("incorrect number of arguments")
