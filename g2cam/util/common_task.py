@@ -3,7 +3,9 @@
 #
 import time
 from g2base import Task
-from g2cam.Instrument import CamError, CamCommandError
+# CamCommandError is re-exported for the instrument modules that
+# import it from here
+from g2cam.Instrument import CamError, CamCommandError  # noqa: F401
 
     #######################################
     # Tasks for autonomous threads.

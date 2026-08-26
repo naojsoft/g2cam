@@ -50,7 +50,7 @@ Main issues to think about/resolve:
        is it even necessary (or desirable)?
   [ ] Clumping updates together to improve network efficiency (i.e. caching)
 """
-import sys, re
+import sys
 import time
 import string
 import threading

@@ -14,7 +14,6 @@ And you need to be running a gnats pubsub server:
 
 """
 import threading
-import time
 
 from g2base import Callback
 from g2base.remoteObjects import ro_packer

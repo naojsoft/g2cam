@@ -29,7 +29,8 @@ Updates come in on the channel 'names' and these propagate between the
 name servers.
 
 """
-import sys, time
+import sys
+import time
 import threading
 
 from g2base.remoteObjects import remoteObjects as ro

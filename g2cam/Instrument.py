@@ -2,10 +2,10 @@
 # g2Instrument.py -- generic base class for an instrument (BASECAM) and
 #   a framework for interfacing with the OCS (Instrument)
 #
-import sys, os
+import sys
+import os
 import time
 import re
-import traceback
 import threading
 
 from g2base import Task
@@ -146,7 +146,7 @@ class Instrument:
         if not moduleDir:
             thisDir = os.path.split(sys.modules[__name__].__file__)[0]
             moduleDir = '%s/cams/%s' % (thisDir, camName)
-        if not moduleDir in sys.path:
+        if moduleDir not in sys.path:
             sys.path.append(moduleDir)
 
         # Instrument will be referred to by this alias

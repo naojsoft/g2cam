@@ -17,10 +17,9 @@ stubgen --paradir=$OBSHOME/SPCAM/para --inst=SPCAM --type=g2task > task_stubs.tx
 You can then pull the stubs into an editor and flesh them out to create a
 more complete simulation or task definition.
 """
-import sys, os
+import sys
 import time
 from optparse import OptionParser
-import logging
 
 from g2base import ssdlog
 

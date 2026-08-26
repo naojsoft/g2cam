@@ -4,12 +4,12 @@
 
 """
 """
-import sys, os, time
+import time
 import threading
 
 import queue
 
-from g2base import Bunch, Task, Callback, ssdlog
+from g2base import Bunch, Task, Callback
 from .ro_pubsub import PubSub as InternalPS
 
 ro_OK = 0

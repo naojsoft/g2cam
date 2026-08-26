@@ -46,7 +46,7 @@ Important definitions:
                 reflect the changes to their storage spaces.
 
 """
-import sys, re
+import sys
 import time
 import string
 import threading
@@ -54,7 +54,6 @@ import logging
 import queue
 
 from g2base import Task, Bunch
-from g2base import ssdlog
 from . import NestedBunch
 from . import pub_sub as ps
 

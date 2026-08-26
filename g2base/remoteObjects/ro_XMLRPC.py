@@ -352,7 +352,7 @@ class XMLRPCServer(ProcessingMixin, SimpleXMLRPCServer):
             self.logger.error("Bad authentication credentials passed")
             raise Error("Service only handles 'basic' authentication type")
 
-        if not username in self.authDict:
+        if username not in self.authDict:
             self.logger.error("No user matching '%s'" % username)
             self.logger.info("authdict is '%s'" % str(self.authDict))
             # sleep thwarts brute force attacks

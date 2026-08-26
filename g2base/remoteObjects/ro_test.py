@@ -2,8 +2,8 @@
 #
 # Remote objects tests
 #
-import sys, time
-import logging
+import sys
+import time
 
 from g2base import Task, ssdlog
 from g2base.remoteObjects import remoteObjects as ro

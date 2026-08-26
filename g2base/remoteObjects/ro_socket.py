@@ -1,7 +1,7 @@
 #
 # ro_socket.py -- socket-based RPC services for remoteObjects system
 #
-import sys, os, time
+import time
 import threading
 from uuid import uuid4
 import inspect

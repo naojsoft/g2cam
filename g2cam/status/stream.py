@@ -55,7 +55,7 @@ class StatusStream:
         return self.connect()
 
     def subscribe(self, topic):
-        if not topic in self.ps_topics:
+        if topic not in self.ps_topics:
             self.ps_topics.append(topic)
             self.connect()
 

@@ -10,7 +10,6 @@
 #    /soss/SRC/product/OSST/OSST_calc_probe.d/OSST_calc_probe.c
 #
 import math
-import types
 import time
 # for convenience and readability
 from math import cos, sin, acos, atan2, fabs, pi
@@ -231,7 +230,7 @@ def dmsStrToDeg(dec):
     """Convert a string representation of DEC into a float in degrees."""
     sign_deg, min, sec = dec.split(':')
     sign = sign_deg[0:1]
-    if not sign in ('+', '-'):
+    if sign not in ('+', '-'):
         sign = '+'
         deg = sign_deg
     else:
@@ -907,7 +906,7 @@ def calc_Getoffset( f_select, az, el, ra_rel, dec_rel, origin_x1, origin_y1,
 
     new_centroid=[ncentroid_x1, ncentroid_y1, ncentroid_x2, ncentroid_y2]
     err += _AGGO_CheckInt(new_centroid)
-    ncentroid_x1=new_centroid[0]; ncentroid_y1=new_centroid[1]; ncentroid_x2=new_centroid[2]; ncentroid_y2=new_centroid[3];
+    ncentroid_x1=new_centroid[0]; ncentroid_y1=new_centroid[1]; ncentroid_x2=new_centroid[2]; ncentroid_y2=new_centroid[3]
     if logger is not None:
         logger.debug('radec.py def calc_AgGetoffset centroid err<%d> x1<%s> y1<%s> x2<%s> y2<%s>' %(err, str(ncentroid_x1), str(ncentroid_y1), str(ncentroid_x2), str(ncentroid_y2) ) )
 
@@ -1023,19 +1022,19 @@ def prcsn1(oe,ne,ra,de):
           Output ra, dec units : radians
     """
 
-    srad=math.pi/(180.0*3600.0);
+    srad=math.pi/(180.0*3600.0)
     if  oe<=ne:
         p1=oe; p2=ne; sg=1
     else:
         p2=oe; p1=ne; sg=-1
-    t0=(p1-2451545.0)/36525.0; t1=(p2-p1)/36525.0; t2=t1*t1; t3=t1*t2;
-    x=(2306.2181+1.39656*t0-.000139*t0*t0)*t1+(.30188-.000344*t0)*t2+.017998*t3;
-    z=x+(.7928+.00041*t0)*t2+.00205*t3;
-    o=(2004.3109-.8533*t0-.000217*t0*t0)*t1-(.42665+.000217*t0)*t2-.041833*t3;
-    x=sg*x*srad; z=sg*z*srad; o=sg*o*srad;
-    so=math.sin(o); co=math.cos(o); sr=math.sin(ra+x); cr=math.cos(ra+x);
-    sd=math.sin(de); cd=math.cos(de);
-    xx=co*cd*cr-so*sd; yy=cd*sr; zz=so*cd*cr+co*sd;
+    t0=(p1-2451545.0)/36525.0; t1=(p2-p1)/36525.0; t2=t1*t1; t3=t1*t2
+    x=(2306.2181+1.39656*t0-.000139*t0*t0)*t1+(.30188-.000344*t0)*t2+.017998*t3
+    z=x+(.7928+.00041*t0)*t2+.00205*t3
+    o=(2004.3109-.8533*t0-.000217*t0*t0)*t1-(.42665+.000217*t0)*t2-.041833*t3
+    x=sg*x*srad; z=sg*z*srad; o=sg*o*srad
+    so=math.sin(o); co=math.cos(o); sr=math.sin(ra+x); cr=math.cos(ra+x)
+    sd=math.sin(de); cd=math.cos(de)
+    xx=co*cd*cr-so*sd; yy=cd*sr; zz=so*cd*cr+co*sd
     pra=math.atan2(yy,xx)+z; pde=math.atan2(zz,math.sqrt(xx*xx+yy*yy))
     return pra, pde
 
@@ -1079,10 +1078,10 @@ def _gdeqrt(st,jd,eo,es,pr,r0,d0,rs,ds,cx,cy):
           rd,th is probe x,y for prime focus
           rd,th is probe radius and theta for other foci
     """
-    rad=math.pi/180.0;
+    rad=math.pi/180.0
 
-    r0=r0*rad*15.0; d0=d0*rad; rs=rs*rad*15.0; ds=ds*rad;
-    jo=(eo-2000.0)*365.25+2451545.0; js=(es-2000.0)*365.25+2451545.0;
+    r0=r0*rad*15.0; d0=d0*rad; rs=rs*rad*15.0; ds=ds*rad
+    jo=(eo-2000.0)*365.25+2451545.0; js=(es-2000.0)*365.25+2451545.0
 
     r0, d0 = prcsn1(jo,jd,r0,d0)
     rs, ds = prcsn1(js,jd,rs,ds)
@@ -1090,103 +1089,103 @@ def _gdeqrt(st,jd,eo,es,pr,r0,d0,rs,ds,cx,cy):
     sdo=math.sin(d0); cdo=math.cos(d0); sds=math.sin(ds); cds=math.cos(ds)
 
     x=cds*sts; y=cdo*sds-sdo*cds*cts
-    ps=math.atan2(x,y)/rad;
+    ps=math.atan2(x,y)/rad
     z=sdo*sds+cdo*cds*cts
 
     # focal length, scale factor, and rotation angle of CCD
     if  st == 0:
         # Cs_Opt
-        fl=100029.16;           # focal length 2000/05/23
-        sg=0.015/0.3355;        # scale factor 0.3355 Calc 2000/05/25
-        ep=95.492;              # rotation angle of the CCD 2000/02/05
-        r=fl*math.atan2(math.sqrt(x*x+y*y),z);
+        fl=100029.16           # focal length 2000/05/23
+        sg=0.015/0.3355        # scale factor 0.3355 Calc 2000/05/25
+        ep=95.492              # rotation angle of the CCD 2000/02/05
+        r=fl*math.atan2(math.sqrt(x*x+y*y),z)
         x=sg*(cx*math.cos(ep*rad)+cy*math.sin(ep*rad))
-        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad));
-        z=math.sqrt(r*r-x*x); rd=z+y; th=math.atan2(x,z)/rad-90.0;
-        th=th-pr+ps;
+        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad))
+        z=math.sqrt(r*r-x*x); rd=z+y; th=math.atan2(x,z)/rad-90.0
+        th=th-pr+ps
     elif  st == 1:
         # Cs_IR
-        fl=100022.75;           # focal length 2000/05/23
-        sg=0.015/0.3355;        # scale factor 0.3355 Calc 2000/05/25
-        ep=95.492;              # rotation angle of the CCD 2000/02/05
-        r=fl*math.atan2(math.sqrt(x*x+y*y),z);
-        x=sg*(cx*math.cos(ep*rad)+cy*math.sin(ep*rad));
-        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad));
-        z=math.sqrt(r*r-x*x); rd=z+y; th=math.atan2(x,z)/rad-90.0;
-        th=th-pr+ps;
+        fl=100022.75           # focal length 2000/05/23
+        sg=0.015/0.3355        # scale factor 0.3355 Calc 2000/05/25
+        ep=95.492              # rotation angle of the CCD 2000/02/05
+        r=fl*math.atan2(math.sqrt(x*x+y*y),z)
+        x=sg*(cx*math.cos(ep*rad)+cy*math.sin(ep*rad))
+        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad))
+        z=math.sqrt(r*r-x*x); rd=z+y; th=math.atan2(x,z)/rad-90.0
+        th=th-pr+ps
     elif  st == 2:
         # Ns_Opt w/o ImgRot
-        fl=102264.94;           # focal length 2000/05/23
-        sg=0.015/0.335;         # scale factor 2000/05/23
-        ep=-5.75;               # rotation angle of the CCD 2001/01/29
-        r=fl*math.atan2(math.sqrt(x*x+y*y),z);
-        x=sg*(cx*math.cos(ep*rad)+cy*math.sin(ep*rad));
-        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad));
-        z=math.sqrt(r*r-x*x); rd=z+y; th=math.atan2(x,z)/rad-90.0;
-        th=ps-th;               # 2001/04/11 by Geo  th=th-ps -> th=ps-th
+        fl=102264.94           # focal length 2000/05/23
+        sg=0.015/0.335         # scale factor 2000/05/23
+        ep=-5.75               # rotation angle of the CCD 2001/01/29
+        r=fl*math.atan2(math.sqrt(x*x+y*y),z)
+        x=sg*(cx*math.cos(ep*rad)+cy*math.sin(ep*rad))
+        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad))
+        z=math.sqrt(r*r-x*x); rd=z+y; th=math.atan2(x,z)/rad-90.0
+        th=ps-th               # 2001/04/11 by Geo  th=th-ps -> th=ps-th
     elif  st == 3:
         # Ns_Opt w ImgRot
-        fl=104227.61;           # focal length 2000/05/23
-        sg=0.015/0.335;         # scale factor 2000/05/23
-        ep=-5.75;               # rotation angle of the CCD 2001/01/29
-        r=fl*math.atan2(math.sqrt(x*x+y*y),z);
+        fl=104227.61           # focal length 2000/05/23
+        sg=0.015/0.335         # scale factor 2000/05/23
+        ep=-5.75               # rotation angle of the CCD 2001/01/29
+        r=fl*math.atan2(math.sqrt(x*x+y*y),z)
         x=sg*(cx*math.cos(ep*rad)+cy*math.sin(ep*rad))
-        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad));
-        z=math.sqrt(r*r-x*x); rd=z+y; th=math.atan2(x,z)/rad-90.0;
-        th=th+pr-ps;            # 2000/07/01 by Geo  th=th+pr+ps -> th=th+pr-ps
+        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad))
+        z=math.sqrt(r*r-x*x); rd=z+y; th=math.atan2(x,z)/rad-90.0
+        th=th+pr-ps            # 2000/07/01 by Geo  th=th+pr+ps -> th=th+pr-ps
     elif  st == 4:
         # Ns_IR w/o ImgRot
-        fl=108536.05;           # focal length 2000/05/23
-        sg=0.015/0.334;         # scale factor 2000/05/23
-        ep=5.5;                 # rotation angle of the CCD
-        r=fl*math.atan2(math.sqrt(x*x+y*y),z);
+        fl=108536.05           # focal length 2000/05/23
+        sg=0.015/0.334         # scale factor 2000/05/23
+        ep=5.5                 # rotation angle of the CCD
+        r=fl*math.atan2(math.sqrt(x*x+y*y),z)
         x=sg*(cx*math.cos(ep*rad)+cy*math.sin(ep*rad))
-        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad));
-        z=math.sqrt(r*r-x*x); rd=z+y; th=math.atan2(x,z)/rad-90.0;
-        th=th-ps;               # not tested yet as of 2001/07/31
+        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad))
+        z=math.sqrt(r*r-x*x); rd=z+y; th=math.atan2(x,z)/rad-90.0
+        th=th-ps               # not tested yet as of 2001/07/31
     elif  st == 5:
         # Ns_IR w ImgRot
-        fl=110629.08;           # focal length 2000/05/23
-        sg=0.015/0.334;         # scale factor 2000/05/23
-        ep=5.5;                 # rotation angle of the CCD
-        r=fl*math.atan2(math.sqrt(x*x+y*y),z);
+        fl=110629.08           # focal length 2000/05/23
+        sg=0.015/0.334         # scale factor 2000/05/23
+        ep=5.5                 # rotation angle of the CCD
+        r=fl*math.atan2(math.sqrt(x*x+y*y),z)
         x=sg*(cx*math.cos(ep*rad)+cy*math.sin(ep*rad))
-        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad));
-        z=math.sqrt(r*r-x*x); rd=z+y; th=math.atan2(x,z)/rad-90.0;
-        th=th+2.0*pr-ps;        # 2001/04/03 by Geo  th=th+pr+ps -> th=th+2.0*pr-ps
+        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad))
+        z=math.sqrt(r*r-x*x); rd=z+y; th=math.atan2(x,z)/rad-90.0
+        th=th+2.0*pr-ps        # 2001/04/03 by Geo  th=th+pr+ps -> th=th+2.0*pr-ps
     elif  st == 7:
         # Ns_IR with Ns_Opt M2 w/o ImgRot
-        fl=102264.94;           # focal length 2000/05/23
-        sg=0.015/0.334;         # scale factor 2000/05/23
-        ep=5.5;                 # rotation angle of the CCD
-        r=fl*math.atan2(math.sqrt(x*x+y*y),z);
+        fl=102264.94           # focal length 2000/05/23
+        sg=0.015/0.334         # scale factor 2000/05/23
+        ep=5.5                 # rotation angle of the CCD
+        r=fl*math.atan2(math.sqrt(x*x+y*y),z)
         x=sg*(cx*math.cos(ep*rad)+cy*math.sin(ep*rad))
-        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad));
-        z=math.sqrt(r*r-x*x); rd=z+y; th=math.atan2(x,z)/rad-90.0;
-        th=th-ps;               # not tested yet as of 2001/07/31
+        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad))
+        z=math.sqrt(r*r-x*x); rd=z+y; th=math.atan2(x,z)/rad-90.0
+        th=th-ps               # not tested yet as of 2001/07/31
     elif  st == 8:
         # Ns_IR with Ns_Opt M2 w ImgRot
-        fl=104227.61;           # focal length 2000/05/23
-        sg=0.015/0.334;         # scale factor 2000/05/23
-        ep=5.5;                 # rotation angle of the CCD
-        r=fl*math.atan2(sqrt(x*x+y*y),z);
-        x=sg*(cx*math.cos(ep*rad)+cy*math.sin(ep*rad));
-        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad));
-        z=math.sqrt(r*r-x*x); rd=z+y; th=math.atan2(x,z)/rad-90.0;
-        th=th+2.0*pr-ps;        # 2001/07/29 by Geo  th=th+pr+ps -> th=th+2.0*pr-ps
+        fl=104227.61           # focal length 2000/05/23
+        sg=0.015/0.334         # scale factor 2000/05/23
+        ep=5.5                 # rotation angle of the CCD
+        r=fl*math.atan2(sqrt(x*x+y*y),z)
+        x=sg*(cx*math.cos(ep*rad)+cy*math.sin(ep*rad))
+        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad))
+        z=math.sqrt(r*r-x*x); rd=z+y; th=math.atan2(x,z)/rad-90.0
+        th=th+2.0*pr-ps        # 2001/07/29 by Geo  th=th+pr+ps -> th=th+2.0*pr-ps
     elif  st == 6:
         # PrimeFocus
-        fl=15320.21;            # focal length 2000/05/23
-        sg=2.128;               # scale factor 2000/05/23
-        ep=0.0;                 # rotation angle of the CCD
-        r=fl*math.atan2(math.sqrt(x*x+y*y),z);
+        fl=15320.21            # focal length 2000/05/23
+        sg=2.128               # scale factor 2000/05/23
+        ep=0.0                 # rotation angle of the CCD
+        r=fl*math.atan2(math.sqrt(x*x+y*y),z)
 #        r=r-0.00000436049*r*r+0.0000023908295*r*r*r-0.000000004527512*r*r*r*r;*/
         r=r+1.8478e-6*math.pow(r,3.0)+3.25e-11*math.pow(r,5.0)-4.06e-15*math.pow(r,7.0)
         x=sg*(cx*math.cos(ep*rad)+cy*math.sin(ep*rad))
-        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad));
-        th=(-pr+ps-90.0)*rad;
-        rd=-r*math.cos(th)+y;   # 2000/08/04 by Geo  rd=r*cos(th)-y -> rd=-r*cos(th)+y
-        th=-r*math.sin(th)-x;
+        y=sg*(-cx*math.sin(ep*rad)+cy*math.cos(ep*rad))
+        th=(-pr+ps-90.0)*rad
+        rd=-r*math.cos(th)+y   # 2000/08/04 by Geo  rd=r*cos(th)-y -> rd=-r*cos(th)+y
+        th=-r*math.sin(th)-x
     else:
         return "_gdeqrt: illegal value for st",None
 
@@ -1500,7 +1499,7 @@ def altaz2(th_rad, pl_rad, ra_rad, dec_rad, units='radians'):
 
     Translated from SOSS source code product/liboss_cal/OSScal_lockRADEC.c
     """
-    th_rad = th_rad - ra_rad;
+    th_rad = th_rad - ra_rad
     sth = math.sin(th_rad)
     cth = math.cos(th_rad)
     sdc = math.sin(dec_rad)
@@ -1527,7 +1526,7 @@ def gst(tu, ut, fg, logger=None):
     Translated from SOSS source code product/liboss_cal/OSScal_lockRADEC.c
     """
 
-    rad = math.pi / 180.0;
+    rad = math.pi / 180.0
     pgs = ( 24110.54841 + 8640184.812866 * tu +
             0.093104 * tu * tu - 0.0000062 * tu * tu * tu + ut )
     if logger:
@@ -1917,7 +1916,7 @@ def SV_RaDec2mm(f_select, rotator, imgrot_flag, tel_ra, tel_dec,
             ds, cx))
 
     mm, cy = svequx(st, jd, tel_equinox, target_equinox, rotator, rt, dt,
-                    rs, ds, cx);
+                    rs, ds, cx)
 
     if logger:
         logger.debug("Result: mm=%f  cy=%f" % (mm, cy))
@@ -1955,7 +1954,7 @@ def svxequ(st, jd, eo, pr, r0, d0, xx, cx, cy):
       double ds: declination of the guide star (deg)
     """
 
-    rad = math.pi / 180.0;
+    rad = math.pi / 180.0
 
     # focal length, scale factor, and rotation angle
     # Modified by George 2000/06/23
@@ -1967,7 +1966,7 @@ def svxequ(st, jd, eo, pr, r0, d0, xx, cx, cy):
     ##     fl = 102271.44; sf = 4.16; pr = 30.6932-pr; cy = -cy
     ## elif st == 3:
     ##     fl = 104234.24; sf = 4.16; pr = 30.6932-2.0*pr
-    pr = -pr;
+    pr = -pr
     if st == 0:
         fl = 100029.20; sf=3.97
     elif st == 1:
@@ -2024,10 +2023,10 @@ def svequx(st, jd, eo, es, pr, r0, d0, rs, ds, cx):
       double cy: offset y on the CCD (pix)
     """
 
-    rad = math.pi / 180.0;
+    rad = math.pi / 180.0
 
     r0 = math.radians(15.0*r0); d0 = math.radians(d0)
-    rs = math.radians(15.0*rs); ds = math.radians(ds);
+    rs = math.radians(15.0*rs); ds = math.radians(ds)
     pr = math.radians(pr)
     # TODO: assign symbolic constants....EJ
     jo = (eo-2000.0)*365.25 + 2451545.0

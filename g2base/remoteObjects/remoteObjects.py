@@ -23,14 +23,15 @@ $ openssl req -new -x509 -keyout server.pem -out server.pem -days 365 -nodes
 This will output them both in the same file named server.pem
 """
 
-import sys, os, time
+import sys
+import os
+import time
 import socket
 import threading
 # binascii encoding/decoding is much faster than xmlrpclib's
 # built-in Binary class
 import binascii
 import zlib
-import warnings
 import traceback
 import inspect
 import signal
@@ -296,7 +297,7 @@ class remoteObjectServer:
         and it's docstring, if any.
         """
         # Check that the requested method is in the allowed list
-        if not methodName in self.method_list:
+        if methodName not in self.method_list:
             return ''
 
         # get the callable
@@ -958,7 +959,7 @@ class servicePack:
         # synclist, then delete them.
         if deleteOrphans:
             for key in list(self.clients.keys()):
-                if not key in hostports:
+                if key not in hostports:
                     del self.clients[key]
 
     def delHost(self, host, port):

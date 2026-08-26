@@ -5,7 +5,9 @@
 #
 """This file implements a simulator for a simulated instrument (SIMCAM).
 """
-import sys, os, time
+import sys
+import os
+import time
 import re
 import threading
 
@@ -18,10 +20,10 @@ except ImportError:
     print("Can't import astropy.io.fits: certain commands will not work!")
 
 # gen2 base imports
-from g2base import Bunch, Task
+from g2base import Bunch
 
 # g2cam imports
-from g2cam.Instrument import BASECAM, CamError, CamCommandError
+from g2cam.Instrument import BASECAM, CamCommandError
 from g2cam.util import common_task
 
 

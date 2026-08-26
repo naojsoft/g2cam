@@ -9,9 +9,11 @@
 The names of the "top-level" services along with the startup commands are
 registered in a configuration file.  This service starts those processes.
 '''
-import sys, socket, os
+import sys
+import os
 import threading
-import time, signal
+import time
+import signal
 
 from g2base import Bunch, myproc, ssdlog
 from g2base.remoteObjects import remoteObjects as ro

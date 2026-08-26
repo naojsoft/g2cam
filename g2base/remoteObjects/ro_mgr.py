@@ -42,10 +42,10 @@ def get_ms_handle(host=None):
 
     # Create a handle to the manager service
     ms = ro.remoteObjectClient(host, ro.managerServicePort)
-    
+
     return ms
 
-    
+
 if __name__ == '__main__':
 
     # Parse command line options with nifty new optparse module
@@ -53,7 +53,7 @@ if __name__ == '__main__':
 
     usage = "usage: %prog [options] command [args]"
     parser = OptionParser(usage=usage, version=('%%prog'))
-    
+
     parser.add_option("--action", dest="action", default='nop',
                       metavar="ACTION",
                       help="Action is ACTION")
@@ -63,11 +63,11 @@ if __name__ == '__main__':
     parser.add_option("--name", dest="name", default=None,
                       metavar="NAME",
                       help="Perform action on NAME")
-    
+
     (options, args) = parser.parse_args(sys.argv[1:])
 
     ms = get_ms_handle()
-    
+
     if options.action == 'add':
         res = ms.add(options.name, options.cmdline)
         res = ms.set_restart(options.name, True, 10, 5.0)

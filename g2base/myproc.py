@@ -23,7 +23,9 @@ myproc.
 
 """
 
-import os, sys, time
+import os
+import sys
+import time
 
 try:
     MAXFD = os.sysconf('SC_OPEN_MAX')

@@ -1,5 +1,4 @@
 import sys
-import threading
 import time
 
 from g2base import ssdlog, Bunch

@@ -58,7 +58,7 @@ class FakeServer:
         #outfile.write(filedata)
         #outfile.close()
         return(True)
-        
+
 
 
 class FakeROServer(FakeServer,ro.remoteObjectServer):
@@ -95,7 +95,7 @@ class TestROwithServer(unittest.TestCase):
     self.ns.ro_start()
     waitForService(self.ns,'names')
     #print "Status",self.ns.init0_up1_down2
-    
+
     #print "Hosts for",'names',self.ns.getHosts('names')
     ro.init()
     #time.sleep(1)
@@ -178,7 +178,7 @@ class TestObjAsAttr(unittest.TestCase):
                                  port=ro.nameServicePort)
     self.ns.ro_start()
     waitForService(self.ns,'names')
-    
+
     #print "Hosts for",'names',self.ns.getHosts('names')
     ro.init()
 

@@ -11,10 +11,11 @@ $ ro_shell.py
 names>getNames()
 """
 
-import sys, os
-import socket, time
+import sys
+import os
 # for command line interface:
-import atexit, readline
+import atexit
+import readline
 import traceback
 
 from g2base.six.moves import input

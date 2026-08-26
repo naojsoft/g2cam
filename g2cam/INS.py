@@ -2,8 +2,8 @@
 #
 # Instrument configuration file.
 #
-import sys, os
-import re
+import sys
+import os
 
 from g2base.astro.frame import Frame as AstroFrame
 

@@ -12,7 +12,6 @@ Gen2 alarm handler, or for temporary use.
 import sys
 import traceback
 import time
-import threading
 
 from g2base import Bunch, Callback
 from .notifications import SoundNotification

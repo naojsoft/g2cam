@@ -1,12 +1,12 @@
 #
 # Simple common log format for Python logging module
 #
-import sys, os
-import re, string
+import os
+import re
 import time
-import logging, logging.handlers
+import logging
+import logging.handlers
 import socket
-import threading
 import queue
 
 STD_FORMAT = '%(asctime)s | %(levelname)1.1s | %(filename)s:%(lineno)d (%(funcName)s) | %(message)s'

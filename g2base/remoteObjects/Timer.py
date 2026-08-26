@@ -5,7 +5,6 @@
 # Please see the file LICENSE.txt for details.
 #
 import time
-import threading
 
 from g2base import Bunch, Callback
 from .heaptimer import Timer as HeapTimer, TimerHeap

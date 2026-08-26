@@ -11,7 +11,9 @@ Main issues to think about/resolve:
   [ ] Permissions/access issues
 """
 
-import sys, os, time
+import sys
+import os
+import time
 import threading
 from collections import deque as Deque
 import queue
@@ -807,7 +809,7 @@ class PubSub:
                 kwdargs['transport'] = options['transport']
 
             # subscriber can be a service name or a host:port
-            if not (':' in subscriber):
+            if ':' not in subscriber:
                 proxy_obj = ro.remoteObjectProxy(subscriber, **kwdargs)
             else:
                 (host, port) = subscriber.split(':')

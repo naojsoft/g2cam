@@ -4,10 +4,10 @@
 #
 
 # stdlib imports
-import sys, os
+import sys
+import os
 import signal
 import threading
-import logging
 import traceback
 # profile imported below (if needed)
 # pdb imported below (if needed)
