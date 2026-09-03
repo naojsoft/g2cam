@@ -50,25 +50,6 @@ from tinyrpc.server.executor import RPCServerExecutor
 from . import ro_endpoints, ro_executor, ro_transport
 from .ro_config import *
 
-# Collect the different transports we can use
-transports = {}
-try:
-    from . import ro_XMLRPC
-    transports['xmlrpc'] = ro_XMLRPC
-except ImportError as e:
-    raise e
-    pass
-try:
-    from . import ro_socket
-    transports['socket'] = ro_socket
-except ImportError:
-    pass
-try:
-    from . import ro_ZMQRPC
-    transports['zmqrpc'] = ro_ZMQRPC
-except ImportError:
-    pass
-
 version = '20130801.0'
 
 # Format for log messages

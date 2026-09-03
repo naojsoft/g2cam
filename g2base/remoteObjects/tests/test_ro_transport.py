@@ -140,3 +140,35 @@ def test_large_int_support_does_not_leak_into_the_process():
                             capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == 'OK', (result.stdout, result.stderr)
+
+
+#: Also run in a subprocess: whether importing remoteObjects patches the
+#: stdlib can only be observed before anything else has imported ro_XMLRPC.
+_IMPORT_PROBE = textwrap.dedent("""
+    import sys, xmlrpc.client
+    from g2base.remoteObjects import remoteObjects as ro
+
+    if any(m.endswith('ro_XMLRPC') for m in sys.modules):
+        print('PULLED_IN')
+        raise SystemExit(0)
+    try:
+        xmlrpc.client.dumps((2 ** 40,))
+        print('PATCHED')
+    except OverflowError:
+        print('OK')
+""")
+
+
+def test_importing_remoteObjects_does_not_patch_the_stdlib():
+    """Importing the package used to change XML-RPC for the whole process.
+
+    remoteObjects imported ro_XMLRPC to fill its transports dict, and
+    ro_XMLRPC assigns to xmlrpc.client.Marshaller.dispatch at import time.
+    So merely importing remoteObjects -- which anything touching Gen2 does --
+    silently changed how every other XML-RPC user in that process marshalled
+    integers.  Nothing reads that dict any more, so it is gone.
+    """
+    result = subprocess.run([sys.executable, '-c', _IMPORT_PROBE],
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == 'OK', (result.stdout, result.stderr)
