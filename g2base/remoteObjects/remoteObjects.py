@@ -40,10 +40,14 @@ from concurrent import futures
 
 from g2base import Bunch, Task, ssdlog
 
+import xmlrpc.client
+
+from tinyrpc import exc as tinyrpc_exc
+from tinyrpc.client import RPCClient
 from tinyrpc.dispatch import RPCDispatcher
 from tinyrpc.server.executor import RPCServerExecutor
 
-from . import ro_executor, ro_transport
+from . import ro_endpoints, ro_executor, ro_transport
 from .ro_config import *
 
 # Collect the different transports we can use
@@ -615,563 +619,326 @@ class remoteObjectServer:
 #------------------------------------------------------------------
 # Remote object client implementation
 #
+
+#: Exceptions that mean "this provider did not answer", as opposed to "this
+#: call failed".  They are what makes failing over to another provider worth
+#: trying, and they are the whole of the fault-tolerance policy.
+failover_errors = (
+    ConnectionError,            # covers requests.ConnectionError
+    socket.timeout,
+    OSError,                    # covers socket.error and requests' IOError base
+    tinyrpc_exc.TimeoutError,
+)
+
+#: Exceptions that mean the call reached a service and that service said no.
+#: Trying somewhere else would just produce the same answer.
+fatal_errors = (
+    xmlrpc.client.Fault,
+    tinyrpc_exc.RPCError,
+)
+
+
+def normalize_auth(auth, name=None, default_auth=use_default_auth):
+    """Put authentication credentials into one shape: ``(user, passwd)``.
+
+    Accepts ``None``, a ``'user:passwd'`` string, or any two-element
+    sequence.  The old version accepted only ``None`` and a string and raised
+    ValueError on anything else -- including the ``(user, passwd)`` tuple that
+    the rest of the module passes around, so ``ro_test.py --auth=bob:pw``,
+    which splits into a list before calling, failed before it made a call.
+
+    :param name: Used for the default ``(name, name)`` credentials.
+    :param default_auth: Whether to supply those when none were given.
+    """
+    if auth is None:
+        if default_auth and name:
+            return (name, name)
+        return None
+
+    if isinstance(auth, str):
+        user, sep, passwd = auth.partition(':')
+        if not sep:
+            raise ValueError(
+                "authorization string should be 'user:passwd', not '%s'"
+                % (auth,))
+        return (user, passwd)
+
+    if isinstance(auth, (tuple, list)) and len(auth) == 2:
+        return (auth[0], auth[1])
+
+    raise ValueError("Authorization format not recognized: '%s'" % (auth,))
+
+
 def call_remote(client, attrname, args, kwdargs):
+    """Make one call and classify the outcome.
 
-    #method = client.proxy.get_method(attrname)
+    :return: ``(OK, result)``, ``(ERROR_FAILOVER, message)`` when the
+        provider did not answer and another one is worth trying, or
+        ``(ERROR_FATAL, message)`` when it did answer and refused.
+    """
+    where = "%s.%s at %s:%d" % (client.name, attrname, client.host,
+                                client.port)
     try:
-        #print "Trying to invoke method '%s.%s' on %s:%d" % \
-        #      (client.name, attrname, client.host, client.port)
-        #res = method(*args, **kwdargs)
-        res = client.proxy.call(attrname, args, kwdargs)
-        return (OK, res)
+        return (OK, client.proxy.call(attrname, args, kwdargs))
 
-##     except xmlrpclib.Fault as e:
-##         errstr = "Method call %s.%s failed to %s:%d: %s" % \
-##                  (client.name, attrname, client.host, client.port, e)
-##         return (ERROR_FATAL, errstr)
+    except fatal_errors as e:
+        return (ERROR_FATAL, "Method call %s failed: %s" % (where, e))
 
-    except NameError as e:
-        errstr ="No such method %s.%s at %s:%d." % \
-                 (client.name, attrname, client.host, client.port)
-        return (ERROR_FATAL, errstr)
-
-    except socket.error as e:
-        errstr = "Method call %s.%s failed to %s:%d: %s" % (
-            client.name, attrname, client.host, client.port, str(e))
-        return (ERROR_FAILOVER, errstr)
-
-#     except IOError as e:
-#         errstr = "Method call %s.%s failed to %s:%d: %s" % \
-#                  (client.name, attrname, client.host, client.port, str(e))
-#         return (ERROR_FAILOVER, errstr)
-
-##     except remoteObjectError as e:
-##         errstr = "Method call %s.%s failed to %s:%d: %s" % \
-##                  (client.name, attrname, client.host, client.port, str(e))
-##         return (ERROR_FATAL, errstr)
+    except failover_errors as e:
+        return (ERROR_FAILOVER, "Method call %s failed: %s" % (where, e))
 
     except Exception as e:
         try:
-            (type, value, tb) = sys.exc_info()
-            tb = ''.join(traceback.format_tb(tb))
-
+            tb = ''.join(traceback.format_tb(sys.exc_info()[2]))
         except Exception:
             tb = "Traceback information unavailable."
-
-        errstr = "Method call %s.%s failed to %s:%d: %s\n%s" % (
-            client.name, attrname, client.host, client.port,
-            str(e), tb)
-        return (ERROR_FATAL, errstr)
+        return (ERROR_FATAL,
+                "Method call %s failed: %s\n%s" % (where, e, tb))
 
 
 class remoteObjectClient:
+    """A handle on one service, at one host and port.
 
-    """This class implements the interface for the remote calling of
-    object methods.  i.e. it implements the "client" side as a proxy object.
-
+    Attribute access returns a callable that makes the remote call, so
+    ``client.foo(1, 2)`` calls ``foo(1, 2)`` on the service.
     """
 
     def __init__(self, host, port, name='<remote object>', auth=None,
                  default_auth=use_default_auth, secure=default_secure,
                  transport=default_transport, encoding=default_encoding,
                  timeout=None):
+        self.host = host
+        self.port = port
+        self.name = name
+        self.transport = transport
+        self.encoding = encoding
+        self.secure = secure
+        self.timeout = timeout
+
         try:
-            self.host = host
-            self.port = port
-            self.name = name
-            self.transport = transport
-            self.encoding = encoding
-
-            ro_transport = transports[transport]
-
-            if (not auth) and default_auth:
-                auth = (self.name, self.name)
-            elif isinstance(auth, str):
-                # user:pass
-                auth = auth.split(':')
-
-            #print "client: auth=", auth
-            self.proxy = ro_transport.make_serviceProxy(host, port,
-                                                        auth=auth,
-                                                        secure=secure,
-                                                        timeout=timeout)
+            self.auth = normalize_auth(auth, name=name,
+                                       default_auth=default_auth)
+            self.spec = ro_transport.get(transport, encoding=encoding)
+            self.proxy = _ServiceProxy(self.spec, host, port, auth=self.auth,
+                                       secure=secure, timeout=timeout)
 
         except Exception as e:
-            raise remoteObjectError("Can't create proxy to service found on host '%s' at port %d: %s" % \
-                             (host, port, str(e)))
-
+            raise remoteObjectError(
+                "Can't create proxy to service found on host '%s' at port "
+                "%d: %s" % (host, port, e))
 
     def __getattr__(self, attrname):
+        if attrname.startswith('__'):
+            raise AttributeError(attrname)
 
         def call(*args, **kwdargs):
-
             (flag, res) = call_remote(self, attrname, args, kwdargs)
             if flag == OK:
                 return res
-
             raise remoteObjectError(res)
 
         return call
 
-
     def __str__(self):
-        return ("remoteObjectClient(%s, %d)" % (self.host, self.port))
+        return "remoteObjectClient(%s, %d)" % (self.host, self.port)
 
 
-class remoteObjectSP:
+class _ServiceProxy:
+    """Makes the actual call, over a fresh connection each time.
 
-    """Base class for 'SP' (Service Pack)-based remote objects.
-
+    A connection per call is what lets a client and a service be restarted in
+    any order: there is nothing held between calls to go stale.
     """
 
-    def __init__(self, name, svcpack=None, hostports=None, auth=None,
-                 logger=None, default_auth=use_default_auth,
-                 secure=default_secure, transport=default_transport,
+    def __init__(self, spec, host, port, auth=None, secure=False,
                  timeout=None):
-
-        self.name = name
-        if auth is None and default_auth:
-            auth = (name, name)
-        elif isinstance(auth, str):
-            # user:pass
-            auth = auth.split(':')
-        else:
-            raise ValueError("Authorization format not recognized: '%s'" % (
-                str(auth)))
-        self.auth = auth
-
-        # Logger for logging debug/error messages
-        if not logger:
-            self.logger = nullLogger()
-        else:
-            self.logger = logger
-
-        if not svcpack:
-            self.sp = servicePack(auth=auth, secure=secure,
-                                  transport=transport, timeout=timeout)
-            if hostports:
-                for tup in hostports:
-                    if len(tup) == 2:
-                        (host, port) = tup
-                        authp = self.auth
-                    elif len(tup) == 3:
-                        (host, port, authp) = tup
-                    else:
-                        raise remoteObjectError("Malformed hostports!")
-
-                    self.sp.addHost(host, port, name=name, auth=authp,
-                                    secure=secure, transport=transport)
-        else:
-            self.sp = svcpack
-
-    def __str__(self):
-        return ("remoteObjectProxy(%s)" % (self.name))
-
-
-    # Subclasses should provide a __getattr__
-    #def __getattr__(self, attrname):
-
-
-class remoteObjectSPAll(remoteObjectSP):
-
-    """This class implements a 'call all' remote object.  It will attempt to call
-    the method on all of the clients in the service pack and return a dictionary of
-    the results, indexed by (host, port) tuples.
-
-    """
-
-    def __getattr__(self, attrname):
-
-        def call(*args, **kwdargs):
-
-            # Call all clients, and gather the results into a dictionary
-            results = {}
-            for client in self.sp.getClients():
-                key = (client.host, client.port)
-
-                results[key] = call_remote(client, attrname, args, kwdargs)
-
-            return results
-
-        return call
-
-
-class remoteObjectSPFailover(remoteObjectSP):
-
-    """This class implements an SP remote object, which tries to call a method
-    and will fail over to other entries in the service pack if errors occur.
-
-    """
-
-    def __init__(self, name, **kwdargs):
-
-        self.clientidx = 0
-
-        remoteObjectSP.__init__(self, name, **kwdargs)
-
-
-    def __getattr__(self, attrname):
-
-        def call(*args, **kwdargs):
-
-            num = self.sp.numClients()
-
-            res = "No client available"
-
-            # Try the method on each client in the service pack, until one
-            # returns with an answer, or we exhaust all possible clients.
-            for i in range(num):
-                client = self.sp[self.clientidx]
-
-                (flag, res) = call_remote(client, attrname, args, kwdargs)
-
-                if flag == OK:
-                    return res
-
-                elif flag == ERROR_FAILOVER:
-                    # FAILOVER
-                    self.logger.warn("Error: %s\nTrying to fail over to another candidate..." % (res))
-                    self.clientidx = (self.clientidx + 1) % num
-                    continue
-
-                else:
-                    raise remoteObjectError(res)
-
-            raise remoteObjectError(res)
-
-        return call
-
-
-class remoteObjectProxy(remoteObjectSP):
-
-    """This class implements an SP remote object, which tries to call a method
-    and will fail over to other entries in the service pack if errors occur.
-
-    """
-
-    def __init__(self, name, ns=None, **kwdargs):
-        self.clientidx = -1
-        if not ns:
-            # if no specific name server supplied, use the module default
-            ns = default_ns
-        self.ns = ns
-
-        remoteObjectSP.__init__(self, name, **kwdargs)
-
-
-    def __reset(self):
-        if not self.ns:
-            raise remoteObjectError("[remoteObjectProxy] no name server configured")
-
-        # Lookup the service providers for name via the local name server.
-        hostinfo = self.ns.getInfo(self.name)
-        if len(hostinfo) == 0:
-            raise remoteObjectError("[remoteObjectProxy] no remote object server found for '%s'" % self.name)
-
-        # Synchronize our service pack to that set
-        self.sp.syncFrom(hostinfo)
-        self.clientidx = 0
-
-
-    def __getattr__(self, attrname):
-
-        def call(*args, **kwdargs):
-
-            if self.clientidx < 0:
-                self.__reset()
-
-            client = self.sp[self.clientidx]
-            (flag, res) = call_remote(client, attrname, args, kwdargs)
-            if flag == OK:
-                return res
-
-            elif flag == ERROR_FAILOVER:
-                # Failover.  Reset our idea of the current set of service providers.
-                self.__reset()
-
-                num = self.sp.numClients()
-
-                # Try the method on each client in the service pack, until one
-                # returns with an answer, or we exhaust all possible clients.
-                for i in range(num):
-                    client = self.sp[self.clientidx]
-
-                    (flag, res) = call_remote(client, attrname, args, kwdargs)
-                    if flag == OK:
-                        return res
-
-                    elif flag == ERROR_FAILOVER:
-                        # FAILOVER
-                        self.logger.warn("Error: %s\nTrying to fail over to another candidate..." % (res))
-                        self.clientidx = (self.clientidx + 1) % num
-                        continue
-
-                    else:
-                        break
-
-            raise remoteObjectError(res)
-
-        return call
-
-
-class remoteObjectSPFailoverRR(remoteObjectSP):
-
-    """This class implements an SP remote object, which tries to call a method
-    and will subsequently call it on each successive client in the service pack
-    on subsequent invocations of the call.
-
-    """
-
-    def __init__(self, name, **kwdargs):
-
-        self.clientidx = 0
-
-        remoteObjectSP.__init__(self, name, **kwdargs)
-
-
-    def __getattr__(self, attrname):
-
-        def call(*args, **kwdargs):
-
-            num = self.sp.numClients()
-            res = "No remote object servers available"
-
-            # Try the method on each client in the service pack, until one
-            # returns with an answer, or we exhaust all possible clients.
-            for i in range(num):
-                client = self.sp[self.clientidx]
-
-                (flag, res) = call_remote(client, attrname, args, kwdargs)
-
-                self.clientidx = (self.clientidx + 1) % num
-
-                if flag == OK:
-                    return res
-
-                elif flag == ERROR_FAILOVER:
-                    # FAILOVER
-                    self.logger.warn("Error: %s\nTrying to fail over to another candidate..." % (res))
-                    continue
-
-                else:
-                    break
-
-            raise remoteObjectError(res)
-
-        return call
-
-
-#------------------------------------------------------------------
-# Service pack interface
-#
-
-class servicePack:
-
-    def __init__(self, auth=None, secure=default_secure, timeout=None,
-                 transport=default_transport):
+        self.spec = spec
+        self.host = host
+        self.port = port
         self.auth = auth
         self.secure = secure
         self.timeout = timeout
-        self.transport = transport
 
-        self.clients = {}
-        self.pinginfo = {}
-        # The currently selected proxy out of the set of clients
-        self.proxy = None
-        # Index for round-robin or failover purposes
-        self.index = 0
-        self.strategy = 'std'
+    def call(self, attrname, args, kwdargs):
+        transport = self.spec.make_client_transport(
+            self.host, self.port, auth=self.auth, secure=self.secure,
+            timeout=self.timeout)
+        client = RPCClient(self.spec.make_protocol(), transport)
+        return client.call(attrname, tuple(args), dict(kwdargs) or None)
 
-    # Allow iteration over a servicePack
-    def __getitem__(self, i):
-        key = list(self.clients.keys())[i]
-        return self.clients[key]
 
-    def has_key(self, host, port):
-        key = (host, port)
-        return key in self.clients
+#------------------------------------------------------------------
+# Calling strategies
+#
+# What to do with the providers an Endpoints gives us.  These are separate
+# from where the providers come from, so either can be chosen without
+# constraining the other.
+#
 
-    def add(self, client, replace=True):
-        key = (client.host, client.port)
-        if key in self.clients and not replace:
-            return
-        self.clients[key] = client
-        self.pinginfo[key] = {}
+def call_failover(endpoints, attrname, args, kwdargs, logger=None):
+    """Call the first provider that answers.
 
-    def _get_auth_secure(self, auth, secure, transport):
-        # If no authorization passed, default to servicePack default
-        # (note that None != False)
-        if auth is None:
-            auth = self.auth
-        # If no secure flag passed, default to servicePack default
-        # (note that None != False)
-        if secure is None:
-            secure = self.secure
-        if transport is None:
-            transport = self.transport
+    On a connection-level failure the endpoints are resolved again -- the set
+    of providers may have changed, and the name service is the authority on
+    that -- and the rest are tried in turn.
+    """
+    clients = endpoints.clients()
+    if not clients:
+        raise remoteObjectError("No provider available for '%s'"
+                                % (endpoints.name,))
 
-        return (auth, secure, transport)
-
-    def addHost(self, host, port, name='', auth=None, secure=None,
-                transport=None, timeout=None, replace=True):
-        (auth, secure, transport) = self._get_auth_secure(auth, secure,
-                                                          transport)
-
-        key = (host, port)
-        if key in self.clients and not replace:
-            return
-        if timeout is None:
-            timeout = self.timeout
-        client = remoteObjectClient(host, port, name=name, auth=auth,
-                                    secure=secure, transport=transport,
-                                    timeout=timeout)
-        curtime = time.time()
-        info = {
-            'name': name,
-            'host': host, 'port': port,
-            'secure': secure, 'auth': auth,
-            'transport': transport,
-            'lastping': curtime, 'lastupdate': curtime,
-            }
-        self.clients[key] = client
-        self.pinginfo[key] = info
-
-    def recordPingFrom(self, host, port, name, nsinfo):
-        key = (host, port)
-        self.pinginfo[key].update(nsinfo)
-
-    def clear(self):
-        self.clients.clear()
-        self.pinginfo.clear()
-
-    def syncFrom(self, hostinfo, auth=None, secure=None, transport=None,
-                 deleteOrphans=True):
-        """Synchronize to a sequence of dicts containing info for providers
-        of a particular service."""
-
-        (auth, secure, transport) = self._get_auth_secure(auth, secure,
-                                                          transport)
-
-        hostports = []
-
-        # If there is a new service provider in the hostinfo that is not in
-        # our set, then add them.
-        for d in hostinfo:
-            self.addHost(d['host'], d['port'], replace=False, auth=auth,
-                         secure=d.get('secure', secure),
-                         transport=d.get('transport', transport))
-            hostports.append((d['host'], d['port']))
-
-        # If we have a service provider in our client set that is not in the
-        # synclist, then delete them.
-        if deleteOrphans:
-            for key in list(self.clients.keys()):
-                if key not in hostports:
-                    del self.clients[key]
-
-    def delHost(self, host, port):
-        key = (host, port)
-        # If no entry for this service, silently return.
-        if key not in self.clients:
-            return
-
-        if self.proxy == self.clients[key]:
-            self.proxy = None
-
-        del self.clients[key]
-        del self.pinginfo[key]
-
-    def getClient(self, host, port):
-        key = (host, port)
-        return self.clients[key]
-
-    def getClients(self):
-        return self.clients.values()
-
-    def numClients(self):
-        return len(self.clients)
-
-    def showAll(self):
-        return list(self.clients.keys())
-
-    def getInfo(self, host, port):
-        return self.pinginfo[key]
-
-    def getInfoAll(self):
-        res = {}
-        for key in list(self.clients.keys()):
-            res[key] = self.pinginfo[key]
-
+    (flag, res) = call_remote(clients[0], attrname, args, kwdargs)
+    if flag == OK:
         return res
+    if flag != ERROR_FAILOVER:
+        raise remoteObjectError(res)
 
-    def showChosen(self):
-        if self.proxy:
-            return (self.proxy.host, self.proxy.port)
+    # Did not answer.  Ask again who provides this service, then work
+    # through them.
+    if logger:
+        logger.warning("%s; re-resolving '%s' and trying another provider"
+                       % (res, endpoints.name))
+    try:
+        clients = endpoints.refresh()
+    except LookupError as e:
+        raise remoteObjectError(str(e))
 
-        raise remoteObjectError("No valid clients")
+    for client in clients:
+        (flag, res) = call_remote(client, attrname, args, kwdargs)
+        if flag == OK:
+            return res
+        if flag != ERROR_FAILOVER:
+            break
+        if logger:
+            logger.warning("%s; trying another provider" % (res,))
 
-    def chooseClient(self):
-
-        hosts = list(self.clients.keys())
-        for key in hosts:
-            client = self.clients[key]
-            try:
-                if client.ro_echo(1):
-##                     print 'chooseClientbyPing: found listener at %s:%d' % \
-##                           (client.host, client.port)
-                    self.proxy = client
-                    return client
-
-            except remoteObjectError as e:
-##                 print 'chooseClientbyPing: client error: %s' % str(e)
-                continue
-
-        self.proxy = None
-        raise remoteObjectError("No client responds to ping: %s" % str(hosts))
-
-    def getLosers(self):
-
-        hostports = list(self.clients.keys())
-        echoval = 99
-        results = []
-
-        for key in hostports:
-            client = self.clients[key]
-            try:
-                if not (echoval == client.ro_echo(echoval)):
-                    results.append(key)
-
-            except remoteObjectError as e:
-                results.append(key)
-
-        return results
+    raise remoteObjectError(res)
 
 
-    # Delete any services from this service pack that are not responding to
-    # heartbeats.
-    #
-    def purge(self):
+def call_all(endpoints, attrname, args, kwdargs):
+    """Call every provider, and report on each.
 
-        goodclient = None
-        hosts = list(self.clients.keys())
+    :return: ``{(host, port): (flag, result)}``.  Nothing is raised for a
+        provider that fails: the point is to see what each one said.
+    """
+    results = {}
+    for client in endpoints.clients():
+        results[(client.host, client.port)] = call_remote(
+            client, attrname, args, kwdargs)
+    return results
 
-        for key in hosts:
-            client = self.clients[key]
-            try:
-                if client.ro_echo(1):
-                    goodclient = client
-                    continue
 
-            except remoteObjectError as e:
-                pass
+#------------------------------------------------------------------
+# Proxies
+#
 
-##             print "deleting unresponsive client: %s:%d" % \
-##                   (client.host, client.port)
-            self.delhost(client.host, client.port)
+class _ProxyBase:
+    """Shared construction for the attribute-style proxies."""
 
-        if not self.proxy:
-            self.proxy = goodclient
+    def __init__(self, name, hostports=None, ns=None, auth=None,
+                 logger=None, default_auth=use_default_auth,
+                 secure=default_secure, transport=default_transport,
+                 encoding=default_encoding, timeout=None):
+        self.name = name
+        # Per-instance: a hostports entry may carry its own credentials, and
+        # sharing that map between proxies would leak one service's
+        # credentials into another's calls.
+        self._auth_overrides = {}
+        self.auth = normalize_auth(auth, name=name, default_auth=default_auth)
+        self.logger = logger if logger else nullLogger()
+        self.secure = secure
+        self.transport = transport
+        self.encoding = encoding
+        self.timeout = timeout
 
+        if hostports is not None:
+            self.endpoints = ro_endpoints.StaticEndpoints(
+                name, [self.__hostport(t) for t in hostports],
+                self.__client_for_hostport, logger=self.logger)
+        else:
+            if ns is None:
+                ns = default_ns
+            self.endpoints = ro_endpoints.NameSvcEndpoints(
+                name, ns, self.__client_for_record, logger=self.logger)
+
+    def __hostport(self, tup):
+        # (host, port) or (host, port, auth)
+        if len(tup) == 2:
+            return (tup[0], tup[1])
+        if len(tup) == 3:
+            self._auth_overrides[(tup[0], tup[1])] = normalize_auth(
+                tup[2], name=self.name, default_auth=False)
+            return (tup[0], tup[1])
+        raise remoteObjectError("Malformed hostports entry: %s" % (tup,))
+
+    def __client_for_hostport(self, host, port):
+        auth = self._auth_overrides.get((host, port), self.auth)
+        return remoteObjectClient(host, port, name=self.name, auth=auth,
+                                  default_auth=False, secure=self.secure,
+                                  transport=self.transport,
+                                  encoding=self.encoding,
+                                  timeout=self.timeout)
+
+    def __client_for_record(self, rec):
+        """Build a client from one name service registration.
+
+        The registration says which transport and encoding that provider
+        speaks, so a set of providers for one name may legitimately not all
+        speak the same thing.
+        """
+        return remoteObjectClient(
+            rec['host'], rec['port'], name=self.name, auth=self.auth,
+            default_auth=False,
+            secure=rec.get('secure', self.secure),
+            transport=rec.get('transport', self.transport),
+            encoding=rec.get('encoding', self.encoding),
+            timeout=self.timeout)
+
+    def __str__(self):
+        return "%s(%s)" % (type(self).__name__, self.name)
+
+
+class remoteObjectProxy(_ProxyBase):
+    """A handle on a service by name, wherever it is running.
+
+    Providers are looked up in the name service on the first call and reused
+    afterwards.  When one stops answering, the name service is asked again
+    and the remaining providers are tried.  In practice there is usually just
+    the one.
+    """
+
+    def __getattr__(self, attrname):
+        if attrname.startswith('__'):
+            raise AttributeError(attrname)
+
+        def call(*args, **kwdargs):
+            return call_failover(self.endpoints, attrname, args, kwdargs,
+                                 logger=self.logger)
+
+        return call
+
+
+class remoteObjectProxyAll(_ProxyBase):
+    """A handle that calls *every* provider of a service.
+
+    Returns ``{(host, port): (flag, result)}``.  Give ``hostports`` to name
+    the providers, or leave it out to call whoever the name service says is
+    providing the service.
+    """
+
+    def __getattr__(self, attrname):
+        if attrname.startswith('__'):
+            raise AttributeError(attrname)
+
+        def call(*args, **kwdargs):
+            return call_all(self.endpoints, attrname, args, kwdargs)
+
+        return call
+
+
+#: Former name of :py:class:`remoteObjectProxyAll`.
+#: TODO: remove once nothing refers to it.
+remoteObjectSPAll = remoteObjectProxyAll
 
 #------------------------------------------------------------------
 # Misc helper functions and classes
@@ -1393,50 +1160,45 @@ def get_ro_hosts(nshost=None):
 
 
 def addns(host, auth=None, secure=default_secure):
+    """Point the module's default name service at _host_."""
     global default_ns
-    default_ns = remoteObjectProxy('names', host=host, port=nameServicePort,
-                                   transport=ns_transport,
-                                   auth=auth, secure=secure)
+    default_ns = make_nspack([host], auth=auth, secure=secure)
 
 def make_robunch(name, hostports=None, auth=None, secure=default_secure,
                  ns=None):
-    """Creates a bunch with handles to all of the individual services running
-    on each host, plus a remoteObjectSP handle to all hosts.  If the hostport
-    list is not given then the hostport list is queried from the local name
-    server.
+    """A bunch of handles to each provider of a service, plus one for all.
+
+    Individual providers are keyed ``'host:port'``; ``bunch['all']`` calls
+    every one of them.  If no hostports are given they are queried from the
+    name service.
     """
-    # If no list of hostnames is given, then query it from the local name server.
-    if (not hostports):
+    if not hostports:
         if ns:
             hostports = ns.getHosts(name)
         elif default_ns:
             hostports = default_ns.getHosts(name)
         else:
-            # TODO: raise an exception?
             hostports = []
 
-    sp = servicePack()
+    hostports = [(socket.getfqdn(host), port) for host, port in hostports]
+
     bunch = Bunch.Bunch()
     for (host, port) in hostports:
-        host = socket.getfqdn(host)
-        client = remoteObjectClient(host=host, port=port,
-                                    name=('%s(%s)' % (name, host)),
-                                    auth=auth, secure=secure)
-        bunch['%s:%d' % (host, port)] = client
-        sp.add(client)
+        bunch['%s:%d' % (host, port)] = remoteObjectClient(
+            host=host, port=port, name=name, auth=auth, secure=secure)
 
-    bunch['all'] = remoteObjectSPAll('%s(all)' % (name), svcpack=sp)
+    bunch['all'] = remoteObjectProxyAll(name, hostports=hostports, auth=auth,
+                                        secure=secure)
     return bunch
 
-def make_mspack(hosts, auth=None, secure=default_secure):
-    sp = servicePack(auth=auth, secure=secure)
-    for host in hosts:
-        client = remoteObjectClient(host=host, port=managerServicePort,
-                                    name=('monsvc(%s)' % host),
-                                    auth=auth, secure=secure)
-        sp.add(client)
 
-    return remoteObjectSPFailover('monsvc', svcpack=sp)
+def make_mspack(hosts, auth=None, secure=default_secure):
+    """A failover handle to the manager service on each of _hosts_."""
+    return remoteObjectProxy('monsvc',
+                             hostports=[(host, managerServicePort)
+                                        for host in hosts],
+                             auth=auth, secure=secure)
+
 
 def getms(hosts=None, auth=None, secure=default_secure):
     if not hosts:
@@ -1444,16 +1206,19 @@ def getms(hosts=None, auth=None, secure=default_secure):
 
     return make_mspack(hosts, auth=auth, secure=secure)
 
-def make_nspack(hosts, auth=None, secure=default_secure):
-    sp = servicePack(auth=auth, secure=secure)
-    for host in hosts:
-        client = remoteObjectClient(host=host, port=nameServicePort,
-                                    transport=ns_transport,
-                                    name=('names(%s)' % host),
-                                    auth=auth, secure=secure)
-        sp.add(client)
 
-    return remoteObjectSPFailover('names', svcpack=sp)
+def make_nspack(hosts, auth=None, secure=default_secure):
+    """A failover handle to the name service on each of _hosts_.
+
+    Deliberately built from an explicit host list rather than by lookup:
+    this is the handle used to *do* lookups, so it cannot rely on one.
+    """
+    return remoteObjectProxy('names',
+                             hostports=[(host, nameServicePort)
+                                        for host in hosts],
+                             transport=ns_transport, encoding=ns_encoding,
+                             auth=auth, secure=secure)
+
 
 def getns(hosts=None, auth=None, secure=default_secure):
     if not hosts:
