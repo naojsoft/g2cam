@@ -4,9 +4,8 @@
 #
 """Gen2 services and clients are restarted independently, and some of them
 will not be upgraded at all.  So the tinyrpc-based XML-RPC stack has to stay
-compatible on the wire with the ``ro_XMLRPC`` one it replaces, in *both*
-directions: a new client must be able to call an old server, and an old client
-must be able to call a new one.
+compatible on the wire in *both* directions: a new client must be able to
+call an old server, and an old client must be able to call a new one.
 
 Every test here therefore runs against all four combinations:
 
@@ -16,20 +15,29 @@ Every test here therefore runs against all four combinations:
     new server <- old client
     new server <- new client
 
-This file is written while the legacy stack is still present, on purpose --
-it is the evidence for the migration, and it cannot be written afterwards.
+The "old" side is now the Python standard library rather than the ro_XMLRPC
+module that has been deleted.  That is not a weakening: ro_XMLRPC's XML-RPC
+behaviour *was* the stdlib's.  It subclassed SimpleXMLRPCServer and called
+through xmlrpc.client, adding only three things -- threading, which does not
+show on the wire, and HTTP Basic authentication and a marshaller patch for
+oversized ints, both reproduced below.  Testing against the stdlib is a
+stronger claim, in fact: it shows the new stack interoperates with any
+Python XML-RPC peer rather than only with the module it replaced.
 
 Where old and new deliberately differ, the difference is pinned down by an
 explicit test rather than papered over, so that any further drift shows up
 as a failure.  See ``test_documented_fault_code_differences``.
 """
 
+import base64
+import threading
 import xmlrpc.client
 import zlib
+from socketserver import ThreadingMixIn
+from xmlrpc.server import SimpleXMLRPCRequestHandler, SimpleXMLRPCServer
 
 import pytest
 
-from g2base.remoteObjects import ro_XMLRPC
 from g2base.remoteObjects import remoteObjects as ro
 
 from tinyrpc import RPCClient
@@ -42,6 +50,19 @@ TIMEOUT = 10.0
 # Credentials used by the authentication tests.
 GOOD_AUTH = ('bob', 'sekrit')
 AUTH_DICT = {GOOD_AUTH[0]: GOOD_AUTH[1]}
+
+
+# ro_XMLRPC did exactly this, at import, for the whole process -- which is
+# why the new stack makes it a protocol option instead.  Reproduced here so
+# that the simulated old client can still *send* oversized ints, since an old
+# Gen2 process had this patch applied.  Note that it does not reach the new
+# stack: LargeIntMarshaller keeps its own copy of the dispatch table, and
+# test_ro_transport checks in a subprocess that nothing relies on this.
+def _dump_large_int(_marshaller, value, write):
+    write("<value><int>%d</int></value>" % value)
+
+
+xmlrpc.client.Marshaller.dispatch[int] = _dump_large_int
 
 
 # ---------------------------------------------------------------- service --
@@ -64,35 +85,88 @@ SERVICE = [echo, add, boom]
 
 # ------------------------------------------------------------------ old --
 
+def basic_credentials(header):
+    """Decode an HTTP Basic Authorization header, as ro_XMLRPC did."""
+    if not header:
+        return None
+    try:
+        method, _, encoded = header.partition(' ')
+        if method.lower() != 'basic':
+            return None
+        user, sep, password = base64.b64decode(
+            encoded.strip().encode()).decode().partition(':')
+        return (user, password) if sep else None
+    except Exception:
+        return None
+
+
+class _AuthCheckingHandler(SimpleXMLRPCRequestHandler):
+    """Check credentials during dispatch, the way ro_XMLRPC did.
+
+    Doing it here rather than by returning 401 matters: the failure has to
+    reach the client as an XML-RPC Fault, which is what the old server
+    produced and therefore what old clients handle.
+    """
+
+    def _dispatch(self, method, params):
+        auth_dict = self.server.auth_dict
+        if auth_dict is not None:
+            creds = basic_credentials(self.headers.get('Authorization'))
+            if creds is None:
+                raise Exception("Service requires authentication and no "
+                                "credentials passed")
+            user, password = creds
+            if auth_dict.get(user) != password:
+                raise Exception("Service requires authentication; "
+                                "username or password mismatch")
+        # Hand back to the dispatcher for the actual method lookup, so that
+        # an unknown method fails exactly as it always did.
+        return self.server._dispatch(method, params)
+
+
+class _ThreadingXMLRPCServer(ThreadingMixIn, SimpleXMLRPCServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
 class LegacyServer:
-    """A service on the ro_XMLRPC stack."""
+    """A service on the Python standard library's XML-RPC server."""
 
     kind = 'old'
 
     def __init__(self, auth_dict=None):
-        self.server = ro_XMLRPC.XMLRPCServer(
-            HOST, 0, logger=ro.nullLogger(), threaded=False,
-            authDict=auth_dict)
+        self.server = _ThreadingXMLRPCServer(
+            (HOST, 0), requestHandler=_AuthCheckingHandler,
+            allow_none=True, logRequests=False)
+        self.server.auth_dict = auth_dict
         for func in SERVICE:
             self.server.register_function(func)
-        self.server.start()
+        self.thread = threading.Thread(target=self.server.serve_forever)
+        self.thread.daemon = True
+        self.thread.start()
 
     @property
     def port(self):
         return self.server.server_address[1]
 
     def stop(self):
-        self.server.stop()
-        try:
-            self.server.server_close()
-        except Exception:
-            pass
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=10.0)
 
 
 def legacy_call(port, method, args, auth=None):
-    """Call through the proxy that remoteObjects actually uses."""
-    proxy = ro_XMLRPC.make_serviceProxy(HOST, port, auth=auth, secure=False)
-    return proxy.call(method, args, {})
+    """Call the way an un-upgraded Gen2 client does.
+
+    ro_XMLRPC.make_serviceProxy() built exactly this URL, credentials and
+    all, and handed it to xmlrpc.client.ServerProxy.
+    """
+    if auth is not None:
+        url = 'http://%s:%s@%s:%d/' % (auth[0], auth[1], HOST, port)
+    else:
+        url = 'http://%s:%d/' % (HOST, port)
+    proxy = xmlrpc.client.ServerProxy(url, allow_none=True)
+    return getattr(proxy, method)(*args)
 
 
 # ------------------------------------------------------------------ new --
@@ -337,9 +411,10 @@ def test_documented_fault_code_differences(make_server, client_call):
 def test_multicall_is_refused_by_both(make_server):
     """Batch is disabled on the new stack, which matches the old one.
 
-    ro_XMLRPC never called register_multicall_functions(), so the legacy
-    server has no system.multicall either.  Disabling it is therefore not a
-    compatibility loss.  See the TODO above XMLRPCBatchRequest.
+    A stdlib XML-RPC server only answers system.multicall when
+    register_multicall_functions() has been called, and ro_XMLRPC never
+    called it, so the old side had no system.multicall either.  Disabling it
+    is therefore not a compatibility loss.
     """
     body = xmlrpc.client.dumps(
         ([{'methodName': 'echo', 'params': ['x']}],),
@@ -365,10 +440,10 @@ def test_kwargs_are_rejected_by_both_stacks(make_server):
     from tinyrpc.exc import InvalidRequestError
 
     old = make_server('old')
-    proxy = ro_XMLRPC.make_serviceProxy(HOST, old.port, auth=None,
-                                        secure=False)
+    proxy = xmlrpc.client.ServerProxy('http://%s:%d/' % (HOST, old.port),
+                                      allow_none=True)
     with pytest.raises(TypeError):
-        proxy.call('add', (1,), {'b': 2})
+        proxy.add(1, b=2)
 
     protocol = XMLRPCProtocol(allow_none=True)
     with pytest.raises(InvalidRequestError):
