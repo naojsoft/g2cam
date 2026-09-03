@@ -59,8 +59,7 @@ def pack(envelope, pack_info):
     packet : bytes
 
     """
-    ptype = pack_info.ptype
-    packer = packers[ptype]
+    packer = get_packer(pack_info.ptype)
     payload = packer.pack(envelope)
     hdr = dict(packer=packer.kind, ver=packer.version,
                nbytes=len(payload))
@@ -87,8 +86,7 @@ def unpack(packet):
         raise ValueError("payload len (%d) does not match header (%d)" % (
             len(payload), hdr['nbytes']))
 
-    ptype = hdr['packer']
-    packer = packers[ptype]
+    packer = get_packer(hdr['packer'])
     envelope = packer.unpack(payload)
     return envelope
 
@@ -97,8 +95,30 @@ def unpack(packet):
 # Try to import all the possible data packers
 ############################################################
 
+#: Packers deliberately withdrawn, and why.  Named separately from "never
+#: heard of it" so that a peer still sending one gets an answer an operator
+#: can act on.
+withdrawn_packers = {
+    'pickle': "unpickling executes arbitrary code, so a service accepting it "
+              "would run whatever anyone able to reach its port sent",
+}
+
+
 def get_packer(typ):
-    return packers[typ]
+    """Look up a packer by name.
+
+    :raises ValueError: if the name is withdrawn or unknown.
+    """
+    try:
+        return packers[typ]
+    except KeyError:
+        pass
+
+    if typ in withdrawn_packers:
+        raise ValueError("the '%s' packer has been removed: %s"
+                         % (typ, withdrawn_packers[typ]))
+    raise ValueError("no packer named '%s'; available packers are %s"
+                     % (typ, ', '.join(sorted(packers)) or '(none)'))
 
 
 # msgpack
@@ -127,17 +147,6 @@ except ImportError:
 try:
     from .packers import pack_xml
     m = pack_xml.Packer()
-    # TODO: need to handle versioning
-    typ, _, ver = str(m).partition('/')
-    packers[typ] = m
-
-except ImportError:
-    pass
-
-# Pickle
-try:
-    from .packers import pack_pickle
-    m = pack_pickle.Packer()
     # TODO: need to handle versioning
     typ, _, ver = str(m).partition('/')
     packers[typ] = m
