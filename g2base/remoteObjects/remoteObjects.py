@@ -36,9 +36,14 @@ import traceback
 import inspect
 import signal
 
+from concurrent import futures
+
 from g2base import Bunch, Task, ssdlog
 
+from tinyrpc.dispatch import RPCDispatcher
+from tinyrpc.server.executor import RPCServerExecutor
 
+from . import ro_executor, ro_transport
 from .ro_config import *
 
 # Collect the different transports we can use
@@ -85,6 +90,50 @@ class ManagerServiceWarning(RuntimeWarning):
 #------------------------------------------------------------------
 # Remote object server implementation
 #
+
+#: Introspection and debugging methods every remote object server offers,
+#: unless the served object defines one of its own.
+ro_methods = ['ro_echo', 'ro_list', 'ro_help', 'ro_help_all',
+              'ro_thread_ids', 'ro_stacktrace', 'ro_stacktraces',
+              'ro_stacktraces_file', 'ro_stacktraces_dump', 'ro_get_pid',
+              'ro_setLogLevel', 'ro_workerStatus']
+
+
+def make_authenticator(authDict, logger):
+    """Build a server authenticator that checks HTTP Basic credentials.
+
+    The transport has already taken the credentials off the request and put
+    them on the context, so this only decides whether to accept them, and
+    works the same whichever protocol and transport carried them.
+    """
+    def authenticate(context, request):
+        auth = getattr(context, 'auth', None)
+        if auth is None:
+            logger.error("No authentication credentials passed")
+            raise remoteObjectError(
+                "Service requires authentication and no credentials passed")
+
+        username, password = auth
+        if username not in authDict:
+            logger.error("No user matching '%s'" % (username,))
+            raise remoteObjectError(
+                "Service requires authentication; "
+                "username or password mismatch")
+
+        if authDict[username] != password:
+            logger.error("Password incorrect for '%s'" % (username,))
+            # As before: slow down brute force attempts.  Note that this
+            # occupies a worker for the duration, so it also slows the
+            # service down for everyone when credentials are merely stale.
+            time.sleep(1.0)
+            raise remoteObjectError(
+                "Service requires authentication; "
+                "username or password mismatch")
+
+        logger.debug("Authorized client '%s'" % (username,))
+
+    return authenticate
+
 
 class remoteObjectServer:
 
@@ -140,14 +189,13 @@ class remoteObjectServer:
                     elif not attrName.startswith('_'):
                         methodNames.append(attrName)
 
-        self.method_list = methodNames
-        self.method_list.sort()
-
         # Logger for logging debug/error messages
         if not logger:
             self.logger = nullLogger()
         else:
             self.logger = logger
+
+        self.method_list = sorted(methodNames)
 
         # Port we listen on for remote control requests
         if host:
@@ -192,28 +240,78 @@ class remoteObjectServer:
         self.ns = ns
         self.__pid = os.getpid()
 
-        ro_transport = transports[transport]
-        serv_klass = ro_transport.get_serverClass(secure=secure)
+        self.spec = ro_transport.get(transport, encoding=encoding)
 
-        # If a specific port was requested, then try to start a server there,
-        # otherwise try to start a server with find_free_port
-        if self.port:
-            port = self.port
+        ssl_context = None
+        if self.secure:
+            ssl_context = ro_transport.make_ssl_context(self.cert_file)
+
+        # Bind and keep.  The old find_free_port() bound a port, closed it,
+        # and returned the number for the server to bind again, which left a
+        # window for somebody else to take it.  Binding the real listening
+        # socket as we search closes that window.
+        self.rpc_transport = self.__bind(ssl_context)
+        self.port = self.rpc_transport.endpoint[1]
+
+        # Everything the object exposes, plus the ro_* methods it did not
+        # override, goes in the dispatcher.
+        self.dispatcher = RPCDispatcher()
+        for name in self.method_list:
+            self.dispatcher.add_method(getattr(self.obj, name), name)
+        for name in ro_methods:
+            if not hasattr(self.obj, name):
+                self.dispatcher.add_method(getattr(self, name), name)
+
+        if self.threadPool is not None:
+            # Run handlers on the pool the application gave us, as before.
+            self.executor = ro_executor.ThreadPoolExecutor(self.threadPool)
+            self.__own_executor = False
         else:
-            start_port = objectsBasePort
-            port = find_free_port(self.bindhost,
-                                  start_port, start_port+15000)
-            self.port = port
+            # The serve loop occupies a worker for as long as the server
+            # runs, so it needs one of its own on top of the handlers'.
+            # With a single worker there would be nobody left to dispatch to
+            # and the service would accept a request and then hang.
+            max_workers = 1 + (self.numthreads if self.threaded_server else 1)
+            self.executor = futures.ThreadPoolExecutor(
+                max_workers=max_workers,
+                thread_name_prefix='ro-%s' % (self.svcname or self.name or
+                                              'server'))
+            self.__own_executor = True
 
-        self.server = serv_klass(self.bindhost, self.port,
-                                 ev_quit=self.ev_quit,
-                                 timeout=self.timeout,
-                                 logger=self.logger,
-                                 authDict=self.authDict,
-                                 cert_file=self.cert_file,
-                                 threaded=self.threaded_server,
-                                 threadPool=self.threadPool,
-                                 numthreads=self.numthreads)
+        self.server = RPCServerExecutor(self.rpc_transport,
+                                        self.spec.make_protocol(),
+                                        self.dispatcher,
+                                        self.executor,
+                                        ev_quit=self.ev_quit)
+        if self.authDict:
+            self.server.authenticator = make_authenticator(self.authDict,
+                                                           self.logger)
+
+    def __bind(self, ssl_context):
+        """Bind the listening socket, searching the service port range when
+        no specific port was asked for."""
+        if self.port:
+            candidates = [self.port]
+        else:
+            candidates = range(objectsBasePort, objectsBasePort + 15000)
+
+        last_error = None
+        for port in candidates:
+            try:
+                return self.spec.make_server_transport(
+                    self.bindhost, port, logger=self.logger,
+                    ssl_context=ssl_context, poll_timeout=self.timeout)
+            except OSError as e:
+                last_error = e
+                continue
+
+        if self.port:
+            raise remoteObjectError(
+                "Can't bind %s:%d for remote object server: %s"
+                % (self.bindhost or '*', self.port, last_error))
+        raise remoteObjectError(
+            'No free port found for remote object server in %d-%d: %s'
+            % (objectsBasePort, objectsBasePort + 15000, last_error))
 
 
     def ro_start(self, wait=False, timeout=None):
@@ -241,6 +339,11 @@ class remoteObjectServer:
         self.server.stop()
         self.ev_quit.set()
 
+        if self.__own_executor:
+            # Only ours to shut down; a caller-supplied thread pool is
+            # usually shared with the rest of the application.
+            self.executor.shutdown(wait=False)
+
         if wait:
             if self.usethread:
                 # This seems to cause some hangs
@@ -252,19 +355,19 @@ class remoteObjectServer:
 
     def ro_wait_start(self, timeout=None):
         '''Wait for remote object server to start.'''
-        if not self.ev_start.isSet():
+        if not self.ev_start.is_set():
             self.ev_start.wait(timeout=timeout)
 
-        if not self.ev_start.isSet():
+        if not self.ev_start.is_set():
             raise remoteObjectError("Timed out waiting for server to start")
 
 
     def ro_wait_stop(self, timeout=None):
         '''Wait for remote object server to terminate.'''
-        if not self.ev_stop.isSet():
+        if not self.ev_stop.is_set():
             self.ev_stop.wait(timeout=timeout)
 
-        if not self.ev_stop.isSet():
+        if not self.ev_stop.is_set():
             raise remoteObjectError("Timed out waiting for server to terminate")
 
 
@@ -303,17 +406,17 @@ class remoteObjectServer:
         # get the callable
         func = getattr(self.obj, methodName)
 
-        # introspect the argument list
-        (args, varargs, varkw, defaults) = inspect.getargspec(func)
-
-        # remove 'self' from argument list, if present
-        if (len(args) > 0) and (args[0] == 'self'):
-            args.pop(0)
+        # introspect the argument list (getargspec was removed in 3.11,
+        # and signature() renders bound methods without 'self' anyway)
+        try:
+            sig = str(inspect.signature(func))
+        except (TypeError, ValueError):
+            sig = '(...)'
 
         # get doc string for the function
         docstr = inspect.getdoc(func)
 
-        return '%s(%s)\n%s' % (methodName, ', '.join(args), str(docstr))
+        return '%s%s\n%s' % (methodName, sig, str(docstr))
 
 
     def ro_help_all(self):
@@ -440,20 +543,7 @@ class remoteObjectServer:
         self.logger.info("Starting remote object server on %s:%d." % \
                            (self.host, self.port))
 
-        # These let XML-RPC know about what methods we have available
-        #self.server.register_introspection_functions()
-        for name in self.method_list:
-            self.server.register_function(getattr(self.obj, name))
-
-        # Register expected methods unless they have been overridden
-        for name in ['ro_echo', 'ro_list', 'ro_help', 'ro_help_all',
-                     'ro_thread_ids', 'ro_stacktrace', 'ro_stacktraces',
-                     'ro_stacktraces_file', 'ro_stacktraces_dump', 'ro_get_pid',
-                     'ro_setLogLevel', 'ro_workerStatus']:
-            if not hasattr(self.obj, name):
-                self.server.register_function(getattr(self, name))
-
-        #self.server.register_instance(self)
+        # The methods were put in the dispatcher when the server was built.
 
         # Register our service
         self.__ns_register()
@@ -465,7 +555,7 @@ class remoteObjectServer:
 
             self.server.start()
 
-            while not self.ev_quit.isSet():
+            while not self.ev_quit.is_set():
                 # Ping the name server if we haven't in a while
                 self.__ns_ping()
 
