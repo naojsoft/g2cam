@@ -19,7 +19,8 @@ from g2base.remoteObjects import ro_config, ro_transport
 
 
 def test_the_shipped_transports_are_registered():
-    assert ro_transport.names() == ['g2rpc', 'jsonrpc', 'msgpackrpc',
+    assert ro_transport.names() == ['g2rpc', 'g2rpc-tcp', 'g2rpc-zmq',
+                                    'jsonrpc', 'msgpackrpc',
                                     'xmlrpc', 'xmlrpc-std']
 
 
@@ -113,7 +114,9 @@ def test_only_a_protocol_with_its_own_envelope_offers_a_choice():
     has no encoding to choose, and g2rpc, whose envelope is ours, does."""
     selectable = [name for name in ro_transport.names()
                   if ro_transport.get(name).encoding_is_selectable]
-    assert selectable == ['g2rpc']
+    # Every g2rpc carrier, and nothing else: the standardised protocols have
+    # no encoding to choose.
+    assert selectable == ['g2rpc', 'g2rpc-tcp', 'g2rpc-zmq']
 
 
 def test_the_backward_compatible_spec_declares_its_old_name():
@@ -127,7 +130,29 @@ def test_each_spec_builds_a_protocol_and_a_client_transport():
         assert spec.make_protocol() is not None
         transport = spec.make_client_transport('localhost', 8000,
                                                auth=('u', 'p'), timeout=1.0)
+        assert transport is not None
+        close = getattr(transport, 'close', None)
+        if callable(close):
+            close()
+
+
+def test_http_specs_build_a_url():
+    for name in ('xmlrpc', 'jsonrpc', 'msgpackrpc', 'g2rpc'):
+        transport = ro_transport.get(name).make_client_transport(
+            'localhost', 8000)
         assert transport.endpoint == 'http://localhost:8000/'
+
+
+def test_a_carrier_declares_what_it_can_offer():
+    """Whether credentials can be carried, and whether it can be encrypted,
+    are properties of the carrier rather than the protocol."""
+    assert ro_transport.get('g2rpc').carries_credentials
+    assert ro_transport.get('g2rpc').supports_tls
+
+    for name in ('g2rpc-tcp', 'g2rpc-zmq'):
+        spec = ro_transport.get(name)
+        assert not spec.carries_credentials
+        assert not spec.supports_tls
 
 
 def test_secure_gives_an_https_url():

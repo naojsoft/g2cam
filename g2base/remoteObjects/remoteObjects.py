@@ -240,6 +240,17 @@ class remoteObjectServer:
         self.__pid = os.getpid()
 
         self.spec = ro_transport.get(transport, encoding=encoding)
+
+        if self.authDict and not self.spec.carries_credentials:
+            # The authenticator would find no credentials on any request and
+            # refuse every call, which looks like a network fault rather than
+            # a configuration mistake.  Say so now instead.
+            raise remoteObjectError(
+                "the '%s' transport cannot carry credentials, so service "
+                "'%s' cannot require authentication over it; use an "
+                "HTTP-carried protocol such as 'xmlrpc' or 'g2rpc'"
+                % (self.spec.name, svcname or name or '<unnamed>'))
+
         # What the spec settled on: the requested encoding where the protocol
         # offers a choice, its own otherwise.
         self.encoding = self.spec.check_encoding(encoding)
@@ -266,7 +277,7 @@ class remoteObjectServer:
         # window for somebody else to take it.  Binding the real listening
         # socket as we search closes that window.
         self.rpc_transport = self.__bind(ssl_context)
-        self.port = self.rpc_transport.endpoint[1]
+        self.port = self.spec.server_port(self.rpc_transport)
 
         # Everything the object exposes, plus the ro_* methods it did not
         # override, goes in the dispatcher.
@@ -316,7 +327,7 @@ class remoteObjectServer:
                 return self.spec.make_server_transport(
                     self.bindhost, port, logger=self.logger,
                     ssl_context=ssl_context, poll_timeout=self.timeout)
-            except OSError as e:
+            except self.spec.bind_errors as e:
                 last_error = e
                 continue
 
@@ -760,8 +771,17 @@ class _ServiceProxy:
         transport = self.spec.make_client_transport(
             self.host, self.port, auth=self.auth, secure=self.secure,
             timeout=self.timeout)
-        client = RPCClient(self.spec.make_protocol(self.encoding), transport)
-        return client.call(attrname, tuple(args), dict(kwdargs) or None)
+        try:
+            client = RPCClient(self.spec.make_protocol(self.encoding),
+                               transport)
+            return client.call(attrname, tuple(args), dict(kwdargs) or None)
+        finally:
+            # A transport built per call has to be released per call.  The
+            # HTTP and TCP ones hold nothing, but a 0mq socket would linger
+            # until the garbage collector noticed it.
+            close = getattr(transport, 'close', None)
+            if callable(close):
+                close()
 
 
 #------------------------------------------------------------------
