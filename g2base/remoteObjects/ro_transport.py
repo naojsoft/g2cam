@@ -27,7 +27,9 @@ from tinyrpc.protocols.xmlrpc import XMLRPCProtocol
 from tinyrpc.transports.http import HttpPostClientTransport
 from tinyrpc.transports.http_server import HttpServerTransport
 from tinyrpc.transports.tcp import (ConnectionlessTcpClientTransport,
-                                    ConnectionlessTcpServerTransport)
+                                    ConnectionlessTcpServerTransport,
+                                    NonBlockingTcpClientTransport,
+                                    TcpServerTransport)
 
 from . import ro_g2rpc
 
@@ -115,6 +117,11 @@ class TransportSpec:
     #: one.  0mq raises its own error, which is not an OSError.
     bind_errors = (OSError,)
 
+    #: Whether a client may keep several calls in flight on one connection.
+    #: That needs a connection that persists, and a protocol whose replies
+    #: carry a correlation id.
+    supports_multiplexing = False
+
     def make_server_transport(self, bindhost, port, **kwargs):
         raise NotImplementedError
 
@@ -163,11 +170,18 @@ class HttpTransportSpec(TransportSpec):
 
 
 class TcpTransportSpec(TransportSpec):
-    """A protocol carried over a bare TCP socket, one connection per call.
+    """A protocol carried over a bare TCP socket.
 
-    The same bargain as HTTP, without the HTTP: a call dials, sends, reads
-    its reply and hangs up.  That costs a connection setup per call and saves
-    having to notice when a held connection has died.
+    Two shapes, chosen by ``persistent``:
+
+    * **one connection per call** (the default).  The same bargain as HTTP,
+      without the HTTP: a call dials, sends, reads its reply and hangs up.
+      That costs a connection setup per call and saves ever having to notice
+      that a held connection has died.
+    * **one connection, many calls** (``persistent=True``).  Cheaper per
+      call and the only shape that can multiplex, since several replies have
+      to be told apart on one connection.  In exchange the connection can
+      die, so the client dials again when it does.
 
     There is nowhere in a bare socket to put credentials, so a service
     needing authentication wants the HTTP carrier -- or the credentials would
@@ -177,21 +191,32 @@ class TcpTransportSpec(TransportSpec):
     carries_credentials = False
     supports_tls = False
 
+    def __init__(self, *args, persistent=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.persistent = persistent
+
+    @property
+    def supports_multiplexing(self):
+        return self.persistent
+
     def make_server_transport(self, bindhost, port, logger=None,
                               ssl_context=None, poll_timeout=0.5, **kwargs):
         if ssl_context is not None:
             raise ValueError(
                 "the '%s' transport cannot be encrypted; use an HTTP-carried "
                 "protocol for a secure service" % (self.name,))
-        return ConnectionlessTcpServerTransport.create(
-            (bindhost or '', port), logger=logger,
-            poll_timeout=poll_timeout, **kwargs)
+        server = (TcpServerTransport if self.persistent
+                  else ConnectionlessTcpServerTransport)
+        return server.create((bindhost or '', port), logger=logger,
+                             poll_timeout=poll_timeout, **kwargs)
 
     def make_client_transport(self, host, port, auth=None, secure=False,
                               timeout=None, verify=True):
         if secure:
             raise ValueError(
                 "the '%s' transport cannot be encrypted" % (self.name,))
+        if self.persistent:
+            return NonBlockingTcpClientTransport((host, port))
         return ConnectionlessTcpClientTransport((host, port), timeout=timeout)
 
 
@@ -389,6 +414,17 @@ register(TcpTransportSpec(
     description="Gen2's own protocol straight over TCP, with no HTTP "
                 "framing.  Cheaper per call than the HTTP carrier, and "
                 "cannot carry credentials or be encrypted."))
+
+register(TcpTransportSpec(
+    'g2rpc-tcp-persistent',
+    ro_g2rpc.G2RPCProtocol,
+    content_type='application/octet-stream',
+    encoding=ro_g2rpc.DEFAULT_ENCODING,
+    encodings=ro_g2rpc.ENCODINGS,
+    persistent=True,
+    description="Gen2's own protocol over a TCP connection that is held "
+                "open, so a client can keep several calls in flight at once. "
+                "The connection can die, so the client dials again."))
 
 register(ZmqTransportSpec(
     'g2rpc-zmq',

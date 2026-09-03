@@ -19,7 +19,8 @@ from g2base.remoteObjects import ro_config, ro_transport
 
 
 def test_the_shipped_transports_are_registered():
-    assert ro_transport.names() == ['g2rpc', 'g2rpc-tcp', 'g2rpc-zmq',
+    assert ro_transport.names() == ['g2rpc', 'g2rpc-tcp',
+                                    'g2rpc-tcp-persistent', 'g2rpc-zmq',
                                     'jsonrpc', 'msgpackrpc',
                                     'xmlrpc', 'xmlrpc-std']
 
@@ -112,11 +113,13 @@ def test_each_spec_records_what_it_puts_on_the_wire():
 def test_only_a_protocol_with_its_own_envelope_offers_a_choice():
     """Which is the whole point of the distinction: a standardised protocol
     has no encoding to choose, and g2rpc, whose envelope is ours, does."""
-    selectable = [name for name in ro_transport.names()
-                  if ro_transport.get(name).encoding_is_selectable]
+    selectable = {name for name in ro_transport.names()
+                  if ro_transport.get(name).encoding_is_selectable}
     # Every g2rpc carrier, and nothing else: the standardised protocols have
     # no encoding to choose.
-    assert selectable == ['g2rpc', 'g2rpc-tcp', 'g2rpc-zmq']
+    assert selectable == {name for name in ro_transport.names()
+                          if name.startswith('g2rpc')}
+    assert selectable, "g2rpc should be registered"
 
 
 def test_the_backward_compatible_spec_declares_its_old_name():

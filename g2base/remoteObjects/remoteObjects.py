@@ -44,6 +44,7 @@ import xmlrpc.client
 
 from tinyrpc import exc as tinyrpc_exc
 from tinyrpc.client import RPCClient
+from tinyrpc.client_multiplexing import MultiplexingRPCClient
 from tinyrpc.dispatch import RPCDispatcher
 from tinyrpc.server.executor import RPCServerExecutor
 
@@ -782,6 +783,131 @@ class _ServiceProxy:
             close = getattr(transport, 'close', None)
             if callable(close):
                 close()
+
+
+class multiplexingClient:
+    """A handle that keeps several calls in flight over one connection.
+
+    :py:class:`remoteObjectClient` dials for every call, so a caller waits a
+    full round trip and the next call cannot start until this one finishes.
+    This holds one connection open and tells replies apart by the correlation
+    id the protocol puts on them, so calls overlap: ten calls that each take
+    a second take a second between them rather than ten.
+
+    Use it where a caller has genuinely independent work to issue at once.
+    For ordinary request/response traffic :py:class:`remoteObjectClient` is
+    simpler and gives up nothing, since it holds no connection to go stale.
+
+    Attribute access calls and waits, as on a plain client::
+
+        client.echo('hi')
+
+    or issue the calls first and collect them afterwards::
+
+        pending = [client.begin_call('work', (n,), None) for n in jobs]
+        results = [client.collect(p) for p in pending]
+
+    The connection is dialled on the first call and re-dialled if it drops.
+    Calls that were in flight when it dropped are lost, and surface as
+    timeouts; whether to repeat them is the caller's decision, since not
+    every remote call can safely be made twice.
+
+    :param transport: A transport whose spec supports multiplexing, which
+        means one that holds its connection open.
+    """
+
+    def __init__(self, host, port, name='<remote object>',
+                 transport='g2rpc-tcp-persistent', encoding=None,
+                 timeout=None, logger=None):
+        self.host = host
+        self.port = port
+        self.name = name
+        self.timeout = timeout
+        self.logger = logger if logger else nullLogger()
+
+        self.spec = ro_transport.get(transport, encoding=encoding)
+        if not self.spec.supports_multiplexing:
+            raise remoteObjectError(
+                "'%s' dials for every call, so there is never more than one "
+                "in flight and nothing to multiplex; use a protocol whose "
+                "connection persists, such as 'g2rpc-tcp-persistent'"
+                % (self.spec.name,))
+
+        self.encoding = self.spec.check_encoding(encoding)
+        self.rpc_transport = self.spec.make_client_transport(
+            host, port, timeout=timeout)
+        self.client = MultiplexingRPCClient(
+            self.spec.make_protocol(self.encoding), self.rpc_transport)
+
+        self.ev_quit = threading.Event()
+        self._thread = None
+
+    def start(self):
+        """Begin collecting replies, on a thread of its own."""
+        if self._thread is not None:
+            return
+        self._thread = threading.Thread(target=self.client.receive_forever,
+                                        args=(self.ev_quit,),
+                                        name='ro-mux-%s' % (self.name,))
+        self._thread.daemon = True
+        self._thread.start()
+
+    def stop(self):
+        """Stop collecting replies and drop the connection."""
+        self.ev_quit.set()
+        if self._thread is not None:
+            self._thread.join(timeout=5.0)
+            self._thread = None
+        close = getattr(self.rpc_transport, 'close', None)
+        if callable(close):
+            close()
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, *args):
+        self.stop()
+        return False
+
+    def begin_call(self, attrname, args=(), kwdargs=None):
+        """Send a call and return at once, without waiting for the result."""
+        self.__started()
+        return self.client.begin_call(attrname, tuple(args), dict(kwdargs or {}))
+
+    def collect(self, pending, timeout=None):
+        """Wait for the result of a call begun by :py:meth:`begin_call`."""
+        if timeout is None:
+            timeout = self.timeout
+        try:
+            return self.client.receive_reply(pending, timeout=timeout).result
+        except Exception as e:
+            raise remoteObjectError(
+                "Method call %s failed to %s:%d: %s"
+                % (self.name, self.host, self.port, e))
+
+    def __started(self):
+        if self._thread is None:
+            self.start()
+
+    def __getattr__(self, attrname):
+        if attrname.startswith('__'):
+            raise AttributeError(attrname)
+
+        def call(*args, **kwdargs):
+            self.__started()
+            try:
+                return self.client.call(attrname, tuple(args), dict(kwdargs),
+                                        timeout=self.timeout)
+            except Exception as e:
+                raise remoteObjectError(
+                    "Method call %s.%s failed to %s:%d: %s"
+                    % (self.name, attrname, self.host, self.port, e))
+
+        return call
+
+    def __str__(self):
+        return "multiplexingClient(%s, %d)" % (self.host, self.port)
 
 
 #------------------------------------------------------------------
