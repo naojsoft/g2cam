@@ -87,13 +87,11 @@ def test_protocols_are_not_shared_between_callers():
     assert spec.make_protocol() is not spec.make_protocol()
 
 
-#: Run in a subprocess so that nothing else in the test session has had a
-#: chance to import ro_XMLRPC, whose import patches xmlrpc.client globally.
+#: Run in a subprocess, so that nothing else in the test session can have
+#: patched xmlrpc.client first and made the check vacuous.
 _ISOLATION_PROBE = textwrap.dedent("""
-    import sys, xmlrpc.client
+    import xmlrpc.client
     from g2base.remoteObjects import ro_transport
-
-    assert not any(m.endswith('ro_XMLRPC') for m in sys.modules), 'preloaded'
 
     # The stdlib marshaller must be untouched for this to prove anything.
     try:
@@ -126,15 +124,16 @@ _ISOLATION_PROBE = textwrap.dedent("""
 def test_large_int_support_does_not_leak_into_the_process():
     """The Gen2 XML-RPC variant must not be a global monkeypatch.
 
-    ro_XMLRPC gets its oversized ints by assigning to
-    ``xmlrpc.client.Marshaller.dispatch`` at import, which changes XML-RPC
-    for everything in the process and makes it impossible to speak both the
-    variant and the standard.  The replacement is a protocol option, so this
-    checks that enabling it leaves the stdlib -- and the standard spec --
-    alone.
+    The deleted ro_XMLRPC got its oversized ints by assigning to
+    ``xmlrpc.client.Marshaller.dispatch`` at import, which changed XML-RPC
+    for everything else in the process and made it impossible to speak both
+    the variant and the standard.  The replacement is a protocol option, so
+    this checks that enabling it leaves the stdlib -- and the standard spec
+    -- alone.
 
-    Run in a subprocess: importing ro_XMLRPC anywhere in this test session
-    would patch the marshaller and make the check vacuous.
+    Run in a subprocess: the compatibility harness applies that same patch to
+    simulate an old client, so in the main test process the check would be
+    vacuous.
     """
     result = subprocess.run([sys.executable, '-c', _ISOLATION_PROBE],
                             capture_output=True, text=True, timeout=60)
@@ -142,15 +141,11 @@ def test_large_int_support_does_not_leak_into_the_process():
     assert result.stdout.strip() == 'OK', (result.stdout, result.stderr)
 
 
-#: Also run in a subprocess: whether importing remoteObjects patches the
-#: stdlib can only be observed before anything else has imported ro_XMLRPC.
+#: Also run in a subprocess, for the same reason.
 _IMPORT_PROBE = textwrap.dedent("""
-    import sys, xmlrpc.client
+    import xmlrpc.client
     from g2base.remoteObjects import remoteObjects as ro
 
-    if any(m.endswith('ro_XMLRPC') for m in sys.modules):
-        print('PULLED_IN')
-        raise SystemExit(0)
     try:
         xmlrpc.client.dumps((2 ** 40,))
         print('PATCHED')
@@ -163,10 +158,11 @@ def test_importing_remoteObjects_does_not_patch_the_stdlib():
     """Importing the package used to change XML-RPC for the whole process.
 
     remoteObjects imported ro_XMLRPC to fill its transports dict, and
-    ro_XMLRPC assigns to xmlrpc.client.Marshaller.dispatch at import time.
+    ro_XMLRPC assigned to xmlrpc.client.Marshaller.dispatch at import time.
     So merely importing remoteObjects -- which anything touching Gen2 does --
     silently changed how every other XML-RPC user in that process marshalled
-    integers.  Nothing reads that dict any more, so it is gone.
+    integers.  Both are gone; this makes sure neither comes back by another
+    route.
     """
     result = subprocess.run([sys.executable, '-c', _IMPORT_PROBE],
                             capture_output=True, text=True, timeout=60)
