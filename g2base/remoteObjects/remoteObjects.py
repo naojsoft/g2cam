@@ -91,6 +91,13 @@ class ManagerServiceWarning(RuntimeWarning):
 # Remote object server implementation
 #
 
+#: Methods that start and stop the server itself.  These are how the process
+#: hosting a service controls it, not operations the service offers, and they
+#: are never exposed remotely: a service that subclasses remoteObjectServer
+#: would otherwise let any client that can reach it shut it down.
+local_only_methods = frozenset(['ro_start', 'ro_stop',
+                                'ro_wait_start', 'ro_wait_stop'])
+
 #: Introspection and debugging methods every remote object server offers,
 #: unless the served object defines one of its own.
 ro_methods = ['ro_echo', 'ro_list', 'ro_help', 'ro_help_all',
@@ -195,7 +202,17 @@ class remoteObjectServer:
         else:
             self.logger = logger
 
-        self.method_list = sorted(methodNames)
+        # A server that subclasses remoteObjectServer picks up its own
+        # lifecycle methods in the scan above, which would let any client
+        # that can reach the service stop it.  Never expose those.
+        withheld = local_only_methods.intersection(methodNames)
+        if withheld:
+            self.logger.warning(
+                "not exposing %s: these control this server's own lifecycle "
+                "and are only for the process hosting it"
+                % (', '.join(sorted(withheld)),))
+
+        self.method_list = sorted(set(methodNames) - local_only_methods)
 
         # Port we listen on for remote control requests
         if host:
