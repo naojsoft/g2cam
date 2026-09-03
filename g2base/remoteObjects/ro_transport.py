@@ -35,30 +35,68 @@ class UnknownTransport(KeyError):
 class TransportSpec:
     """One way of speaking RPC: a protocol carried over a transport.
 
-    :param name: The value that appears in a name-service registration's
-        ``transport`` field.
-    :param protocol_factory: Called with no arguments to make a protocol
-        instance.  Protocols are cheap and hold per-conversation state
-        (outstanding request ids), so a client and a server each make their
-        own rather than sharing one.
+    :param name: The protocol name, as it appears in a name-service
+        registration's ``protocol`` field.
+    :param protocol_factory: Called to make a protocol instance.  Protocols
+        are cheap and hold per-conversation state (outstanding request ids),
+        so a client and a server each make their own rather than sharing one.
+        It is called with an ``encoding`` keyword only when this spec has
+        selectable encodings.
     :param content_type: The HTTP ``Content-Type`` for replies.
-    :param encodings: The ``encoding`` values this spec answers to, for the
-        name service's benefit.  XML-RPC ignores the field -- its encoding is
-        part of the protocol -- so registrations made before this existed,
-        which say ``pickle`` because that was the module default, still
-        resolve.
+    :param encoding: What this spec actually puts on the wire.  Recorded with
+        the registration so that the name service describes reality.
+    :param encodings: The encodings that may be *chosen*, or empty when the
+        encoding is fixed.
+
+        This is the distinction the old configuration got wrong.  For a
+        standardised protocol the encoding is not a separate axis at all --
+        XML-RPC is XML, JSON-RPC is JSON, msgpack-RPC is msgpack -- so
+        naming one is at best redundant and at worst a contradiction to
+        reject.  Only a protocol built around an interchangeable packer,
+        such as ``g2rpc``, genuinely has the choice, and only those declare
+        it here.
+    :param legacy_transport: The value the old ``transport`` field used for
+        this, if any, so that registrations from un-upgraded services still
+        resolve and un-upgraded clients still recognise it.
     """
 
     def __init__(self, name, protocol_factory, content_type,
-                 encodings=(), description=''):
+                 encoding, encodings=(), legacy_transport=None,
+                 description=''):
         self.name = name
         self.protocol_factory = protocol_factory
         self.content_type = content_type
+        self.encoding = encoding
         self.encodings = tuple(encodings)
+        self.legacy_transport = legacy_transport
         self.description = description
 
-    def make_protocol(self):
-        return self.protocol_factory()
+    @property
+    def encoding_is_selectable(self):
+        return bool(self.encodings)
+
+    def check_encoding(self, encoding):
+        """Return the encoding to use, or raise if it cannot be honoured.
+
+        An encoding is only meaningful when this spec has a choice to make;
+        otherwise it is ignored, which is what lets a registration written
+        before any of this existed -- saying ``pickle``, the old module-wide
+        default -- go on resolving.
+        """
+        if not self.encoding_is_selectable:
+            return self.encoding
+        if encoding is None:
+            return self.encoding
+        if encoding not in self.encodings:
+            raise UnknownTransport(
+                "protocol '%s' cannot encode as '%s'; it offers %s"
+                % (self.name, encoding, ', '.join(self.encodings)))
+        return encoding
+
+    def make_protocol(self, encoding=None):
+        if not self.encoding_is_selectable:
+            return self.protocol_factory()
+        return self.protocol_factory(encoding=self.check_encoding(encoding))
 
     def url(self, host, port, secure=False):
         return '%s://%s:%d/' % ('https' if secure else 'http', host, port)
@@ -107,27 +145,43 @@ def register(spec, replace=False):
     return spec
 
 
-def get(transport, encoding=None):
+#: What the old ``transport`` field's values mean now.
+#:
+#: That field was named for the transport but held protocol names, which is
+#: why 'xmlrpc' sat alongside 'socket'.  Its three possible values were the
+#: three modules that existed, so the translation is complete.
+legacy_transport_names = {
+    'xmlrpc': 'xmlrpc',
+    'socket': 'g2rpc-tcp',
+    'zmqrpc': 'g2rpc-zmq',
+}
+
+
+def resolve_legacy_transport(transport):
+    """Map an old ``transport`` value onto a protocol name."""
+    return legacy_transport_names.get(transport, transport)
+
+
+def get(protocol, encoding=None):
     """Look up the spec for a name-service registration.
 
-    :param transport: The registration's ``transport`` field.
-    :param encoding: The registration's ``encoding`` field.  Advisory: it is
-        checked against the spec when the spec declares any encodings, and
-        ignored otherwise, so that older registrations still resolve.
-    :raises UnknownTransport: when nothing is registered under that name.
+    :param protocol: The registration's ``protocol`` field, or its old
+        ``transport`` field, which is translated.
+    :param encoding: The registration's ``encoding`` field.  Honoured only
+        when the protocol has a choice to make; see
+        :py:meth:`TransportSpec.check_encoding`.
+    :raises UnknownTransport: when nothing is registered under that name, or
+        the encoding cannot be honoured.
     """
+    name = resolve_legacy_transport(protocol)
     try:
-        spec = registry[transport]
+        spec = registry[name]
     except KeyError:
         raise UnknownTransport(
-            "no transport named '%s'; known transports are %s"
-            % (transport, ', '.join(sorted(registry)))) from None
+            "no protocol named '%s'; known protocols are %s"
+            % (protocol, ', '.join(sorted(registry)))) from None
 
-    if encoding and spec.encodings and encoding not in spec.encodings:
-        raise UnknownTransport(
-            "transport '%s' does not speak encoding '%s' (only %s)"
-            % (transport, encoding, ', '.join(spec.encodings)))
-
+    spec.check_encoding(encoding)
     return spec
 
 
@@ -159,37 +213,35 @@ def make_ssl_context(cert_file):
 # The transports Gen2 ships with.
 # ---------------------------------------------------------------------------
 
+# Note that none of these declare selectable encodings: each is a
+# standardised protocol whose encoding its specification fixes.  g2rpc, whose
+# envelope is ours and therefore can be packed several ways, will.
+
 register(TransportSpec(
     'xmlrpc',
     lambda: XMLRPCProtocol(allow_none=True, allow_large_ints=True),
-    content_type='text/xml',
-    # XML-RPC carries its own encoding, so the field means nothing here.
-    # Registrations predating this module say 'pickle' -- the old module-wide
-    # default_encoding -- and must keep resolving, so nothing is declared.
-    encodings=(),
+    content_type='text/xml', encoding='xml',
+    legacy_transport='xmlrpc',
     description="XML-RPC over HTTP, as Gen2 has always spoken it: <nil/> and "
                 "oversized ints allowed.  Backward compatible."))
 
 register(TransportSpec(
     'xmlrpc-std',
     lambda: XMLRPCProtocol(allow_none=False),
-    content_type='text/xml',
-    encodings=(),
+    content_type='text/xml', encoding='xml',
     description="Standard XML-RPC over HTTP, without the two Gen2 "
                 "extensions, for talking to non-Python implementations."))
 
 register(TransportSpec(
     'jsonrpc',
     JSONRPCProtocol,
-    content_type='application/json',
-    encodings=('json',),
+    content_type='application/json', encoding='json',
     description="JSON-RPC 2.0 over HTTP.  Carries keyword arguments, which "
                 "XML-RPC cannot."))
 
 register(TransportSpec(
     'msgpackrpc',
     MSGPACKRPCProtocol,
-    content_type='application/msgpack',
-    encodings=('msgpack',),
+    content_type='application/msgpack', encoding='msgpack',
     description="msgpack-RPC over HTTP.  Compact and fast; carries keyword "
                 "arguments."))

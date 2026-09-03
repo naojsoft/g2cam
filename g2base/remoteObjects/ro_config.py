@@ -11,21 +11,30 @@ nameServicePort    = 7075
 # Beginning of range of ports for remote object services
 objectsBasePort    = 8000
 
-# Default transport
+# Default protocol.  Named "transport" for the constructor keyword and the
+# name service field it fills, both of which predate the distinction; see
+# ro_transport, which lists what is available.  'xmlrpc' is what un-upgraded
+# clients and services speak, so leave it alone unless everything talking to
+# the service in question has been upgraded.
 default_transport  = 'xmlrpc'
-#default_transport  = 'socket'
-#default_transport  = 'zmqrpc'
+#default_transport  = 'jsonrpc'
+#default_transport  = 'msgpackrpc'
 
-# Default encoding
-# [ignored for default_transport=xmlrpc]
-#default_encoding  = 'xml'
-#default_encoding  = 'json'
-default_encoding  = 'pickle'
+# Default encoding, or None for "whatever the protocol uses".
+#
+# For a standardised protocol the encoding is not a separate choice at all:
+# XML-RPC is XML, JSON-RPC is JSON, msgpack-RPC is msgpack.  Setting it here
+# only means something for a protocol built around an interchangeable packer,
+# and is ignored otherwise.  It used to default to 'pickle', which no
+# protocol here can produce -- and which nothing should accept over a socket,
+# since unpickling runs whatever it is sent.
+default_encoding  = None
 
-# Name service transport
+# Name service protocol.  The name service is what clients use to find
+# everything else, so it is the last thing that should stop speaking a
+# protocol an un-upgraded client understands.
 ns_transport  = 'xmlrpc'
-# [ignored for ns_transport=xmlrpc]
-ns_encoding  = 'xml'
+ns_encoding  = None
 
 # Do you want to default to SSL connections (slower)
 # [only for transport=xmlrpc]
@@ -55,10 +64,10 @@ default_threaded_server = True
 # Default number of threads to use for the server
 default_num_threads = 5
 
-# Should we allow Long to pass unhindered?  (long is not a part of the
-# XML-RPC standard)
-# [only for transport=xmlrpc]
-allow_long = True
+# Oversized integers (outside the signed 32 bits the XML-RPC standard
+# allows) are now a property of the protocol rather than a global setting:
+# the 'xmlrpc' spec enables them and 'xmlrpc-std' does not.  See
+# ro_transport.  The former allow_long flag is gone; nothing read it.
 
 
 # ERROR CODES

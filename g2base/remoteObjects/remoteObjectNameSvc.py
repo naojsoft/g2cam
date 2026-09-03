@@ -18,12 +18,16 @@ hierarchy in the local "white pages":
 
 name
     host:port
-        transport
+        protocol
         encoding
         secure
         registrar
         pingtime
         keep
+
+Registrations from services that have not been upgraded carry a ``transport``
+field instead of ``protocol``; see :py:func:`normalize_options`.  Lookups
+report both, since clients that have not been upgraded read ``transport``.
 
 Updates come in on the channel 'names' and these propagate between the
 name servers.
@@ -45,6 +49,65 @@ version = '20230515.0'
 #
 class nameServiceError(Exception):
     pass
+
+
+def legacy_transport_for(protocol):
+    """The value an un-upgraded client expects to see for _protocol_.
+
+    Clients that have not been upgraded read the ``transport`` field, so it
+    goes on being reported.  A protocol with no older equivalent reports its
+    own name: such a client cannot speak it under any label, and refusing
+    something it does not recognise is better than being handed 'xmlrpc' and
+    talking XML at a service that does not speak it.
+    """
+    try:
+        spec = ro.ro_transport.get(protocol)
+    except Exception:
+        return protocol
+    return spec.legacy_transport or spec.name
+
+
+def normalize_options(options, logger):
+    """Put a registration's options into the current shape.
+
+    Registrations arrive from services of two vintages.  A current one sends
+    ``protocol``, and ``encoding`` where its protocol has a choice to make.
+    An older one sends only ``transport`` -- a field named for the transport
+    that in fact held protocol names, which is why 'xmlrpc' sat in it
+    alongside 'socket'.  Its three possible values were the three transport
+    modules that existed, so the translation is complete.
+
+    :return: a dict with ``protocol``, ``encoding``, ``secure`` and ``keep``.
+    """
+    if isinstance(options, bool):
+        # Older still: options was the bare 'secure' flag.
+        logger.warning("Deprecated registration API used (options as bool)")
+        options = dict(secure=options)
+    elif not isinstance(options, dict):
+        raise nameServiceError("options argument (%s) should be a dict"
+                               % (options,))
+
+    protocol = options.get('protocol')
+    if protocol is None:
+        # An un-upgraded service.  Its 'transport' is a protocol name.
+        legacy = options.get('transport', ro.default_transport)
+        protocol = ro.ro_transport.resolve_legacy_transport(legacy)
+        logger.debug("registration without a protocol field; reading "
+                     "transport '%s' as protocol '%s'" % (legacy, protocol))
+
+    encoding = options.get('encoding')
+    try:
+        # Let the protocol say what it actually puts on the wire, rather
+        # than recording whatever the registrant's module default was.
+        encoding = ro.ro_transport.get(protocol).check_encoding(encoding)
+    except Exception:
+        # An unknown protocol is not this name service's business to refuse:
+        # it may simply be newer than we are.  Record it as given.
+        pass
+
+    return dict(protocol=protocol, encoding=encoding,
+                secure=options.get('secure', ro.default_secure),
+                keep=options.get('keep', False))
 
 
 class remoteObjectNameService:
@@ -86,26 +149,13 @@ class remoteObjectNameService:
                 else:
                     rec = dct[tag]
 
-                # TEMP: until we can deprecate former api
-                if isinstance(options, bool):
-                    self.logger.warn("Deprecated API used!")
-                    secure = options
-                    transport = ro.default_transport
-                    encoding = ro.default_encoding
-                    options = {}
-                elif isinstance(options, dict):
-                    secure = options.get('secure', ro.default_secure)
-                    transport = options.get('transport', ro.default_transport)
-                    encoding = options.get('encoding', ro.default_encoding)
-                else:
-                    raise nameServiceError("options argument (%s) should be a dict" % (
-                        str(options)))
+                opts = normalize_options(options, self.logger)
 
-                keep = options.get('keep', False)
                 rec.update(dict(name=name, host=host, port=port,
                                 registrar=registrar, pingtime=hosttime,
-                                transport=transport, encoding=encoding,
-                                secure=secure, keep=keep))
+                                protocol=opts['protocol'],
+                                encoding=opts['encoding'],
+                                secure=opts['secure'], keep=opts['keep']))
 
                 return rec
 
@@ -164,7 +214,7 @@ class remoteObjectNameService:
 
     def register_self(self):
         options = dict(secure=ro.default_secure,
-                       transport=ro.ns_transport,
+                       protocol=ro.ns_transport,
                        encoding=ro.ns_encoding,
                        keep=True)
 
@@ -260,14 +310,19 @@ class remoteObjectNameService:
                 host, port = key.split(':')
                 port = int(port)
                 secure = val_d.get('secure', ro.default_secure)
-                transport = val_d.get('transport', ro.default_transport)
-                encoding = val_d.get('encoding', ro.default_encoding)
+                protocol = val_d.get('protocol') or val_d.get(
+                    'transport', ro.default_transport)
+                encoding = val_d.get('encoding')
                 pingtime = val_d.get('pingtime', 0)
                 registrar = val_d['registrar']
                 keep = val_d.get('keep', False)
                 res.append(dict(name=name, host=host, port=port,
                                 secure=secure, keep=keep,
-                                transport=transport, encoding=encoding,
+                                protocol=protocol,
+                                # Deprecated, and still reported: this is the
+                                # field un-upgraded clients read.
+                                transport=legacy_transport_for(protocol),
+                                encoding=encoding,
                                 pingtime=pingtime, registrar=registrar))
 
         return res
@@ -304,8 +359,10 @@ class remoteObjectNameService:
         if env['registrar'] != self.myhost:
             self.logger.info("notified of service on another node: %s" % env['registrar'])
             for rec in env['names']:
-                options = {key: rec[key] for key in ['secure', 'transport',
-                                                     'encoding', 'keep']}
+                options = {key: rec[key]
+                           for key in ['secure', 'protocol', 'transport',
+                                       'encoding', 'keep']
+                           if key in rec}
                 self._register(rec['name'], rec['host'], rec['port'],
                                rec['registrar'], options, rec['pingtime'])
 

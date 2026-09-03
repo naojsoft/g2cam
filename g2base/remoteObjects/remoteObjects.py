@@ -220,9 +220,6 @@ class remoteObjectServer:
             self.authDict = None
 
         self.secure = secure
-        self.nsopts = { 'secure': secure, 'transport': transport,
-                        'encoding': encoding,
-                        }
         self.cert_file = cert_file
 
         self.usethread = usethread
@@ -243,6 +240,19 @@ class remoteObjectServer:
         self.__pid = os.getpid()
 
         self.spec = ro_transport.get(transport, encoding=encoding)
+
+        # What we tell the name service about ourselves.  'protocol' and
+        # 'encoding' describe what we actually speak; 'transport' is the
+        # field un-upgraded clients read, and carries the name they know this
+        # by -- or, for a protocol that has no old equivalent, the new name,
+        # which such a client cannot use under any label and will refuse
+        # legibly rather than mistake for something else.
+        self.nsopts = {'secure': secure,
+                       'protocol': self.spec.name,
+                       'encoding': self.spec.encoding,
+                       'transport': (self.spec.legacy_transport or
+                                     self.spec.name),
+                       }
 
         ssl_context = None
         if self.secure:
@@ -867,11 +877,17 @@ class _ProxyBase:
         speaks, so a set of providers for one name may legitimately not all
         speak the same thing.
         """
+        # 'protocol' is what a current name service reports; 'transport'
+        # is the older field, still emitted, whose values ro_transport
+        # translates.
+        protocol = rec.get('protocol') or rec.get('transport') \
+            or self.transport
+
         return remoteObjectClient(
             rec['host'], rec['port'], name=self.name, auth=self.auth,
             default_auth=False,
             secure=rec.get('secure', self.secure),
-            transport=rec.get('transport', self.transport),
+            transport=protocol,
             encoding=rec.get('encoding', self.encoding),
             timeout=self.timeout)
 
