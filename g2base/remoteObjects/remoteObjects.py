@@ -240,6 +240,9 @@ class remoteObjectServer:
         self.__pid = os.getpid()
 
         self.spec = ro_transport.get(transport, encoding=encoding)
+        # What the spec settled on: the requested encoding where the protocol
+        # offers a choice, its own otherwise.
+        self.encoding = self.spec.check_encoding(encoding)
 
         # What we tell the name service about ourselves.  'protocol' and
         # 'encoding' describe what we actually speak; 'transport' is the
@@ -249,7 +252,7 @@ class remoteObjectServer:
         # legibly rather than mistake for something else.
         self.nsopts = {'secure': secure,
                        'protocol': self.spec.name,
-                       'encoding': self.spec.encoding,
+                       'encoding': self.encoding,
                        'transport': (self.spec.legacy_transport or
                                      self.spec.name),
                        }
@@ -291,7 +294,7 @@ class remoteObjectServer:
             self.__own_executor = True
 
         self.server = RPCServerExecutor(self.rpc_transport,
-                                        self.spec.make_protocol(),
+                                        self.spec.make_protocol(self.encoding),
                                         self.dispatcher,
                                         self.executor,
                                         ev_quit=self.ev_quit)
@@ -710,8 +713,10 @@ class remoteObjectClient:
             self.auth = normalize_auth(auth, name=name,
                                        default_auth=default_auth)
             self.spec = ro_transport.get(transport, encoding=encoding)
+            self.encoding = self.spec.check_encoding(encoding)
             self.proxy = _ServiceProxy(self.spec, host, port, auth=self.auth,
-                                       secure=secure, timeout=timeout)
+                                       secure=secure, timeout=timeout,
+                                       encoding=self.encoding)
 
         except Exception as e:
             raise remoteObjectError(
@@ -742,19 +747,20 @@ class _ServiceProxy:
     """
 
     def __init__(self, spec, host, port, auth=None, secure=False,
-                 timeout=None):
+                 timeout=None, encoding=None):
         self.spec = spec
         self.host = host
         self.port = port
         self.auth = auth
         self.secure = secure
         self.timeout = timeout
+        self.encoding = encoding
 
     def call(self, attrname, args, kwdargs):
         transport = self.spec.make_client_transport(
             self.host, self.port, auth=self.auth, secure=self.secure,
             timeout=self.timeout)
-        client = RPCClient(self.spec.make_protocol(), transport)
+        client = RPCClient(self.spec.make_protocol(self.encoding), transport)
         return client.call(attrname, tuple(args), dict(kwdargs) or None)
 
 

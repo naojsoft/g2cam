@@ -68,6 +68,19 @@ def pack(envelope, pack_info):
     return packet
 
 
+def peek_packer(packet):
+    """Name the packer a packet was packed with, without unpacking it.
+
+    The header says which packer produced the payload, so a receiver can
+    answer in the encoding it was addressed in rather than imposing its own.
+
+    :param packet: bytes
+    :returns: the packer's name
+    """
+    hdr_buf, _, _payload = packet.partition(partition)
+    return json.loads(hdr_buf)['packer']
+
+
 def unpack(packet):
     """Unpack data from a byte buffer.
 

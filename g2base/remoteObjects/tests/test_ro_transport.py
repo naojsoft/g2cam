@@ -19,8 +19,8 @@ from g2base.remoteObjects import ro_config, ro_transport
 
 
 def test_the_shipped_transports_are_registered():
-    assert ro_transport.names() == ['jsonrpc', 'msgpackrpc', 'xmlrpc',
-                                    'xmlrpc-std']
+    assert ro_transport.names() == ['g2rpc', 'jsonrpc', 'msgpackrpc',
+                                    'xmlrpc', 'xmlrpc-std']
 
 
 def test_the_default_transport_resolves():
@@ -60,9 +60,12 @@ def test_a_fixed_encoding_is_not_a_constraint():
     'pickle', so merely switching default_transport to 'jsonrpc' -- which the
     registry advertises as available -- raised on every construction.
     """
-    for name in ro_transport.names():
+    fixed = [name for name in ro_transport.names()
+             if not ro_transport.get(name).encoding_is_selectable]
+    assert fixed, "there should still be some"
+
+    for name in fixed:
         spec = ro_transport.get(name)
-        assert not spec.encoding_is_selectable
         for encoding in ('pickle', 'json', 'msgpack', 'xml', None):
             assert ro_transport.get(name, encoding=encoding) is spec
 
@@ -103,6 +106,14 @@ def test_each_spec_records_what_it_puts_on_the_wire():
     assert ro_transport.get('xmlrpc').encoding == 'xml'
     assert ro_transport.get('jsonrpc').encoding == 'json'
     assert ro_transport.get('msgpackrpc').encoding == 'msgpack'
+
+
+def test_only_a_protocol_with_its_own_envelope_offers_a_choice():
+    """Which is the whole point of the distinction: a standardised protocol
+    has no encoding to choose, and g2rpc, whose envelope is ours, does."""
+    selectable = [name for name in ro_transport.names()
+                  if ro_transport.get(name).encoding_is_selectable]
+    assert selectable == ['g2rpc']
 
 
 def test_the_backward_compatible_spec_declares_its_old_name():

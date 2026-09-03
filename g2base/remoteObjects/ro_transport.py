@@ -27,6 +27,8 @@ from tinyrpc.protocols.xmlrpc import XMLRPCProtocol
 from tinyrpc.transports.http import HttpPostClientTransport
 from tinyrpc.transports.http_server import HttpServerTransport
 
+from . import ro_g2rpc
+
 
 class UnknownTransport(KeyError):
     """No spec is registered under the requested name."""
@@ -245,3 +247,15 @@ register(TransportSpec(
     content_type='application/msgpack', encoding='msgpack',
     description="msgpack-RPC over HTTP.  Compact and fast; carries keyword "
                 "arguments."))
+
+register(TransportSpec(
+    'g2rpc',
+    ro_g2rpc.G2RPCProtocol,
+    # The packed envelope names its own packer in its header, so the
+    # Content-Type has nothing to add.
+    content_type='application/octet-stream',
+    encoding=ro_g2rpc.DEFAULT_ENCODING,
+    encodings=ro_g2rpc.ENCODINGS,
+    description="Gen2's own protocol over HTTP, packed as msgpack, json or "
+                "xml.  The only one here whose encoding is a choice.  Not a "
+                "standard: only Gen2 speaks it."))
