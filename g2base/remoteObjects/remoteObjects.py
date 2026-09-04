@@ -189,16 +189,20 @@ def client_framing(spec, auth, service):
                                     sign_as=user, require=False)
 
 
-def server_framing(spec, authDict, service):
+def server_framing(spec, authDict, svcname):
     """What a service should sign with, or ``None`` if it should not.
 
     Strict, where the client is tolerant: a service with an authDict refuses
     anything unsigned.  That asymmetry is the point -- the sender is the one
     with something to prove.
+
+    The signature is bound to ``svcname`` because that is the only name a
+    caller can know: it is what the service registers under and what the
+    name service hands out.  A server's ``name`` is a thread label.
     """
     if not authDict or spec.auth_mechanism != 'signature':
         return None
-    return ro_g2rpc.signing_framing(authDict, service=service, require=True)
+    return ro_g2rpc.signing_framing(authDict, service=svcname, require=True)
 
 
 class remoteObjectServer:
@@ -315,6 +319,18 @@ class remoteObjectServer:
 
         self.spec = ro_transport.get(transport, encoding=encoding)
 
+        if (self.authDict and not self.svcname
+                and self.spec.auth_mechanism == 'signature'):
+            # A signature is bound to the service it was made for, so a call
+            # meant for one service cannot be replayed at another.  That
+            # needs a name both ends agree on, and the only such name is the
+            # registered one: `name` is a thread label that never leaves this
+            # process, so a caller has no way to arrive at it.
+            raise remoteObjectError(
+                "a service authenticating over '%s' signs against its "
+                "registered name, so it needs an svcname; this one has only "
+                "an authDict" % (self.spec.name,))
+
         if self.authDict and not self.spec.carries_credentials:
             # The authenticator would find no credentials on any request and
             # refuse every call, which looks like a network fault rather than
@@ -378,11 +394,7 @@ class remoteObjectServer:
                                               'server'))
             self.__own_executor = True
 
-        # The audience must be the name the *caller* used, since that is
-        # what its signature is bound to.  A client is given the service
-        # name, which is svcname where there is one and name otherwise.
-        framing = server_framing(self.spec, self.authDict,
-                                 self.svcname or self.name or '')
+        framing = server_framing(self.spec, self.authDict, self.svcname)
         self.server = RPCServerExecutor(self.rpc_transport,
                                         self.spec.make_protocol(self.encoding,
                                                                 framing=framing),

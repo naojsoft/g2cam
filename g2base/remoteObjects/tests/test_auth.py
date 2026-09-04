@@ -217,22 +217,40 @@ def test_a_service_signs_as_itself_when_it_holds_its_own_credential():
     assert framing.layers[0]._sign_as == b'status'
 
 
-def test_a_service_named_but_not_registered_still_binds_to_the_right_name():
-    """The audience has to be the name the caller used, since that is what
-    the caller's signature is bound to.  A service without an svcname is
-    known to its callers by its name, so that is what both ends must use."""
-    import logging
+def test_a_signing_service_needs_a_registered_name():
+    """The signature is bound to the service it was made for, so a call
+    meant for one cannot be replayed at another.  That needs a name both
+    ends agree on, and the only such name is the registered one -- a
+    server's `name` is a thread label that never leaves the process, so a
+    caller has no way to arrive at it.
 
-    logging.disable(logging.CRITICAL)
+    Saying so at construction beats binding to two different strings and
+    refusing every call.
+    """
+    with pytest.raises(ro.remoteObjectError) as excinfo:
+        ro.remoteObjectServer(svcname=None, name='named', obj=Service(),
+                              host=HOST, logger=ro.nullLogger(),
+                              transport='g2rpc-tcp',
+                              authDict={'named': 'pw'},
+                              method_list=['echo'])
+    assert 'svcname' in str(excinfo.value)
+
+
+def test_the_thread_label_has_no_say_in_it():
+    """`name` and `svcname` are different things, and only one is an
+    identity.  A service registered as 'real' is addressed as 'real' no
+    matter what its threads are called."""
     server = ro.remoteObjectServer(
-        svcname=None, name='named', obj=Service(), host=HOST,
+        svcname='real', name='a-thread-label', obj=Service(), host=HOST,
         logger=ro.nullLogger(), usethread=True, ns=False,
-        transport='g2rpc-tcp', authDict={'named': 'pw'},
-        method_list=['echo'])
+        transport='g2rpc-tcp', default_auth=True, method_list=['echo'])
     server.ro_start(wait=True, timeout=10)
     try:
-        assert client('g2rpc-tcp', server.port, ('named', 'pw'),
-                      svcname='named').echo('hi') == 'hi'
+        assert client('g2rpc-tcp', server.port, ('real', 'real'),
+                      svcname='real').echo('hi') == 'hi'
+        with pytest.raises(ro.remoteObjectError):
+            client('g2rpc-tcp', server.port, ('a-thread-label',
+                                              'a-thread-label'),
+                   svcname='a-thread-label').echo('hi')
     finally:
         server.ro_stop(wait=True, timeout=10)
-        logging.disable(logging.NOTSET)
