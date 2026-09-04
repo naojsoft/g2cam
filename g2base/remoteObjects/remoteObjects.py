@@ -48,7 +48,7 @@ from tinyrpc.client_multiplexing import MultiplexingRPCClient
 from tinyrpc.dispatch import RPCDispatcher
 from tinyrpc.server.executor import RPCServerExecutor
 
-from . import ro_endpoints, ro_executor, ro_transport
+from . import ro_endpoints, ro_executor, ro_g2rpc, ro_transport
 from .ro_config import *
 
 version = '20130801.0'
@@ -92,7 +92,53 @@ ro_methods = ['ro_echo', 'ro_list', 'ro_help', 'ro_help_all',
               'ro_setLogLevel', 'ro_workerStatus']
 
 
-def make_authenticator(authDict, logger):
+def make_authenticator(authDict, logger, mechanism='basic'):
+    """Build the server authenticator for how this spec proves callers.
+
+    Both mechanisms consult the same ``authDict``; what differs is what the
+    caller had to do to get past it.  With ``'basic'`` it sent the password,
+    and this compares it.  With ``'signature'`` it proved it holds the
+    password without sending it, and the framing has already checked that --
+    so all that is left here is whether the name it proved is one we know.
+    """
+    if mechanism == 'signature':
+        return make_signature_authenticator(authDict, logger)
+    return make_basic_authenticator(authDict, logger)
+
+
+def make_signature_authenticator(authDict, logger):
+    """Accept a request whose signature verified as a name we know.
+
+    Note how little is left to do.  The framing refused anything unsigned,
+    anything signed with a key we do not hold, anything altered on the way,
+    anything too old, and anything meant for a different service -- all
+    before the request reached the dispatcher.  A name arrives here only if
+    the caller demonstrably holds that name's secret, so there is no
+    password to compare and nothing to get subtly wrong.
+    """
+    def authenticate(context, request):
+        principal = getattr(request, 'principal', None)
+        if principal is None:
+            # Only reachable if the framing was built without requiring a
+            # signature, which the server does not do when it has an
+            # authDict.  Refuse rather than fall through to the credentials,
+            # which are a claim and prove nothing.
+            logger.error("Request arrived unsigned")
+            raise remoteObjectError(
+                "Service requires a signed request and none was signed")
+
+        if principal not in authDict:
+            logger.error("No user matching '%s'" % (principal,))
+            raise remoteObjectError(
+                "Service requires authentication; unknown caller '%s'"
+                % (principal,))
+
+        logger.debug("Authorized client '%s'" % (principal,))
+
+    return authenticate
+
+
+def make_basic_authenticator(authDict, logger):
     """Build a server authenticator that checks HTTP Basic credentials.
 
     The transport has already taken the credentials off the request and put
@@ -126,6 +172,33 @@ def make_authenticator(authDict, logger):
         logger.debug("Authorized client '%s'" % (username,))
 
     return authenticate
+
+
+def client_framing(spec, auth, service):
+    """What a client should sign with, or ``None`` if it should not sign.
+
+    Deliberately tolerant: it does not *require* a signed reply.  A service
+    that has no authDict signs nothing, and refusing its answers would make
+    turning authentication on at one end break the other -- while a service
+    that does sign is still verified, because the layer is there.
+    """
+    if auth is None or spec.auth_mechanism != 'signature':
+        return None
+    user, password = auth
+    return ro_g2rpc.signing_framing({user: password}, service=service,
+                                    sign_as=user, require=False)
+
+
+def server_framing(spec, authDict, service):
+    """What a service should sign with, or ``None`` if it should not.
+
+    Strict, where the client is tolerant: a service with an authDict refuses
+    anything unsigned.  That asymmetry is the point -- the sender is the one
+    with something to prove.
+    """
+    if not authDict or spec.auth_mechanism != 'signature':
+        return None
+    return ro_g2rpc.signing_framing(authDict, service=service, require=True)
 
 
 class remoteObjectServer:
@@ -305,14 +378,20 @@ class remoteObjectServer:
                                               'server'))
             self.__own_executor = True
 
+        # The audience must be the name the *caller* used, since that is
+        # what its signature is bound to.  A client is given the service
+        # name, which is svcname where there is one and name otherwise.
+        framing = server_framing(self.spec, self.authDict,
+                                 self.svcname or self.name or '')
         self.server = RPCServerExecutor(self.rpc_transport,
-                                        self.spec.make_protocol(self.encoding),
+                                        self.spec.make_protocol(self.encoding,
+                                                                framing=framing),
                                         self.dispatcher,
                                         self.executor,
                                         ev_quit=self.ev_quit)
         if self.authDict:
-            self.server.authenticator = make_authenticator(self.authDict,
-                                                           self.logger)
+            self.server.authenticator = make_authenticator(
+                self.authDict, self.logger, self.spec.auth_mechanism)
 
     def __bind(self, ssl_context):
         """Bind the listening socket, searching the service port range when
@@ -728,7 +807,8 @@ class remoteObjectClient:
             self.encoding = self.spec.check_encoding(encoding)
             self.proxy = _ServiceProxy(self.spec, host, port, auth=self.auth,
                                        secure=secure, timeout=timeout,
-                                       encoding=self.encoding)
+                                       encoding=self.encoding,
+                                       service=name)
 
         except Exception as e:
             raise remoteObjectError(
@@ -759,7 +839,7 @@ class _ServiceProxy:
     """
 
     def __init__(self, spec, host, port, auth=None, secure=False,
-                 timeout=None, encoding=None):
+                 timeout=None, encoding=None, service=''):
         self.spec = spec
         self.host = host
         self.port = port
@@ -769,6 +849,9 @@ class _ServiceProxy:
         self.encoding = encoding
         self._kept = None
         self._lock = threading.Lock()
+        # Built once.  Deriving a key from a password is deliberately slow,
+        # and a protocol is made per call.
+        self._framing = client_framing(spec, auth, service)
 
     def __transport(self):
         """The transport for this call.
@@ -794,8 +877,10 @@ class _ServiceProxy:
     def call(self, attrname, args, kwdargs):
         transport, disposable = self.__transport()
         try:
-            client = RPCClient(self.spec.make_protocol(self.encoding),
-                               transport)
+            client = RPCClient(
+                self.spec.make_protocol(self.encoding,
+                                        framing=self._framing),
+                transport)
             return client.call(attrname, tuple(args), dict(kwdargs) or None)
         finally:
             if disposable:
@@ -842,16 +927,22 @@ class multiplexingClient:
 
     :param transport: A transport whose spec supports multiplexing, which
         means one that holds its connection open.
+    :param auth: Credentials for the service, as elsewhere.  These carriers
+        could not authenticate at all until signing moved into the
+        protocol's envelope, so this had nothing to take before.
     """
 
     def __init__(self, host, port, name='<remote object>',
                  transport='g2rpc-tcp-persistent', encoding=None,
-                 timeout=None, logger=None):
+                 timeout=None, logger=None, auth=None,
+                 default_auth=use_default_auth):
         self.host = host
         self.port = port
         self.name = name
         self.timeout = timeout
         self.logger = logger if logger else nullLogger()
+        self.auth = normalize_auth(auth, name=name,
+                                   default_auth=default_auth)
 
         self.spec = ro_transport.get(transport, encoding=encoding)
         if not self.spec.supports_multiplexing:
@@ -865,7 +956,10 @@ class multiplexingClient:
         self.rpc_transport = self.spec.make_client_transport(
             host, port, timeout=timeout)
         self.client = MultiplexingRPCClient(
-            self.spec.make_protocol(self.encoding), self.rpc_transport)
+            self.spec.make_protocol(
+                self.encoding,
+                framing=client_framing(self.spec, self.auth, name)),
+            self.rpc_transport)
 
         self.ev_quit = threading.Event()
         self._thread = None

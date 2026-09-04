@@ -147,15 +147,27 @@ def test_http_specs_build_a_url():
 
 
 def test_a_carrier_declares_what_it_can_offer():
-    """Whether credentials can be carried, and whether it can be encrypted,
-    are properties of the carrier rather than the protocol."""
-    assert ro_transport.get('g2rpc').carries_credentials
+    """Encryption is a property of the carrier.  Authentication used to be
+    one too -- there is nowhere in a TCP or 0mq frame for an HTTP header --
+    but a protocol with an envelope of its own can sign inside it, so the
+    two questions have come apart."""
     assert ro_transport.get('g2rpc').supports_tls
 
     for name in ('g2rpc-tcp', 'g2rpc-zmq'):
         spec = ro_transport.get(name)
-        assert not spec.carries_credentials
-        assert not spec.supports_tls
+        assert not spec.supports_tls, "still no TLS on a bare socket"
+        assert spec.auth_mechanism == 'signature'
+        assert spec.carries_credentials, "but callers can prove themselves"
+
+
+def test_how_a_carrier_expects_a_caller_to_prove_itself():
+    """Two mechanisms, and which one a service uses is settled by the spec
+    rather than configured, so the ends cannot disagree."""
+    for name in ('xmlrpc', 'xmlrpc-std', 'jsonrpc', 'msgpackrpc'):
+        assert ro_transport.get(name).auth_mechanism == 'basic'
+
+    for name in ('g2rpc', 'g2rpc-tcp', 'g2rpc-tcp-persistent', 'g2rpc-zmq'):
+        assert ro_transport.get(name).auth_mechanism == 'signature'
 
 
 def test_secure_gives_an_https_url():

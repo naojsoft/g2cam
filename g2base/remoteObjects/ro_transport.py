@@ -99,16 +99,48 @@ class TransportSpec:
                 % (self.name, encoding, ', '.join(self.encodings)))
         return encoding
 
-    def make_protocol(self, encoding=None):
-        if not self.encoding_is_selectable:
-            return self.protocol_factory()
-        return self.protocol_factory(encoding=self.check_encoding(encoding))
+    def make_protocol(self, encoding=None, framing=None, credentials=None):
+        """Build a protocol instance for one end of one conversation.
 
-    #: Whether the carrier can convey a caller's credentials.  HTTP has a
-    #: header for it; a bare socket has nowhere to put them, so a service
-    #: asking for authentication over one would refuse every call.  Better to
-    #: say so when the service is built than to look like a network fault.
-    carries_credentials = True
+        ``framing`` and ``credentials`` are only meaningful to a protocol
+        that has an envelope of its own to put them in, which is exactly the
+        set that signs, so they are passed only to those.
+        """
+        kwargs = {}
+        if self.encoding_is_selectable:
+            kwargs['encoding'] = self.check_encoding(encoding)
+        if self.auth_mechanism == 'signature':
+            if framing is not None:
+                kwargs['framing'] = framing
+            if credentials is not None:
+                kwargs['credentials'] = credentials
+        return self.protocol_factory(**kwargs)
+
+    #: How a caller proves itself over this spec.
+    #:
+    #: ``'basic'``
+    #:     HTTP Basic: the transport lifts the credentials off the request
+    #:     and the service compares them against its ``authDict``.  The
+    #:     password crosses the wire on every call, so it is only as private
+    #:     as the connection -- which is what TLS is for, and why a bare
+    #:     socket cannot offer this at all.
+    #: ``'signature'``
+    #:     The caller signs the message with a key derived from the same
+    #:     ``authDict`` entry.  The secret does not travel, the signature
+    #:     covers the message, and stale ones expire -- and because it lives
+    #:     in the protocol's envelope rather than an HTTP header, it works
+    #:     over any carrier, including the ones that could not authenticate
+    #:     before.
+    #: ``None``
+    #:     No way to, so a service asking for authentication over it would
+    #:     refuse every call.  Better to say so when the service is built
+    #:     than to look like a network fault.
+    auth_mechanism = 'basic'
+
+    @property
+    def carries_credentials(self):
+        """Whether a caller can prove itself at all over this spec."""
+        return self.auth_mechanism is not None
 
     #: Whether the carrier can be encrypted.
     supports_tls = True
@@ -187,12 +219,13 @@ class TcpTransportSpec(TransportSpec):
       to be told apart on one connection.  In exchange the connection can
       die, so the client dials again when it does.
 
-    There is nowhere in a bare socket to put credentials, so a service
-    needing authentication wants the HTTP carrier -- or the credentials would
-    have to go in the envelope, as the old ro_socket transport put them.
+    A bare socket has nowhere to put HTTP credentials, so whether a service
+    can authenticate over one is now a question about the protocol rather
+    than the carrier: FlexRPC signs inside its own envelope and works here,
+    while anything relying on an HTTP header does not.
     """
 
-    carries_credentials = False
+    auth_mechanism = None
     supports_tls = False
 
     def __init__(self, *args, persistent=False, **kwargs):
@@ -231,12 +264,12 @@ class ZmqTransportSpec(TransportSpec):
     request until the connection is established rather than dropping it --
     the slow-joiner problem that afflicts PUB/SUB does not arise here.
 
-    Like the TCP carrier this has nowhere to put credentials, and it costs a
-    socket per call; what it buys is 0mq's queueing and its reach to peers
+    Like the TCP carrier it has nowhere to put HTTP credentials, and it costs
+    a socket per call; what it buys is 0mq's queueing and its reach to peers
     that already speak it.
     """
 
-    carries_credentials = False
+    auth_mechanism = None
     supports_tls = False
 
     # 0mq expects peers to last: a client that made a socket per call began
@@ -368,9 +401,31 @@ def make_ssl_context(cert_file):
 # The transports Gen2 ships with.
 # ---------------------------------------------------------------------------
 
-# Note that none of these declare selectable encodings: each is a
-# standardised protocol whose encoding its specification fixes.  g2rpc, whose
-# envelope is ours and therefore can be packed several ways, will.
+class _SigningSpec:
+    """Mixed into the specs whose protocol is FlexRPC.
+
+    Those authenticate inside their own envelope, so they can do it over any
+    carrier -- including 0mq and bare TCP, which had no way to before.
+    """
+
+    auth_mechanism = 'signature'
+
+
+class G2RPCHttpSpec(_SigningSpec, HttpTransportSpec):
+    pass
+
+
+class G2RPCTcpSpec(_SigningSpec, TcpTransportSpec):
+    pass
+
+
+class G2RPCZmqSpec(_SigningSpec, ZmqTransportSpec):
+    pass
+
+
+# Note that none of the standardised protocols declare selectable encodings:
+# each is a protocol whose encoding its specification fixes.  g2rpc, whose
+# envelope is ours and therefore can be packed several ways, does.
 
 register(HttpTransportSpec(
     'xmlrpc',
@@ -401,7 +456,7 @@ register(HttpTransportSpec(
     description="msgpack-RPC over HTTP.  Compact and fast; carries keyword "
                 "arguments."))
 
-register(HttpTransportSpec(
+register(G2RPCHttpSpec(
     'g2rpc',
     ro_g2rpc.G2RPCProtocol,
     # The packed envelope names its own packer in its header, so the
@@ -413,7 +468,7 @@ register(HttpTransportSpec(
                 "xml.  The only one here whose encoding is a choice.  Not a "
                 "standard: only Gen2 speaks it."))
 
-register(TcpTransportSpec(
+register(G2RPCTcpSpec(
     'g2rpc-tcp',
     ro_g2rpc.G2RPCProtocol,
     content_type='application/octet-stream',
@@ -424,7 +479,7 @@ register(TcpTransportSpec(
                 "framing.  Cheaper per call than the HTTP carrier, and "
                 "cannot carry credentials or be encrypted."))
 
-register(TcpTransportSpec(
+register(G2RPCTcpSpec(
     'g2rpc-tcp-persistent',
     ro_g2rpc.G2RPCProtocol,
     content_type='application/octet-stream',
@@ -435,7 +490,7 @@ register(TcpTransportSpec(
                 "open, so a client can keep several calls in flight at once. "
                 "The connection can die, so the client dials again."))
 
-register(ZmqTransportSpec(
+register(G2RPCZmqSpec(
     'g2rpc-zmq',
     ro_g2rpc.G2RPCProtocol,
     content_type='application/octet-stream',

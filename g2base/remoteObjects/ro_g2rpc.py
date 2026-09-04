@@ -149,6 +149,22 @@ def signing_framing(authDict, service: str = '', sign_as: str = None,
     """
     keys = {name: key_for(password, service)
             for name, password in authDict.items()}
+
+    if sign_as is None:
+        # A service signs its replies as itself where it holds its own
+        # credential, which is the ordinary case: authDict defaults to
+        # {svcname: svcname}.  Where it does not, and there is a choice, the
+        # caller has to say -- guessing would pick an identity, and the far
+        # end would then be unable to check what came back.
+        if service in keys:
+            sign_as = service
+        elif len(keys) == 1:
+            sign_as = next(iter(keys))
+        else:
+            raise ValueError(
+                "'%s' has several credentials and none of its own, so there "
+                "is no obvious one to sign as; name it" % (service,))
+
     return Framing(layers=[Signature(keys, sign_as=sign_as,
                                      audience=service or None)],
                    require=FLAG_SIGNED if require else 0)

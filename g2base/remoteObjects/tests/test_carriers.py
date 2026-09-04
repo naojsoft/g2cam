@@ -5,8 +5,10 @@
 
 g2rpc is registered over three carriers, so the same envelope and the same
 encodings run over HTTP, a bare TCP socket, or 0mq.  What differs between
-them is what the carrier can offer: HTTP has a header for credentials and can
-be encrypted, and the other two have neither.
+them is what the carrier can offer: HTTP can be encrypted and the other two
+cannot.  Authenticating used to divide them the same way; it no longer does,
+because the signature lives in the protocol's envelope rather than an HTTP
+header.
 
 Every carrier here dials once per call.  That is what makes a client and a
 service restartable in any order -- there is no held connection to go stale
@@ -25,8 +27,8 @@ HOST = '127.0.0.1'
 #: The carriers g2rpc is registered over.
 CARRIERS = ['g2rpc', 'g2rpc-tcp', 'g2rpc-zmq']
 
-#: Carriers with no way to convey a caller's credentials.
-NO_CREDENTIALS = ['g2rpc-tcp', 'g2rpc-zmq']
+#: The carriers with no HTTP header to put anything in.
+BARE_SOCKETS = ['g2rpc-tcp', 'g2rpc-zmq']
 
 
 class ServiceObject:
@@ -186,18 +188,49 @@ def test_the_carriers_are_registered():
         assert ro_transport.get(name).encoding_is_selectable
 
 
-@pytest.mark.parametrize('transport', NO_CREDENTIALS)
-def test_a_service_needing_credentials_refuses_a_carrier_without_them(
-        transport):
-    """A bare socket has nowhere to put credentials, so the authenticator
-    would find none and refuse every call.  Failing at construction says what
-    is actually wrong rather than looking like a network fault."""
-    with pytest.raises(ro.remoteObjectError) as excinfo:
-        ro.remoteObjectServer(svcname='authed', name='authed',
-                              obj=ServiceObject(), host=HOST,
-                              logger=ro.nullLogger(), transport=transport,
-                              method_list=['echo'])
-    assert 'cannot carry credentials' in str(excinfo.value)
+@pytest.mark.parametrize('transport', BARE_SOCKETS)
+def test_the_bare_socket_carriers_can_authenticate_after_all(transport):
+    """This used to fail at construction, and rightly: there is nowhere in a
+    TCP or 0mq frame to put an HTTP header, so the authenticator would have
+    found no credentials and refused every call.
+
+    Signing moved that into the protocol's own envelope, which travels
+    wherever the protocol does -- so the restriction is gone rather than
+    worked around."""
+    server = ro.remoteObjectServer(svcname='authed', name='authed',
+                                   obj=ServiceObject(), host=HOST,
+                                   logger=ro.nullLogger(),
+                                   transport=transport, usethread=True,
+                                   ns=False, default_auth=True,
+                                   method_list=['echo'])
+    server.ro_start(wait=True, timeout=10)
+    try:
+        client = ro.remoteObjectClient(HOST, server.port, name='authed',
+                                       auth=('authed', 'authed'),
+                                       default_auth=False,
+                                       transport=transport, timeout=10.0)
+        assert client.echo('hi') == 'hi'
+    finally:
+        server.ro_stop(wait=True, timeout=10)
+
+
+def test_a_carrier_with_no_way_to_authenticate_still_says_so():
+    """The check has not gone, only the set it applies to: a protocol
+    without an envelope of its own, on a bare socket, still cannot."""
+    spec = ro_transport.TcpTransportSpec('bare-tcp', object,
+                                         content_type='application/json',
+                                         encoding='json')
+    ro_transport.register(spec, replace=True)
+    try:
+        with pytest.raises(ro.remoteObjectError) as excinfo:
+            ro.remoteObjectServer(svcname='authed', name='authed',
+                                  obj=ServiceObject(), host=HOST,
+                                  logger=ro.nullLogger(),
+                                  transport='bare-tcp',
+                                  method_list=['echo'])
+        assert 'cannot carry credentials' in str(excinfo.value)
+    finally:
+        del ro_transport.registry['bare-tcp']
 
 
 def test_the_http_carrier_does_take_credentials(service):
@@ -214,7 +247,7 @@ def test_the_http_carrier_does_take_credentials(service):
         wrong.echo('hi')
 
 
-@pytest.mark.parametrize('transport', NO_CREDENTIALS)
+@pytest.mark.parametrize('transport', BARE_SOCKETS)
 def test_a_carrier_that_cannot_be_encrypted_says_so(transport):
     spec = ro_transport.get(transport)
     assert not spec.supports_tls
