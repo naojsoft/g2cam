@@ -24,7 +24,7 @@ import ssl
 from tinyrpc.protocols.jsonrpc import JSONRPCProtocol
 from tinyrpc.protocols.msgpackrpc import MSGPACKRPCProtocol
 from tinyrpc.protocols.xmlrpc import XMLRPCProtocol
-from tinyrpc.transports.http import HttpPostClientTransport
+from tinyrpc.transports.http_client import HttpClientTransport
 from tinyrpc.transports.http_server import HttpServerTransport
 from tinyrpc.transports.tcp import (ConnectionlessTcpClientTransport,
                                     ConnectionlessTcpServerTransport,
@@ -122,6 +122,15 @@ class TransportSpec:
     #: carry a correlation id.
     supports_multiplexing = False
 
+    #: Whether one client transport should be kept and reused for every call
+    #: rather than built per call.
+    #:
+    #: The connectionless carriers do not want this: building one costs
+    #: nothing, and holding nothing between calls is what lets a client and a
+    #: service restart in any order.  0mq does want it, because it expects
+    #: its peers to last and starts losing replies if they do not.
+    reuse_client_transport = False
+
     def make_server_transport(self, bindhost, port, **kwargs):
         raise NotImplementedError
 
@@ -159,14 +168,9 @@ class HttpTransportSpec(TransportSpec):
 
     def make_client_transport(self, host, port, auth=None, secure=False,
                               timeout=None, verify=True):
-        kwargs = {}
-        if auth is not None:
-            kwargs['auth'] = tuple(auth)
-        if timeout is not None:
-            kwargs['timeout'] = timeout
-        if secure:
-            kwargs['verify'] = verify
-        return HttpPostClientTransport(self.url(host, port, secure), **kwargs)
+        return HttpClientTransport(self.url(host, port, secure),
+                                   auth=auth, timeout=timeout, verify=verify,
+                                   content_type=self.content_type)
 
 
 class TcpTransportSpec(TransportSpec):
@@ -234,6 +238,11 @@ class ZmqTransportSpec(TransportSpec):
 
     carries_credentials = False
     supports_tls = False
+
+    # 0mq expects peers to last: a client that made a socket per call began
+    # losing replies after a few hundred of them.  One transport is kept and
+    # reused, and it keeps a socket per calling thread.
+    reuse_client_transport = True
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

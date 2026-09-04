@@ -767,19 +767,47 @@ class _ServiceProxy:
         self.secure = secure
         self.timeout = timeout
         self.encoding = encoding
+        self._kept = None
+        self._lock = threading.Lock()
+
+    def __transport(self):
+        """The transport for this call.
+
+        Most carriers build one per call: it costs nothing, and holding
+        nothing between calls is what makes a service restartable underneath
+        its clients.  0mq is the exception -- it expects its peers to last --
+        so its transport is made once and kept, and keeps a socket per
+        calling thread of its own accord.
+        """
+        if not self.spec.reuse_client_transport:
+            return self.spec.make_client_transport(
+                self.host, self.port, auth=self.auth, secure=self.secure,
+                timeout=self.timeout), True
+
+        with self._lock:
+            if self._kept is None:
+                self._kept = self.spec.make_client_transport(
+                    self.host, self.port, auth=self.auth, secure=self.secure,
+                    timeout=self.timeout)
+            return self._kept, False
 
     def call(self, attrname, args, kwdargs):
-        transport = self.spec.make_client_transport(
-            self.host, self.port, auth=self.auth, secure=self.secure,
-            timeout=self.timeout)
+        transport, disposable = self.__transport()
         try:
             client = RPCClient(self.spec.make_protocol(self.encoding),
                                transport)
             return client.call(attrname, tuple(args), dict(kwdargs) or None)
         finally:
-            # A transport built per call has to be released per call.  The
-            # HTTP and TCP ones hold nothing, but a 0mq socket would linger
-            # until the garbage collector noticed it.
+            if disposable:
+                close = getattr(transport, 'close', None)
+                if callable(close):
+                    close()
+
+    def close(self):
+        """Release a kept transport, if there is one."""
+        with self._lock:
+            transport, self._kept = self._kept, None
+        if transport is not None:
             close = getattr(transport, 'close', None)
             if callable(close):
                 close()
