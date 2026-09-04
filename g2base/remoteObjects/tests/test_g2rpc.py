@@ -103,18 +103,27 @@ def test_an_unknown_encoding_is_refused():
     assert 'msgpack, json, xml' in str(excinfo.value)
 
 
+def _encoding_of(packet):
+    """Which encoding a packet says it used.
+
+    It is a byte of the framing header now, where it used to be a field in a
+    JSON header wrapped around the body."""
+    from tinyrpc.serializers import serializer_by_id
+    return serializer_by_id(packet[4]).name
+
+
 def test_a_reply_is_packed_the_way_the_request_was():
-    """The packed format names its own packer, so both ends can read
-    anything.  Answering in the caller's encoding saves it decoding something
-    it never asked for."""
+    """The envelope names its own encoding, so both ends can read anything.
+    Answering in the caller's saves it decoding something it never asked
+    for."""
     caller = ro_g2rpc.G2RPCProtocol(encoding='json')
     callee = ro_g2rpc.G2RPCProtocol(encoding='msgpack')
 
     request = caller.create_request('add', (1, 2), None).serialize()
-    assert ro_packer.peek_packer(request) == 'json'
+    assert _encoding_of(request) == 'json'
 
     reply = callee.parse_request(request).respond(3).serialize()
-    assert ro_packer.peek_packer(reply) == 'json'
+    assert _encoding_of(reply) == 'json'
     assert caller.parse_reply(reply).result == 3
 
 
@@ -144,15 +153,27 @@ def test_a_corrupt_message_is_refused():
 
 
 def test_an_envelope_from_the_future_is_refused():
-    """Refusing an unknown version beats guessing at its shape."""
-    from g2base import Bunch
-    packed = ro_packer.pack({'v': ro_g2rpc.ENVELOPE_VERSION + 1,
-                             'type': 'request', 'id': 1, 'method': 'x',
-                             'args': [], 'kwargs': {}},
-                            Bunch.Bunch(ptype='msgpack'))
+    """Refusing an unknown version beats guessing at its shape.
+
+    There are two versions now and they move independently: the envelope's,
+    and the body's inside it.  Both are header bytes, so both are checked
+    before anything is decoded."""
+    from tinyrpc import framing
+    from tinyrpc.protocols.flexrpc import BODY_VERSION
+
     protocol = ro_g2rpc.G2RPCProtocol()
+    good = protocol.create_request('x', (), None).serialize()
+
+    newer_body = bytearray(good)
+    newer_body[5] = BODY_VERSION + 1
     with pytest.raises(Exception) as excinfo:
-        protocol.parse_request(packed)
+        protocol.parse_request(bytes(newer_body))
+    assert 'version' in str(excinfo.value)
+
+    newer_envelope = bytearray(good)
+    newer_envelope[2] = framing.VERSION + 1
+    with pytest.raises(Exception) as excinfo:
+        protocol.parse_request(bytes(newer_envelope))
     assert 'version' in str(excinfo.value)
 
 
