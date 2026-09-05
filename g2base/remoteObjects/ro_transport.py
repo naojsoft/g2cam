@@ -61,9 +61,18 @@ class TransportSpec:
         reject.  Only a protocol built around an interchangeable packer,
         such as ``g2rpc``, genuinely has the choice, and only those declare
         it here.
-    :param legacy_transport: The value the old ``transport`` field used for
-        this, if any, so that registrations from un-upgraded services still
-        resolve and un-upgraded clients still recognise it.
+    :param legacy_transport: The name an un-upgraded *client* can use to
+        speak this correctly, if there is one.
+
+        Only a protocol that is wire-compatible with what such a client
+        already speaks has one, which in practice means XML-RPC.  Reading an
+        old *registration* is the other direction and a separate map
+        (:py:data:`legacy_transport_names`): an old service registering
+        'socket' meant the old socket module, and that name resolves to
+        g2rpc-tcp because that is what now listens there -- but telling an
+        old client 'socket' would send it to a module speaking a format
+        g2rpc-tcp does not, which is worse than telling it a name it does
+        not know.
     """
 
     def __init__(self, name, protocol_factory, content_type,
@@ -141,6 +150,26 @@ class TransportSpec:
     def carries_credentials(self):
         """Whether a caller can prove itself at all over this spec."""
         return self.auth_mechanism is not None
+
+    #: What must be importable for this spec to work, or ``None``.
+    requires_module = None
+
+    @classmethod
+    def available(cls):
+        """Whether this end can actually speak it.
+
+        A spec can be registered and still be unusable here: 0mq needs
+        pyzmq, which is not everywhere.  Being able to ask matters once a
+        client chooses among the protocols a service offers -- picking one
+        it cannot load would turn a working call into an ImportError.
+        """
+        if cls.requires_module is None:
+            return True
+        try:
+            __import__(cls.requires_module)
+        except ImportError:
+            return False
+        return True
 
     #: Whether the carrier can be encrypted.
     supports_tls = True
@@ -271,6 +300,7 @@ class ZmqTransportSpec(TransportSpec):
 
     auth_mechanism = None
     supports_tls = False
+    requires_module = 'zmq'
 
     # 0mq expects peers to last: a client that made a socket per call began
     # losing replies after a few hundred of them.  One transport is kept and
@@ -333,11 +363,18 @@ def register(spec, replace=False):
     return spec
 
 
-#: What the old ``transport`` field's values mean now.
+#: What the old ``transport`` field's values mean now, when *reading* a
+#: registration written by an un-upgraded service.
 #:
 #: That field was named for the transport but held protocol names, which is
 #: why 'xmlrpc' sat alongside 'socket'.  Its three possible values were the
 #: three modules that existed, so the translation is complete.
+#:
+#: This is one-way.  Writing the field is
+#: :py:attr:`TransportSpec.legacy_transport`, and the two disagree on
+#: purpose: 'socket' resolves to g2rpc-tcp because that is what listens
+#: there now, but g2rpc-tcp does not report 'socket', because an old client
+#: told that would use a module speaking a different format.
 legacy_transport_names = {
     'xmlrpc': 'xmlrpc',
     'socket': 'g2rpc-tcp',
@@ -474,7 +511,6 @@ register(G2RPCTcpSpec(
     content_type='application/octet-stream',
     encoding=ro_g2rpc.DEFAULT_ENCODING,
     encodings=ro_g2rpc.ENCODINGS,
-    legacy_transport='socket',
     description="Gen2's own protocol straight over TCP, with no HTTP "
                 "framing.  Cheaper per call than the HTTP carrier, and "
                 "cannot carry credentials or be encrypted."))
@@ -496,6 +532,5 @@ register(G2RPCZmqSpec(
     content_type='application/octet-stream',
     encoding=ro_g2rpc.DEFAULT_ENCODING,
     encodings=ro_g2rpc.ENCODINGS,
-    legacy_transport='zmqrpc',
     description="Gen2's own protocol over 0mq request/reply.  Like the TCP "
                 "carrier it cannot carry credentials or be encrypted."))

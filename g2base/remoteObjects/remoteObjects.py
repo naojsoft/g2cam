@@ -174,6 +174,75 @@ def make_basic_authenticator(authDict, logger):
     return authenticate
 
 
+#: Which way in a client takes when a service offers several, best first.
+#:
+#: Ordered by what they measure at on the same machine: 0mq about 8000
+#: calls a second, a bare TCP socket 4800, and either HTTP-carried protocol
+#: about 2100, where the HTTP framing rather than the encoding is the cost.
+#: A protocol this end cannot load -- 0mq without pyzmq -- is skipped, so
+#: the list can name more than any one caller has installed.
+#:
+#: 'g2rpc-tcp-persistent' is deliberately absent: holding a connection open
+#: is what makes multiplexing possible and what makes a connection able to
+#: go stale, and that is a choice to make deliberately rather than to fall
+#: into by being offered it.
+default_protocol_preference = ['g2rpc-zmq', 'g2rpc-tcp', 'g2rpc',
+                               'msgpackrpc', 'jsonrpc', 'xmlrpc']
+
+
+def endpoints_in(rec):
+    """Every way into the service one registration describes, primary first.
+
+    :return: a list of ``(protocol, port, encoding)``.
+    """
+    primary = (rec.get('protocol') or rec.get('transport'),
+               rec['port'], rec.get('encoding'))
+    ways = [primary]
+    for alt in rec.get('alternates') or ():
+        ways.append((alt.get('protocol'), alt.get('port'),
+                     alt.get('encoding')))
+    return [w for w in ways if w[0] and w[1]]
+
+
+def choose_endpoint(rec, prefer=None, logger=None):
+    """Pick the way in to use, from what a registration offers.
+
+    The primary is the fallback rather than the default: it is chosen to be
+    what an un-upgraded caller can speak, which is by definition the oldest
+    thing on offer.  A caller that knows better should say so.
+
+    :param prefer: Protocol names, best first.
+    :return: ``(protocol, port, encoding)``.
+    """
+    ways = endpoints_in(rec)
+    if not ways:
+        raise remoteObjectError("registration for '%s' names no endpoint"
+                                % (rec.get('name'),))
+    if len(ways) == 1:
+        return ways[0]
+
+    offered = {protocol: (protocol, port, encoding)
+               for protocol, port, encoding in ways}
+    for name in (prefer if prefer is not None
+                 else default_protocol_preference):
+        way = offered.get(name)
+        if way is None:
+            continue
+        try:
+            if not ro_transport.get(name).available():
+                if logger:
+                    logger.debug("'%s' is offered but not installed here"
+                                 % (name,))
+                continue
+        except Exception:
+            continue            # newer than us
+        return way
+
+    # Nothing preferred was on offer, or none of it was usable.  The primary
+    # is what everything can speak.
+    return ways[0]
+
+
 def client_framing(spec, auth, service):
     """What a client should sign with, or ``None`` if it should not sign.
 
@@ -223,7 +292,8 @@ class remoteObjectServer:
                  encoding=default_encoding,
                  authDict=None, default_auth=use_default_auth,
                  secure=default_secure, cert_file=default_cert,
-                 ns=None, method_list=None, method_prefix=None):
+                 ns=None, method_list=None, method_prefix=None,
+                 alternates=None):
 
         self.svcname = svcname
         self.name = name
@@ -357,6 +427,10 @@ class remoteObjectServer:
                        'transport': (self.spec.legacy_transport or
                                      self.spec.name),
                        }
+        # Other ways into this same service, if it is listening more than one
+        # way.  Set by multiProtocolServer, which owns the other listeners;
+        # a server on its own has none.
+        self.alternates = list(alternates or ())
 
         ssl_context = None
         if self.secure:
@@ -608,13 +682,25 @@ class remoteObjectServer:
     def ro_get_pid(self):
         return self.__pid
 
+    def __nsopts(self):
+        """What to tell the name service, as of now.
+
+        Built per call rather than once: a sibling listener's port is only
+        settled when it has bound, which may be after this server was
+        constructed.
+        """
+        opts = dict(self.nsopts)
+        if self.alternates:
+            opts['alternates'] = [dict(a) for a in self.alternates]
+        return opts
+
     def __ns_register(self):
         # If a nameserver is defined and we have a servicename, try to
         # register our service
         if self.svcname and self.ns:
             try:
                 self.ns.register(self.svcname, self.host, self.port,
-                                 self.nsopts)
+                                 self.__nsopts())
 
             except remoteObjectError as e:
                 if self.strict_registration:
@@ -629,7 +715,7 @@ class remoteObjectServer:
             if (now - self.lastpingtime) > self.pinginterval:
                 try:
                     self.ns.ping(self.svcname, self.host, self.port,
-                                 self.nsopts, now)
+                                 self.__nsopts(), now)
 
                 except remoteObjectError as e:
                     #if self.strict_registration:
@@ -910,6 +996,110 @@ class _ServiceProxy:
                 close()
 
 
+class multiProtocolServer:
+    """One service, listening several ways at once.
+
+    A service can only be spoken to in the protocol it was started with, so
+    upgrading one has meant upgrading everything that calls it on the same
+    day.  This lets it listen on several at once -- XML-RPC for whatever has
+    not been upgraded, something faster for whatever has -- as one service
+    rather than as several providers of it.
+
+    That distinction matters.  Registering each listener separately would
+    make them look like independent providers, and a proxy would treat them
+    as alternatives to fail over between: a call that failed on one would be
+    retried on another port of the same process, which is not failover at
+    all.  So one registration carries the primary endpoint and the rest as
+    *alternates*, and a caller picks among them.
+
+    The first transport is the primary, and an un-upgraded client is handed
+    it and nothing else, because such a client reads the top-level fields
+    and knows nothing of alternates.  So put the most widely spoken protocol
+    first -- 'xmlrpc' unless every caller is known to be current.
+
+    The listeners share the served object and its method list; they differ
+    only in how they are reached.
+
+    :param transports: Protocol names, primary first.
+    :param ports: Ports to bind, in the same order.  A missing or ``None``
+        entry searches the service range, as a single server does.
+    """
+
+    def __init__(self, svcname=None, obj=None, transports=(), ports=(),
+                 logger=None, ns=None, **kwargs):
+        if len(transports) < 2:
+            raise remoteObjectError(
+                "a multi-protocol server wants more than one transport; use "
+                "remoteObjectServer for one")
+
+        self.svcname = svcname
+        self.logger = logger if logger else nullLogger()
+        ports = list(ports) + [None] * (len(transports) - len(ports))
+
+        for name in transports:
+            # Fail here rather than half-way through binding.
+            ro_transport.get(name)
+
+        # The secondaries never register: they are the same service, and the
+        # primary speaks for all of them.
+        self.servers = [
+            remoteObjectServer(svcname=svcname, obj=obj, logger=self.logger,
+                               transport=name, port=port, ns=False, **kwargs)
+            for name, port in zip(transports[1:], ports[1:])]
+
+        self.primary = remoteObjectServer(
+            svcname=svcname, obj=obj, logger=self.logger,
+            transport=transports[0], port=ports[0], ns=ns, **kwargs)
+        # Filled in once the secondaries have bound and know their ports.
+        self.primary.alternates = []
+
+    @property
+    def port(self):
+        """The primary's port, which is what an un-upgraded caller uses."""
+        return self.primary.port
+
+    @property
+    def ports(self):
+        """Every port this service is listening on, primary first."""
+        return [self.primary.port] + [s.port for s in self.servers]
+
+    def ro_start(self, wait=True, timeout=None):
+        """Start every listener, secondaries first.
+
+        The primary registers as it starts, and the registration has to name
+        ports the secondaries have actually bound -- so they go first, and
+        the primary is told about them before it announces anything.
+        """
+        for server in self.servers:
+            server.ro_start(wait=True, timeout=timeout)
+
+        self.primary.alternates = [
+            dict(protocol=server.spec.name, port=server.port,
+                 encoding=server.encoding)
+            for server in self.servers]
+
+        self.primary.ro_start(wait=wait, timeout=timeout)
+
+    def ro_stop(self, wait=True, timeout=None):
+        """Stop the primary first, so it unregisters before anything stops
+        answering."""
+        errors = []
+        for server in [self.primary] + self.servers:
+            try:
+                server.ro_stop(wait=wait, timeout=timeout)
+            except Exception as e:
+                errors.append(e)
+        if errors:
+            raise remoteObjectError("failed to stop cleanly: %s"
+                                    % ('; '.join(str(e) for e in errors),))
+
+    def __repr__(self):
+        return '<multiProtocolServer %s on %s>' % (
+            self.svcname,
+            ', '.join('%s:%s' % (s.spec.name, s.port)
+                      for s in [self.primary] + self.servers))
+
+
 class multiplexingClient:
     """A handle that keeps several calls in flight over one connection.
 
@@ -1115,8 +1305,12 @@ class _ProxyBase:
     def __init__(self, name, hostports=None, ns=None, auth=None,
                  logger=None, default_auth=use_default_auth,
                  secure=default_secure, transport=default_transport,
-                 encoding=default_encoding, timeout=None):
+                 encoding=default_encoding, timeout=None, prefer=None):
         self.name = name
+        #: Which way in to take when a provider offers several.  ``None``
+        #: means :py:data:`default_protocol_preference`; an explicit list
+        #: pins it, and an empty one takes whatever the primary is.
+        self.prefer = prefer
         # Per-instance: a hostports entry may carry its own credentials, and
         # sharing that map between proxies would leak one service's
         # credentials into another's calls.
@@ -1159,22 +1353,24 @@ class _ProxyBase:
     def __client_for_record(self, rec):
         """Build a client from one name service registration.
 
-        The registration says which transport and encoding that provider
-        speaks, so a set of providers for one name may legitimately not all
-        speak the same thing.
+        Two independent things are going on.  A name may have several
+        *providers*, on different hosts, and those are alternatives to fail
+        over between -- that is what the list of records is.  One provider
+        may offer several *ways in*, which are the same service and not
+        alternatives at all; choosing among those happens here.
+
+        Each registration says what its provider speaks, so providers of one
+        name need not all speak the same thing.
         """
-        # 'protocol' is what a current name service reports; 'transport'
-        # is the older field, still emitted, whose values ro_transport
-        # translates.
-        protocol = rec.get('protocol') or rec.get('transport') \
-            or self.transport
+        protocol, port, encoding = choose_endpoint(
+            rec, prefer=self.prefer, logger=self.logger)
 
         return remoteObjectClient(
-            rec['host'], rec['port'], name=self.name, auth=self.auth,
+            rec['host'], port, name=self.name, auth=self.auth,
             default_auth=False,
             secure=rec.get('secure', self.secure),
-            transport=protocol,
-            encoding=rec.get('encoding', self.encoding),
+            transport=protocol or self.transport,
+            encoding=encoding if encoding is not None else self.encoding,
             timeout=self.timeout)
 
     def __str__(self):

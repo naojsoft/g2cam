@@ -67,6 +67,48 @@ def legacy_transport_for(protocol):
     return spec.legacy_transport or spec.name
 
 
+def normalize_alternates(alternates, logger):
+    """Put a registration's *other* ways in.
+
+    A service may listen on several protocols at once -- XML-RPC for
+    whatever has not been upgraded, something faster for whatever has.  They
+    are one service, not several providers of it, so they belong on one
+    registration rather than as separate entries that a caller would treat
+    as alternatives to fail over between.
+
+    A malformed entry is dropped rather than refused.  The registration as a
+    whole is still good, and losing one way in beats losing the service.
+
+    :return: a list of dicts with ``protocol``, ``port`` and ``encoding``.
+    """
+    if not alternates:
+        return []
+    if not isinstance(alternates, (list, tuple)):
+        logger.warning("registration's alternates (%s) should be a list; "
+                       "ignoring them" % (alternates,))
+        return []
+
+    kept = []
+    for entry in alternates:
+        if not isinstance(entry, dict):
+            logger.warning("ignoring malformed alternate %s" % (entry,))
+            continue
+        protocol, port = entry.get('protocol'), entry.get('port')
+        if not isinstance(protocol, str) or not isinstance(port, int):
+            logger.warning("ignoring alternate without a protocol and port: "
+                           "%s" % (entry,))
+            continue
+
+        encoding = entry.get('encoding')
+        try:
+            encoding = ro.ro_transport.get(protocol).check_encoding(encoding)
+        except Exception:
+            pass                # newer than us, or not ours to refuse
+
+        kept.append(dict(protocol=protocol, port=port, encoding=encoding))
+    return kept
+
+
 def normalize_options(options, logger):
     """Put a registration's options into the current shape.
 
@@ -77,7 +119,8 @@ def normalize_options(options, logger):
     alongside 'socket'.  Its three possible values were the three transport
     modules that existed, so the translation is complete.
 
-    :return: a dict with ``protocol``, ``encoding``, ``secure`` and ``keep``.
+    :return: a dict with ``protocol``, ``encoding``, ``secure``, ``keep``
+        and ``alternates``.
     """
     if isinstance(options, bool):
         # Older still: options was the bare 'secure' flag.
@@ -107,7 +150,9 @@ def normalize_options(options, logger):
 
     return dict(protocol=protocol, encoding=encoding,
                 secure=options.get('secure', ro.default_secure),
-                keep=options.get('keep', False))
+                keep=options.get('keep', False),
+                alternates=normalize_alternates(options.get('alternates'),
+                                                logger))
 
 
 class remoteObjectNameService:
@@ -155,7 +200,8 @@ class remoteObjectNameService:
                                 registrar=registrar, pingtime=hosttime,
                                 protocol=opts['protocol'],
                                 encoding=opts['encoding'],
-                                secure=opts['secure'], keep=opts['keep']))
+                                secure=opts['secure'], keep=opts['keep'],
+                                alternates=opts['alternates']))
 
                 return rec
 
@@ -323,6 +369,11 @@ class remoteObjectNameService:
                                 # field un-upgraded clients read.
                                 transport=legacy_transport_for(protocol),
                                 encoding=encoding,
+                                # The other ways into the same service.  A
+                                # client that does not know to look finds
+                                # the top-level fields as before, which is
+                                # why the primary is the compatible one.
+                                alternates=val_d.get('alternates', []),
                                 pingtime=pingtime, registrar=registrar))
 
         return res
