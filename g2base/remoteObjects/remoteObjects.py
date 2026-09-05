@@ -946,31 +946,49 @@ class _ServiceProxy:
         self.timeout = timeout
         self.encoding = encoding
         self._kept = None
+        # Per-thread transports, and every one handed out, so close() can
+        # reach the ones belonging to threads that have since gone.
+        self._mine = threading.local()
+        self._all = []
         self._lock = threading.Lock()
         # Built once.  Deriving a key from a password is deliberately slow,
         # and a protocol is made per call.
         self._framing = client_framing(spec, auth, service)
 
-    def __transport(self):
-        """The transport for this call.
+    def __build(self):
+        return self.spec.make_client_transport(
+            self.host, self.port, auth=self.auth, secure=self.secure,
+            timeout=self.timeout)
 
-        Most carriers build one per call: it costs nothing, and holding
-        nothing between calls is what makes a service restartable underneath
-        its clients.  0mq is the exception -- it expects its peers to last --
-        so its transport is made once and kept, and keeps a socket per
-        calling thread of its own accord.
+    def __transport(self):
+        """The transport for this call, and whether to close it afterwards.
+
+        Three shapes, and which one a carrier wants is its own business:
+
+        * **built per call**, for the connectionless carriers.  It costs
+          nothing, and holding nothing between calls is what makes a service
+          restartable underneath its clients.
+        * **one, shared**, for 0mq: it expects its peers to last, and keeps a
+          socket per calling thread inside the transport already.
+        * **one per calling thread**, for a held TCP connection.  It has no
+          way to tell replies apart, so two threads sharing one would take
+          each other's answers; a thread that does not share cannot.
         """
         if not self.spec.reuse_client_transport:
-            return self.spec.make_client_transport(
-                self.host, self.port, auth=self.auth, secure=self.secure,
-                timeout=self.timeout), True
+            return self.__build(), True
 
-        with self._lock:
-            if self._kept is None:
-                self._kept = self.spec.make_client_transport(
-                    self.host, self.port, auth=self.auth, secure=self.secure,
-                    timeout=self.timeout)
-            return self._kept, False
+        if not self.spec.client_transport_per_thread:
+            with self._lock:
+                if self._kept is None:
+                    self._kept = self.__build()
+                return self._kept, False
+
+        transport = getattr(self._mine, 'transport', None)
+        if transport is None:
+            transport = self._mine.transport = self.__build()
+            with self._lock:
+                self._all.append(transport)
+        return transport, False
 
     def call(self, attrname, args, kwdargs):
         transport, disposable = self.__transport()
@@ -979,7 +997,13 @@ class _ServiceProxy:
                 self.spec.make_protocol(self.encoding,
                                         framing=self._framing),
                 transport)
-            return client.call(attrname, tuple(args), dict(kwdargs) or None)
+            # The timeout has to reach the transport.  A carrier that dials
+            # per call fails at connect when a service is down, so nothing
+            # noticed this; one that holds its connection sends into a
+            # socket that is still open and then waits, and without a bound
+            # it waits for a reply that cannot come.
+            return client.call(attrname, tuple(args), dict(kwdargs) or None,
+                               timeout=self.timeout)
         finally:
             if disposable:
                 close = getattr(transport, 'close', None)
@@ -987,13 +1011,19 @@ class _ServiceProxy:
                     close()
 
     def close(self):
-        """Release a kept transport, if there is one."""
+        """Release every transport this proxy is holding."""
         with self._lock:
-            transport, self._kept = self._kept, None
-        if transport is not None:
+            kept, self._kept = self._kept, None
+            mine, self._all = self._all, []
+            self._mine = threading.local()
+
+        for transport in ([kept] if kept is not None else []) + mine:
             close = getattr(transport, 'close', None)
             if callable(close):
-                close()
+                try:
+                    close()
+                except Exception:
+                    pass
 
 
 class multiProtocolServer:

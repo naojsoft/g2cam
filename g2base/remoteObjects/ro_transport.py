@@ -192,6 +192,18 @@ class TransportSpec:
     #: its peers to last and starts losing replies if they do not.
     reuse_client_transport = False
 
+    #: Whether a reused client transport needs to be one *per calling
+    #: thread* rather than one shared between them.
+    #:
+    #: A held TCP connection carries no way to tell replies apart, so a
+    #: thread waiting on one takes whichever arrives first -- possibly
+    #: another thread's.  Sorting that out is what a correlation id and
+    #: :py:class:`~tinyrpc.client_multiplexing.MultiplexingRPCClient` are
+    #: for; an ordinary client avoids the question by not sharing.  0mq
+    #: keeps a socket per thread inside the transport already, so its one
+    #: object is safe to share.
+    client_transport_per_thread = False
+
     def make_server_transport(self, bindhost, port, **kwargs):
         raise NotImplementedError
 
@@ -263,6 +275,21 @@ class TcpTransportSpec(TransportSpec):
 
     @property
     def supports_multiplexing(self):
+        return self.persistent
+
+    @property
+    def reuse_client_transport(self):
+        """Hold the connection when there is one to hold.
+
+        Building this per call was strictly worse than the connectionless
+        carrier: it paid for a connection *and* a reader thread, then threw
+        both away -- so the transport named "persistent" was the slowest of
+        the three.
+        """
+        return self.persistent
+
+    @property
+    def client_transport_per_thread(self):
         return self.persistent
 
     def make_server_transport(self, bindhost, port, logger=None,

@@ -1,6 +1,7 @@
 from collections.abc import Mapping
 import ast
-import pprint
+
+import yaml
 
 from g2base import Bunch
 
@@ -46,14 +47,42 @@ class NestedBunch:
                 self._lload(newpath, value)
 
 
+    def _to_plain(self, sb):
+        """The tree as plain nested dicts, which is what gets written.
+
+        The nodes are Bunches; yaml has no idea what one is, and would
+        not be readable if it did.
+        """
+        out = {}
+        for key in sb.keys():
+            value = sb[key]
+            out[key] = self._to_plain(value) if isinstance(value, Klass) \
+                else value
+        return out
+
+
     def writeout(self, filepath):
         with open(filepath, 'w') as out_f:
-            out_f.write(pprint.pformat(self.sb, indent=2))
+            yaml.safe_dump(self._to_plain(self.sb), out_f,
+                           default_flow_style=False)
 
 
     def readin(self, filepath):
         with open(filepath, 'r') as in_f:
-            d = ast.literal_eval(in_f.read())
+            text = in_f.read()
+
+        # A file written before this was yaml is a python repr on one
+        # line -- pprint calls repr() on a Bunch rather than descending
+        # into it -- and it has to be read as one.  yaml would take it
+        # without complaining and get it wrong: None comes back as the
+        # string 'None', and a tuple (1, 2) becomes the value '(1' plus
+        # a key '2)'.  Block-style yaml never begins with a brace, so
+        # the first character says which this is.
+        stripped = text.lstrip()
+        if stripped.startswith('{'):
+            d = ast.literal_eval(stripped)
+        else:
+            d = yaml.safe_load(text) or {}
 
         # update
         self._lload(None, d)
