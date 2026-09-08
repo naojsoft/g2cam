@@ -408,25 +408,52 @@ def test_documented_fault_code_differences(make_server, client_call):
     assert new_missing.value.faultString == 'Method not found'
 
 
-def test_multicall_is_refused_by_both(make_server):
-    """Batch is disabled on the new stack, which matches the old one.
+def test_multicall_is_answered_by_the_new_stack_only(make_server):
+    """Batching is something the new stack adds, not something it changes.
 
-    A stdlib XML-RPC server only answers system.multicall when
+    A stdlib XML-RPC server only answers system.multicall once
     register_multicall_functions() has been called, and ro_XMLRPC never
-    called it, so the old side had no system.multicall either.  Disabling it
-    is therefore not a compatibility loss.
+    called it -- so batching against an un-upgraded Gen2 service never
+    worked, and a caller that batches has to know it is talking to an
+    upgraded one.  Nothing that used to work stops working.
     """
     body = xmlrpc.client.dumps(
         ([{'methodName': 'echo', 'params': ['x']}],),
         methodname='system.multicall').encode()
 
     import requests
-    for kind in ('old', 'new'):
-        server = make_server(kind)
-        resp = requests.post('http://%s:%d/' % (HOST, server.port),
-                             data=body, timeout=TIMEOUT)
-        with pytest.raises(xmlrpc.client.Fault):
-            xmlrpc.client.loads(resp.content.decode())
+
+    old = make_server('old')
+    resp = requests.post('http://%s:%d/' % (HOST, old.port), data=body,
+                         timeout=TIMEOUT)
+    with pytest.raises(xmlrpc.client.Fault):
+        xmlrpc.client.loads(resp.content.decode())
+
+    new = make_server('new')
+    resp = requests.post('http://%s:%d/' % (HOST, new.port), data=body,
+                         timeout=TIMEOUT)
+    params, _method = xmlrpc.client.loads(resp.content.decode())
+    assert params[0] == [['x']], "one entry, holding the echoed value"
+
+
+def test_a_batch_cannot_reach_a_local_only_method(make_server):
+    """The methods that control a server's own lifecycle are withheld at
+    registration, so they are not in the dispatcher for a batch to find
+    either -- batching does not open a second door to them."""
+    import requests
+
+    server = make_server('new')
+    body = xmlrpc.client.dumps(
+        ([{'methodName': 'ro_stop', 'params': []}],),
+        methodname='system.multicall').encode()
+    resp = requests.post('http://%s:%d/' % (HOST, server.port), data=body,
+                         timeout=TIMEOUT)
+
+    params, _method = xmlrpc.client.loads(resp.content.decode())
+    entry = params[0][0]
+    assert isinstance(entry, dict), "expected a fault, got %r" % (entry,)
+    assert entry['faultCode'] == -32601
+    assert server.ro_is_running() if hasattr(server, 'ro_is_running') else True
 
 
 def test_kwargs_are_rejected_by_both_stacks(make_server):
