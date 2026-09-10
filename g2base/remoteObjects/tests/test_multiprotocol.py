@@ -255,3 +255,90 @@ def test_alternates_that_are_not_a_list_at_all(nameservice):
 def test_a_registration_without_alternates_still_normalizes():
     opts = ns_mod.normalize_options(dict(protocol='xmlrpc'), ro.nullLogger())
     assert opts['alternates'] == []
+
+
+# --------------------------------------------------- pinning a protocol --
+
+def test_a_proxy_with_no_transport_follows_the_registration():
+    """Which is the only thing that knows what a service speaks."""
+    rec = record(alternates=[('g2rpc-zmq', 8002, 'msgpack')])
+    assert ro.choose_endpoint(rec, pin=None)[0] == 'g2rpc-zmq'
+
+
+def test_a_pinned_transport_is_used_and_no_other():
+    """It used to be accepted and then disregarded whenever the record named
+    a protocol -- a parameter that takes a value and ignores it."""
+    rec = record(alternates=[('g2rpc-tcp', 8001, 'msgpack'),
+                             ('g2rpc-zmq', 8002, 'msgpack')])
+
+    assert ro.choose_endpoint(rec, pin='xmlrpc') == ('xmlrpc', 8000, 'xml')
+    assert ro.choose_endpoint(rec, pin='g2rpc-tcp')[1] == 8001
+
+
+def test_a_pin_beats_a_preference():
+    rec = record(alternates=[('g2rpc-zmq', 8002, 'msgpack')])
+    assert ro.choose_endpoint(rec, prefer=['g2rpc-zmq'],
+                              pin='xmlrpc')[0] == 'xmlrpc'
+
+
+def test_a_pin_the_service_cannot_honour_says_so():
+    """Rather than dialling and waiting: a call in a protocol the far end
+    does not speak is not answered, and a timeout says nothing about why."""
+    rec = record()          # xmlrpc only, as an un-upgraded service is
+    with pytest.raises(ro.remoteObjectError) as excinfo:
+        ro.choose_endpoint(rec, pin='g2rpc-zmq')
+
+    assert 'does not offer' in str(excinfo.value)
+    assert 'xmlrpc' in str(excinfo.value), "it should say what is on offer"
+
+
+def test_pinning_end_to_end(service, nameservice):
+    server = service()
+    plain = ro.remoteObjectProxy('multi', ns=nameservice, timeout=10)
+    pinned = ro.remoteObjectProxy('multi', ns=nameservice, timeout=10,
+                                  transport='xmlrpc')
+
+    assert plain.echo('hi') == 'hi'
+    assert pinned.echo('hi') == 'hi'
+    assert plain.endpoints.clients()[0].transport == 'g2rpc-zmq'
+    assert pinned.endpoints.clients()[0].port == server.port, \
+        'the pinned proxy should be on the primary'
+
+
+# ------------------------------------------- what un-upgraded code does --
+
+def test_an_xmlrpc_only_service_is_reached_either_way(nameservice):
+    """Both readings of a proxy that predates any of this: one that passes
+    no transport, and one that passes 'xmlrpc' because that was the
+    default."""
+    server = ro.remoteObjectServer(
+        svcname='plain', obj=Service(), host=HOST, logger=ro.nullLogger(),
+        usethread=True, ns=nameservice, default_auth=False,
+        method_list=['echo'])
+    server.ro_start(wait=True, timeout=15)
+    try:
+        for kwargs in ({}, {'transport': 'xmlrpc'}):
+            proxy = ro.remoteObjectProxy('plain', ns=nameservice, timeout=10,
+                                         **kwargs)
+            assert proxy.echo('hi') == 'hi'
+            assert proxy.endpoints.clients()[0].transport == 'xmlrpc'
+    finally:
+        server.ro_stop(wait=True, timeout=15)
+
+
+def test_an_explicit_host_list_still_gets_a_concrete_protocol(nameservice):
+    """There is no registration to follow, so None cannot mean "ask" --
+    it falls back to the module default, as it always did."""
+    server = ro.remoteObjectServer(
+        svcname='plain2', obj=Service(), host=HOST, logger=ro.nullLogger(),
+        usethread=True, ns=nameservice, default_auth=False,
+        method_list=['echo'])
+    server.ro_start(wait=True, timeout=15)
+    try:
+        proxy = ro.remoteObjectProxy('plain2',
+                                     hostports=[(HOST, server.port)],
+                                     timeout=10)
+        assert proxy.echo('hi') == 'hi'
+        assert proxy.endpoints.clients()[0].transport == ro.default_transport
+    finally:
+        server.ro_stop(wait=True, timeout=15)

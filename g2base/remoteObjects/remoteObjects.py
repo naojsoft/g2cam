@@ -204,20 +204,35 @@ def endpoints_in(rec):
     return [w for w in ways if w[0] and w[1]]
 
 
-def choose_endpoint(rec, prefer=None, logger=None):
+def choose_endpoint(rec, prefer=None, pin=None, logger=None):
     """Pick the way in to use, from what a registration offers.
 
     The primary is the fallback rather than the default: it is chosen to be
     what an un-upgraded caller can speak, which is by definition the oldest
     thing on offer.  A caller that knows better should say so.
 
-    :param prefer: Protocol names, best first.
+    :param prefer: Protocol names, best first.  Consulted only when nothing
+        is pinned.
+    :param pin: One protocol name, to use and no other.  A registration that
+        does not offer it is an error here rather than a timeout later: a
+        call in a protocol the far end does not speak is not answered, and
+        nothing about that says what went wrong.
     :return: ``(protocol, port, encoding)``.
     """
     ways = endpoints_in(rec)
     if not ways:
         raise remoteObjectError("registration for '%s' names no endpoint"
                                 % (rec.get('name'),))
+
+    if pin is not None:
+        for way in ways:
+            if way[0] == pin:
+                return way
+        raise remoteObjectError(
+            "'%s' at %s:%s does not offer '%s'; it speaks %s"
+            % (rec.get('name'), rec.get('host'), rec.get('port'), pin,
+               ', '.join(sorted(w[0] for w in ways))))
+
     if len(ways) == 1:
         return ways[0]
 
@@ -1334,12 +1349,26 @@ class _ProxyBase:
 
     def __init__(self, name, hostports=None, ns=None, auth=None,
                  logger=None, default_auth=use_default_auth,
-                 secure=default_secure, transport=default_transport,
+                 secure=default_secure, transport=None,
                  encoding=default_encoding, timeout=None, prefer=None):
+        """
+        :param transport: One protocol to use and no other.  ``None`` -- the
+            default -- means follow what the service registered, which is
+            the only thing that knows what it speaks.
+
+            It used to default to ``default_transport`` and then be ignored
+            whenever a registration named a protocol, which is a parameter
+            that accepts a value and disregards it.  Looked up by name it now
+            pins; given an explicit ``hostports`` list there is no
+            registration to follow, so it falls back to
+            :py:data:`default_transport` as before.
+        :param prefer: Protocol names, best first, for choosing among the
+            ways a service offers.  ``None`` means
+            :py:data:`default_protocol_preference`; an empty list takes
+            whatever the registration's primary is.  Ignored when
+            ``transport`` pins one.
+        """
         self.name = name
-        #: Which way in to take when a provider offers several.  ``None``
-        #: means :py:data:`default_protocol_preference`; an explicit list
-        #: pins it, and an empty one takes whatever the primary is.
         self.prefer = prefer
         # Per-instance: a hostports entry may carry its own credentials, and
         # sharing that map between proxies would leak one service's
@@ -1373,12 +1402,14 @@ class _ProxyBase:
         raise remoteObjectError("Malformed hostports entry: %s" % (tup,))
 
     def __client_for_hostport(self, host, port):
+        # No registration to follow, so a concrete protocol is needed and
+        # the module default is the only thing left to fall back on.
         auth = self._auth_overrides.get((host, port), self.auth)
-        return remoteObjectClient(host, port, name=self.name, auth=auth,
-                                  default_auth=False, secure=self.secure,
-                                  transport=self.transport,
-                                  encoding=self.encoding,
-                                  timeout=self.timeout)
+        return remoteObjectClient(
+            host, port, name=self.name, auth=auth, default_auth=False,
+            secure=self.secure,
+            transport=self.transport or default_transport,
+            encoding=self.encoding, timeout=self.timeout)
 
     def __client_for_record(self, rec):
         """Build a client from one name service registration.
@@ -1393,7 +1424,7 @@ class _ProxyBase:
         name need not all speak the same thing.
         """
         protocol, port, encoding = choose_endpoint(
-            rec, prefer=self.prefer, logger=self.logger)
+            rec, prefer=self.prefer, pin=self.transport, logger=self.logger)
 
         return remoteObjectClient(
             rec['host'], port, name=self.name, auth=self.auth,
