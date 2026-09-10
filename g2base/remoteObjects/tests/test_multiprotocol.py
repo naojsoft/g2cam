@@ -50,8 +50,8 @@ def service(nameservice):
     started = []
 
     def _make(transports=WAYS, **kwargs):
-        server = ro.multiProtocolServer(
-            svcname='multi', obj=Service(), transports=transports,
+        server = ro.remoteObjectServer(
+            svcname='multi', obj=Service(), transport=transports,
             host=HOST, logger=ro.nullLogger(), usethread=True,
             ns=nameservice, default_auth=True, method_list=['echo'],
             **kwargs)
@@ -111,17 +111,40 @@ def test_every_way_in_reaches_the_same_service(service):
         assert client.echo(transport) == transport
 
 
-def test_one_transport_is_not_a_multi_protocol_server():
-    with pytest.raises(ro.remoteObjectError) as excinfo:
-        ro.multiProtocolServer(svcname='x', obj=Service(),
-                               transports=['xmlrpc'], host=HOST)
-    assert 'remoteObjectServer' in str(excinfo.value)
+def test_one_transport_is_still_ordinary():
+    """A list of one is a server like any other, not a special case."""
+    server = ro.remoteObjectServer(svcname='one', obj=Service(), host=HOST,
+                                   logger=ro.nullLogger(), usethread=True,
+                                   ns=False, default_auth=False,
+                                   transport=['xmlrpc'],
+                                   method_list=['echo'])
+    assert server.transports == ['xmlrpc']
+    assert server.alternates == []
+
+
+def test_a_bare_string_still_means_one_transport():
+    """Which is how every existing service declares itself."""
+    server = ro.remoteObjectServer(svcname='bare', obj=Service(), host=HOST,
+                                   logger=ro.nullLogger(), usethread=True,
+                                   ns=False, default_auth=False,
+                                   transport='g2rpc-tcp',
+                                   method_list=['echo'])
+    assert server.transports == ['g2rpc-tcp']
+
+
+def test_no_transport_at_all():
+    with pytest.raises(ro.remoteObjectError):
+        ro.remoteObjectServer(svcname='x', obj=Service(), host=HOST,
+                              logger=ro.nullLogger(), ns=False,
+                              transport=[], method_list=['echo'])
 
 
 def test_an_unknown_transport_fails_before_anything_binds():
     with pytest.raises(Exception):
-        ro.multiProtocolServer(svcname='x', obj=Service(),
-                               transports=['xmlrpc', 'nonsense'], host=HOST)
+        ro.remoteObjectServer(svcname='x', obj=Service(), host=HOST,
+                              logger=ro.nullLogger(), ns=False,
+                              transport=['xmlrpc', 'nonsense'],
+                              method_list=['echo'])
 
 
 # ----------------------------------------------------------- choosing --
@@ -342,3 +365,66 @@ def test_an_explicit_host_list_still_gets_a_concrete_protocol(nameservice):
         assert proxy.endpoints.clients()[0].transport == ro.default_transport
     finally:
         server.ro_stop(wait=True, timeout=15)
+
+
+# ------------------------------------------- both ways to declare one --
+
+def test_a_subclassed_service_can_offer_several(nameservice):
+    """Subclassing is how Gen2 services are written today, and delegation is
+    where they are going.  Neither should be the one that cannot do this."""
+    class Subclassed(ro.remoteObjectServer):
+        def __init__(self):
+            ro.remoteObjectServer.__init__(
+                self, svcname='sub', host=HOST, logger=ro.nullLogger(),
+                usethread=True, ns=nameservice, default_auth=False,
+                transport=['xmlrpc', 'g2rpc-zmq'])
+
+        def echo(self, value):
+            return value
+
+    server = Subclassed()
+    server.ro_start(wait=True, timeout=15)
+    try:
+        assert server.transports == ['xmlrpc', 'g2rpc-zmq']
+        proxy = ro.remoteObjectProxy('sub', ns=nameservice, timeout=10)
+        assert proxy.echo('hi') == 'hi'
+        assert proxy.endpoints.clients()[0].transport == 'g2rpc-zmq'
+        assert proxy.ro_echo('still there') == 'still there', \
+            "the introspection methods must survive too"
+    finally:
+        server.ro_stop(wait=True, timeout=15)
+
+
+def test_a_property_on_a_subclass_does_not_break_the_method_scan():
+    """The scan calls getattr on everything the served object has, and a
+    subclass *is* the served object -- so a property is evaluated before
+    __init__ has finished.  It is not a method, so skipping it loses
+    nothing; raising loses the whole service."""
+    class WithProperty(ro.remoteObjectServer):
+        @property
+        def not_ready_yet(self):
+            return self._never_set
+
+        def __init__(self):
+            ro.remoteObjectServer.__init__(
+                self, svcname='prop', host=HOST, logger=ro.nullLogger(),
+                usethread=True, ns=False, default_auth=False)
+
+        def echo(self, value):
+            return value
+
+    server = WithProperty()
+    assert 'echo' in server.method_list
+    assert 'not_ready_yet' not in server.method_list
+
+
+def test_every_listener_shares_one_pool_of_workers(nameservice):
+    """One serve loop per listener, so the pool has to be sized for them --
+    otherwise the last one finds no worker and the service accepts a
+    request and hangs."""
+    server = ro.remoteObjectServer(
+        svcname='pool', obj=Service(), host=HOST, logger=ro.nullLogger(),
+        usethread=True, ns=False, default_auth=False, numthreads=4,
+        threaded_server=True, transport=WAYS, method_list=['echo'])
+
+    assert server.executor._max_workers >= len(WAYS) + 4

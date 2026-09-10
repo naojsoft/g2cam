@@ -307,8 +307,7 @@ class remoteObjectServer:
                  encoding=default_encoding,
                  authDict=None, default_auth=use_default_auth,
                  secure=default_secure, cert_file=default_cert,
-                 ns=None, method_list=None, method_prefix=None,
-                 alternates=None):
+                 ns=None, method_list=None, method_prefix=None):
 
         self.svcname = svcname
         self.name = name
@@ -335,7 +334,16 @@ class remoteObjectServer:
             # serving and if they are not private, reveal them
             methodNames = []
             for attrName in dir(self.obj):
-                if callable(getattr(self.obj, attrName)):
+                # A property is evaluated by getattr, and when the served
+                # object is this server -- which subclassing makes so -- the
+                # scan runs before __init__ has finished, so a property that
+                # reads anything set later raises here.  It is not a method
+                # either way, so there is nothing to lose by skipping it.
+                try:
+                    attr = getattr(self.obj, attrName)
+                except Exception:
+                    continue
+                if callable(attr):
                     # if user specified a method prefix, then only
                     # register methods that begin with that prefix
                     if (method_prefix is not None):
@@ -402,29 +410,47 @@ class remoteObjectServer:
         self.ns = ns
         self.__pid = os.getpid()
 
-        self.spec = ro_transport.get(transport, encoding=encoding)
+        # One protocol or several.  A list means this service listens every
+        # one of those ways at once, over one object and one dispatcher:
+        # XML-RPC for whatever has not been upgraded, something faster for
+        # whatever has.  The first is the primary, and is what an
+        # un-upgraded client is handed, so put the widely spoken one first.
+        names = [transport] if isinstance(transport, str) else list(transport)
+        if not names:
+            raise remoteObjectError('a server needs at least one transport')
 
-        if (self.authDict and not self.svcname
-                and self.spec.auth_mechanism == 'signature'):
-            # A signature is bound to the service it was made for, so a call
-            # meant for one service cannot be replayed at another.  That
-            # needs a name both ends agree on, and the only such name is the
-            # registered one: `name` is a thread label that never leaves this
-            # process, so a caller has no way to arrive at it.
-            raise remoteObjectError(
-                "a service authenticating over '%s' signs against its "
-                "registered name, so it needs an svcname; this one has only "
-                "an authDict" % (self.spec.name,))
+        specs = [ro_transport.get(name, encoding=encoding) for name in names]
+        self.spec = specs[0]
 
-        if self.authDict and not self.spec.carries_credentials:
-            # The authenticator would find no credentials on any request and
-            # refuse every call, which looks like a network fault rather than
-            # a configuration mistake.  Say so now instead.
-            raise remoteObjectError(
-                "the '%s' transport cannot carry credentials, so service "
-                "'%s' cannot require authentication over it; use an "
-                "HTTP-carried protocol such as 'xmlrpc' or 'g2rpc'"
-                % (self.spec.name, svcname or name or '<unnamed>'))
+        for spec in specs:
+            if (self.authDict and not self.svcname
+                    and spec.auth_mechanism == 'signature'):
+                # A signature is bound to the service it was made for, so a
+                # call meant for one service cannot be replayed at another.
+                # That needs a name both ends agree on, and the only such
+                # name is the registered one: `name` is a thread label that
+                # never leaves this process, so a caller has no way to
+                # arrive at it.
+                raise remoteObjectError(
+                    "a service authenticating over '%s' signs against its "
+                    "registered name, so it needs an svcname; this one has "
+                    "only an authDict" % (spec.name,))
+
+            if self.authDict and not spec.carries_credentials:
+                # The authenticator would find no credentials on any request
+                # and refuse every call, which looks like a network fault
+                # rather than a configuration mistake.  Say so now instead.
+                raise remoteObjectError(
+                    "the '%s' transport cannot carry credentials, so service "
+                    "'%s' cannot require authentication over it; use an "
+                    "HTTP-carried protocol such as 'xmlrpc' or 'g2rpc'"
+                    % (spec.name, svcname or name or '<unnamed>'))
+
+            if self.secure and not spec.supports_tls:
+                raise remoteObjectError(
+                    "the '%s' transport cannot be encrypted, so service '%s' "
+                    "cannot offer it securely"
+                    % (spec.name, svcname or name or '<unnamed>'))
 
         # What the spec settled on: the requested encoding where the protocol
         # offers a choice, its own otherwise.
@@ -442,10 +468,11 @@ class remoteObjectServer:
                        'transport': (self.spec.legacy_transport or
                                      self.spec.name),
                        }
-        # Other ways into this same service, if it is listening more than one
-        # way.  Set by multiProtocolServer, which owns the other listeners;
-        # a server on its own has none.
-        self.alternates = list(alternates or ())
+        # The other ways in, filled once the secondary listeners have bound
+        # and know their ports.  A registration carries the primary in its
+        # own fields and these beside them, so a client that knows nothing
+        # of alternates reads the primary and is unaffected.
+        self.alternates = []
 
         ssl_context = None
         if self.secure:
@@ -455,8 +482,17 @@ class remoteObjectServer:
         # and returned the number for the server to bind again, which left a
         # window for somebody else to take it.  Binding the real listening
         # socket as we search closes that window.
-        self.rpc_transport = self.__bind(ssl_context)
+        ports = [port] if not isinstance(port, (list, tuple)) else list(port)
+        ports += [None] * (len(specs) - len(ports))
+
+        self.rpc_transport = self.__bind(self.spec, ports[0], ssl_context)
         self.port = self.spec.server_port(self.rpc_transport)
+
+        # The secondary listeners: same object, same dispatcher, same
+        # executor, reached a different way.
+        self._others = [
+            (spec, self.__bind(spec, wanted, ssl_context))
+            for spec, wanted in zip(specs[1:], ports[1:])]
 
         # Everything the object exposes, plus the ro_* methods it did not
         # override, goes in the dispatcher.
@@ -476,46 +512,84 @@ class remoteObjectServer:
             # runs, so it needs one of its own on top of the handlers'.
             # With a single worker there would be nobody left to dispatch to
             # and the service would accept a request and then hang.
-            max_workers = 1 + (self.numthreads if self.threaded_server else 1)
+            # One worker per serve loop -- there is a loop per listener --
+            # on top of the handlers'.  Sized for one when there were
+            # several, the last listener would find no worker left, and the
+            # service would accept a request and then hang.
+            max_workers = (len(specs)
+                           + (self.numthreads if self.threaded_server else 1))
             self.executor = futures.ThreadPoolExecutor(
                 max_workers=max_workers,
                 thread_name_prefix='ro-%s' % (self.svcname or self.name or
                                               'server'))
             self.__own_executor = True
 
-        framing = server_framing(self.spec, self.authDict, self.svcname)
-        self.server = RPCServerExecutor(self.rpc_transport,
-                                        self.spec.make_protocol(self.encoding,
-                                                                framing=framing),
-                                        self.dispatcher,
-                                        self.executor,
-                                        ev_quit=self.ev_quit)
-        if self.authDict:
-            self.server.authenticator = make_authenticator(
-                self.authDict, self.logger, self.spec.auth_mechanism)
+        self.server = self.__make_server(self.spec, self.rpc_transport,
+                                         self.encoding)
+        self._servers = [self.__make_server(spec, rpc_transport,
+                                            spec.check_encoding(encoding))
+                         for spec, rpc_transport in self._others]
 
-    def __bind(self, ssl_context):
-        """Bind the listening socket, searching the service port range when
+        # What the name service is told about the other ways in.  Their
+        # ports are settled now, since they are bound.
+        self.alternates = [
+            dict(protocol=spec.name,
+                 port=spec.server_port(rpc_transport),
+                 encoding=spec.check_encoding(encoding))
+            for spec, rpc_transport in self._others]
+
+        #: Every protocol this service speaks, and every port it listens on,
+        #: the primary first.  Plain attributes rather than properties: a
+        #: subclass *is* the served object, so anything on this class is
+        #: reached by the method scan above, before there is anything to
+        #: compute them from.
+        self.transports = [self.spec.name] + [a['protocol']
+                                              for a in self.alternates]
+        self.ports = [self.port] + [a['port'] for a in self.alternates]
+
+    def __make_server(self, spec, rpc_transport, encoding):
+        """One listener, sharing this service's object and its workers.
+
+        Each speaks its own protocol and so authenticates its own way: an
+        HTTP carrier reads credentials off the request, one with an envelope
+        of its own checks a signature in it.
+        """
+        framing = server_framing(spec, self.authDict, self.svcname)
+        server = RPCServerExecutor(rpc_transport,
+                                   spec.make_protocol(encoding,
+                                                      framing=framing),
+                                   self.dispatcher,
+                                   self.executor,
+                                   ev_quit=self.ev_quit)
+        if self.authDict:
+            server.authenticator = make_authenticator(
+                self.authDict, self.logger, spec.auth_mechanism)
+        return server
+
+
+
+    def __bind(self, spec, wanted, ssl_context):
+        """Bind one listening socket, searching the service port range when
         no specific port was asked for."""
-        if self.port:
-            candidates = [self.port]
+        if wanted:
+            candidates = [wanted]
         else:
             candidates = range(objectsBasePort, objectsBasePort + 15000)
 
         last_error = None
         for port in candidates:
             try:
-                return self.spec.make_server_transport(
+                return spec.make_server_transport(
                     self.bindhost, port, logger=self.logger,
                     ssl_context=ssl_context, poll_timeout=self.timeout)
-            except self.spec.bind_errors as e:
+            except spec.bind_errors as e:
                 last_error = e
                 continue
 
-        if self.port:
+        if wanted:
             raise remoteObjectError(
                 "Can't bind %s:%d for remote object server: %s"
-                % (self.bindhost or '*', self.port, last_error))
+                % (self.bindhost or '*', wanted, last_error))
         raise remoteObjectError(
             'No free port found for remote object server in %d-%d: %s'
             % (objectsBasePort, objectsBasePort + 15000, last_error))
@@ -759,8 +833,11 @@ class remoteObjectServer:
         '''Loop until asked to quit, serving XML-RPC requests.
         '''
 
-        self.logger.info("Starting remote object server on %s:%d." % \
-                           (self.host, self.port))
+        self.logger.info("Starting remote object server on %s (%s)."
+                         % (self.host,
+                            ', '.join('%s:%d' % (name, port)
+                                      for name, port in zip(self.transports,
+                                                            self.ports))))
 
         # The methods were put in the dispatcher when the server was built.
 
@@ -772,6 +849,11 @@ class remoteObjectServer:
             self.ev_stop.clear()
             self.ev_start.set()
 
+            # The others first: the primary registers as it starts, and the
+            # registration names their ports, so they should be answering by
+            # the time anyone is told about them.
+            for server in self._servers:
+                server.start()
             self.server.start()
 
             while not self.ev_quit.is_set():
@@ -786,6 +868,12 @@ class remoteObjectServer:
         finally:
             self.logger.debug("Terminating request loop...")
             self.server.stop()
+            for server in self._servers:
+                try:
+                    server.stop()
+                except Exception:
+                    self.logger.error("error stopping a listener",
+                                      exc_info=True)
 
         # Unregister our service
         try:
@@ -793,8 +881,8 @@ class remoteObjectServer:
         except Exception:
             pass
 
-        self.logger.info("Stopping remote object server on %s:%d." % \
-                           (self.host, self.port))
+        self.logger.info("Stopping remote object server on %s:%d."
+                         % (self.host, self.port))
         self.ev_start.clear()
         self.ev_stop.set()
 
@@ -1039,110 +1127,6 @@ class _ServiceProxy:
                     close()
                 except Exception:
                     pass
-
-
-class multiProtocolServer:
-    """One service, listening several ways at once.
-
-    A service can only be spoken to in the protocol it was started with, so
-    upgrading one has meant upgrading everything that calls it on the same
-    day.  This lets it listen on several at once -- XML-RPC for whatever has
-    not been upgraded, something faster for whatever has -- as one service
-    rather than as several providers of it.
-
-    That distinction matters.  Registering each listener separately would
-    make them look like independent providers, and a proxy would treat them
-    as alternatives to fail over between: a call that failed on one would be
-    retried on another port of the same process, which is not failover at
-    all.  So one registration carries the primary endpoint and the rest as
-    *alternates*, and a caller picks among them.
-
-    The first transport is the primary, and an un-upgraded client is handed
-    it and nothing else, because such a client reads the top-level fields
-    and knows nothing of alternates.  So put the most widely spoken protocol
-    first -- 'xmlrpc' unless every caller is known to be current.
-
-    The listeners share the served object and its method list; they differ
-    only in how they are reached.
-
-    :param transports: Protocol names, primary first.
-    :param ports: Ports to bind, in the same order.  A missing or ``None``
-        entry searches the service range, as a single server does.
-    """
-
-    def __init__(self, svcname=None, obj=None, transports=(), ports=(),
-                 logger=None, ns=None, **kwargs):
-        if len(transports) < 2:
-            raise remoteObjectError(
-                "a multi-protocol server wants more than one transport; use "
-                "remoteObjectServer for one")
-
-        self.svcname = svcname
-        self.logger = logger if logger else nullLogger()
-        ports = list(ports) + [None] * (len(transports) - len(ports))
-
-        for name in transports:
-            # Fail here rather than half-way through binding.
-            ro_transport.get(name)
-
-        # The secondaries never register: they are the same service, and the
-        # primary speaks for all of them.
-        self.servers = [
-            remoteObjectServer(svcname=svcname, obj=obj, logger=self.logger,
-                               transport=name, port=port, ns=False, **kwargs)
-            for name, port in zip(transports[1:], ports[1:])]
-
-        self.primary = remoteObjectServer(
-            svcname=svcname, obj=obj, logger=self.logger,
-            transport=transports[0], port=ports[0], ns=ns, **kwargs)
-        # Filled in once the secondaries have bound and know their ports.
-        self.primary.alternates = []
-
-    @property
-    def port(self):
-        """The primary's port, which is what an un-upgraded caller uses."""
-        return self.primary.port
-
-    @property
-    def ports(self):
-        """Every port this service is listening on, primary first."""
-        return [self.primary.port] + [s.port for s in self.servers]
-
-    def ro_start(self, wait=True, timeout=None):
-        """Start every listener, secondaries first.
-
-        The primary registers as it starts, and the registration has to name
-        ports the secondaries have actually bound -- so they go first, and
-        the primary is told about them before it announces anything.
-        """
-        for server in self.servers:
-            server.ro_start(wait=True, timeout=timeout)
-
-        self.primary.alternates = [
-            dict(protocol=server.spec.name, port=server.port,
-                 encoding=server.encoding)
-            for server in self.servers]
-
-        self.primary.ro_start(wait=wait, timeout=timeout)
-
-    def ro_stop(self, wait=True, timeout=None):
-        """Stop the primary first, so it unregisters before anything stops
-        answering."""
-        errors = []
-        for server in [self.primary] + self.servers:
-            try:
-                server.ro_stop(wait=wait, timeout=timeout)
-            except Exception as e:
-                errors.append(e)
-        if errors:
-            raise remoteObjectError("failed to stop cleanly: %s"
-                                    % ('; '.join(str(e) for e in errors),))
-
-    def __repr__(self):
-        return '<multiProtocolServer %s on %s>' % (
-            self.svcname,
-            ', '.join('%s:%s' % (s.spec.name, s.port)
-                      for s in [self.primary] + self.servers))
 
 
 class multiplexingClient:
