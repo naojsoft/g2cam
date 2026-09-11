@@ -20,6 +20,7 @@ from g2base.remoteObjects import ro_config, ro_transport
 
 def test_the_shipped_transports_are_registered():
     assert ro_transport.names() == ['g2rpc', 'g2rpc-tcp',
+                                    'g2rpc-tcp-asyncio',
                                     'g2rpc-tcp-persistent', 'g2rpc-zmq',
                                     'jsonrpc', 'msgpackrpc',
                                     'xmlrpc', 'xmlrpc-std']

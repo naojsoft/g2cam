@@ -19,11 +19,13 @@ to stay wire-compatible with services and clients that will not be upgraded.
 XML-RPC implementations that are not Python's.
 """
 
+import socket
 import ssl
 
 from tinyrpc.protocols.jsonrpc import JSONRPCProtocol
 from tinyrpc.protocols.msgpackrpc import MSGPACKRPCProtocol
 from tinyrpc.protocols.xmlrpc import XMLRPCProtocol
+from tinyrpc.server.executor import RPCServerExecutor
 from tinyrpc.transports.http_client import HttpClientTransport
 from tinyrpc.transports.http_server import HttpServerTransport
 from tinyrpc.transports.tcp import (ConnectionlessTcpClientTransport,
@@ -31,6 +33,7 @@ from tinyrpc.transports.tcp import (ConnectionlessTcpClientTransport,
                                     NonBlockingTcpClientTransport,
                                     TcpServerTransport)
 
+from . import ro_asyncio
 from . import ro_g2rpc
 
 
@@ -209,6 +212,19 @@ class TransportSpec:
 
     def make_client_transport(self, host, port, **kwargs):
         raise NotImplementedError
+
+    def make_rpc_server(self, rpc_transport, protocol, dispatcher, executor,
+                        ev_quit=None, logger=None):
+        """The server that drives this listener.
+
+        A seam rather than a fixed class, because the shape of the server is
+        a property of the carrier: most run a serve loop on a worker and give
+        each connection a thread, while an asyncio carrier runs an event loop
+        and hands the work to the pool.  Both take the same executor, so a
+        service's handlers run where they always did.
+        """
+        return RPCServerExecutor(rpc_transport, protocol, dispatcher,
+                                 executor, ev_quit=ev_quit)
 
     def server_port(self, transport):
         """The port a bound server transport actually listens on."""
@@ -566,6 +582,47 @@ register(G2RPCTcpSpec(
     description="Gen2's own protocol over a TCP connection that is held "
                 "open, so a client can keep several calls in flight at once. "
                 "The connection can die, so the client dials again."))
+
+class G2RPCTcpAsyncioSpec(G2RPCTcpSpec):
+    """g2rpc over TCP, served from an event loop rather than a thread each.
+
+    The client side is exactly g2rpc-tcp's: it dials, sends, reads its reply
+    and hangs up.  Only the server differs, which is what makes the two
+    comparable -- and means a caller needs to know nothing about it.
+    """
+
+    def make_server_transport(self, bindhost, port, logger=None,
+                              ssl_context=None, poll_timeout=0.5, **kwargs):
+        if ssl_context is not None:
+            raise ValueError(
+                "the '%s' transport cannot be encrypted" % (self.name,))
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((bindhost or '', port))
+        # asyncio manages the accept queue, but the backlog is ours to set
+        # and a bursty service wants more than the default.
+        sock.listen(kwargs.get('backlog', 512))
+        sock.setblocking(False)
+        return ro_asyncio.PreboundAsyncioTcpServerTransport(
+            sock, poll_timeout=poll_timeout, logger=logger)
+
+    def make_rpc_server(self, rpc_transport, protocol, dispatcher, executor,
+                        ev_quit=None, logger=None):
+        return ro_asyncio.AsyncioServerRunner(rpc_transport, protocol,
+                                              dispatcher, executor,
+                                              ev_quit=ev_quit, logger=logger)
+
+
+register(G2RPCTcpAsyncioSpec(
+    'g2rpc-tcp-asyncio',
+    ro_g2rpc.G2RPCProtocol,
+    content_type='application/octet-stream',
+    encoding=ro_g2rpc.DEFAULT_ENCODING,
+    encodings=ro_g2rpc.ENCODINGS,
+    description="Gen2's own protocol over TCP, served from one event loop "
+                "with the handlers on a thread pool.  A connection costs a "
+                "coroutine rather than a thread, which is what a burst of "
+                "them costs less of."))
 
 register(G2RPCZmqSpec(
     'g2rpc-zmq',

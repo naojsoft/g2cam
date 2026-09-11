@@ -555,12 +555,13 @@ class remoteObjectServer:
         of its own checks a signature in it.
         """
         framing = server_framing(spec, self.authDict, self.svcname)
-        server = RPCServerExecutor(rpc_transport,
-                                   spec.make_protocol(encoding,
-                                                      framing=framing),
-                                   self.dispatcher,
-                                   self.executor,
-                                   ev_quit=self.ev_quit)
+        server = spec.make_rpc_server(rpc_transport,
+                                      spec.make_protocol(encoding,
+                                                         framing=framing),
+                                      self.dispatcher,
+                                      self.executor,
+                                      ev_quit=self.ev_quit,
+                                      logger=self.logger)
         if self.authDict:
             server.authenticator = make_authenticator(
                 self.authDict, self.logger, spec.auth_mechanism)
