@@ -133,6 +133,12 @@ class PubSub:
         # this is the maximum delivery delay
         self.max_delivery_delay = 1.0
 
+        # The most updates to carry in one call to a subscriber.  Batches
+        # form on their own while a call to that subscriber is in flight, so
+        # this is a ceiling rather than a target: under light traffic nothing
+        # accumulates and nothing is delayed.
+        self.batch_limit_num = 100
+
         # warn us when the outgoing queue size exceeds this
         self.qlen_warn_limit = 100
         # but don't warn us more often than this interval
@@ -253,6 +259,18 @@ class PubSub:
                                       delivery_delay=self.redelivery_delay,
                                       timer=self.tfact.timer(),
                                       backlog=Deque(maxlen=1000),
+                                      # Updates waiting to go to this
+                                      # subscriber, oldest first, and
+                                      # whether a call to it is in flight.
+                                      # One at a time is what keeps us from
+                                      # shuffling them on the way out.
+                                      pending=Deque(),
+                                      sending=False,
+                                      queued=False,
+                                      # Cleared the first time a batch call
+                                      # is refused, which is how an
+                                      # un-upgraded subscriber is spotted.
+                                      takes_batches=True,
                                       can_unsubscribe=can_unsubscribe)
                 partner.timer.add_callback('expired',
                                            self._timer_cb, subscriber, partner)
@@ -372,15 +390,66 @@ class PubSub:
                     partner.backlog.append(queue_record)
                     continue
 
-            # queue up this update
-            self._enqueue(time.time() + priority, queue_record)
+                partner.pending.append(queue_record)
+                if partner.sending or partner.queued:
+                    # Somebody is already on their way to this subscriber
+                    # and will take this with them.
+                    continue
+                partner.queued = True
+
+            # queue the subscriber, not the update: what to send is whatever
+            # has gathered by the time a delivery thread gets there.
+            self._enqueue(time.time() + priority, subscriber)
 
 
-    def _individual_update(self, queue_record):
-        subscriber, value, names, channels, priority = queue_record
-        self._debug("attempting to update subscriber '%s' on channels(%s)"
-                    "  with value: %s", subscriber, channels, value)
+    def _send_batch(self, subscriber, partner, proxy_obj, records):
+        """Hand a run of updates to one subscriber, in order.
 
+        One call carries them all where the subscriber can take one, and
+        that is most of what batching buys: the round trip is paid once
+        rather than per update.
+
+        Whether it can take one is discovered by asking rather than by
+        announcing.  A subscriber that has not been upgraded has no
+        remote_update_many, so the call is refused; the same records then go
+        one at a time, and if *that* works the refusal was about the method
+        and not about the subscriber, so we stop offering.  A subscriber
+        that is really unreachable fails both ways and is handled as a
+        failure always has been.
+        """
+        if len(records) > 1 and partner.takes_batches:
+            updates = [(value, names, channels)
+                       for _sub, value, names, channels, _pri in records]
+            try:
+                proxy_obj.remote_update_many(updates)
+                return True
+
+            except Exception as e:
+                self._debug("subscriber '%s' would not take a batch of %d: "
+                            "%s", subscriber, len(updates), e)
+
+        # One at a time, in the order they were published.
+        for _sub, value, names, channels, _pri in records:
+            proxy_obj.remote_update(value, names, channels)
+
+        if len(records) > 1 and partner.takes_batches:
+            # They took the updates but not the batch, so the batch call is
+            # what they lack.  Stop paying for the attempt.
+            with self._lock:
+                partner.takes_batches = False
+            self.logger.info("subscriber '%s' does not take batched updates; "
+                             "sending them singly from now on" % (subscriber,))
+        return True
+
+    def _individual_update(self, subscriber):
+        """Deliver whatever has gathered for one subscriber.
+
+        Called with a subscriber rather than an update, because what to send
+        is whatever accumulated while the last call to them was in flight.
+        Only one delivery thread is ever inside here for a given subscriber,
+        which is what stops us handing their updates over in a different
+        order from the one they were published in.
+        """
         partner = None
         with self._lock:
             try:
@@ -395,12 +464,31 @@ class PubSub:
                 self.remove_subscriber(subscriber)
                 return 0
 
+            partner.queued = False
+            if partner.sending:
+                # Somebody is already on their way to this subscriber, and
+                # will take whatever is waiting.  Only one of us at a time
+                # is what keeps their updates in order.
+                return 0
+
+            records = []
+            while partner.pending and len(records) < self.batch_limit_num:
+                records.append(partner.pending.popleft())
+            if not records:
+                return 0
+
+            partner.sending = True
             proxy_obj = partner.proxy
+
+        value, names, channels = records[0][1], records[0][2], records[0][3]
+        self._debug("attempting to update subscriber '%s' on channels(%s)"
+                    "  with %d update(s), first value: %s",
+                    subscriber, channels, len(records), value)
 
         success = False
         try:
-            proxy_obj.remote_update(value, names, channels)
-            success = True
+            success = self._send_batch(subscriber, partner, proxy_obj,
+                                       records)
 
         except Exception as e:
             # TODO: capture and log traceback
@@ -409,6 +497,15 @@ class PubSub:
 
         # failure to deliver update!
         with self._lock:
+            # Whoever comes next for this subscriber is free to go, and if
+            # anything gathered while we were away, send for them.
+            partner.sending = False
+            if partner.pending and not partner.queued:
+                partner.queued = True
+                more = subscriber
+            else:
+                more = None
+
             if success:
                 # successful update
 
@@ -420,12 +517,16 @@ class PubSub:
                 backlog_n = len(partner.backlog)
                 if (partner.time_failure is None) and (backlog_n == 0):
                     # no current outstanding failures
+                    if more is not None:
+                        self._enqueue(time.time(), more)
                     return
 
                 if backlog_n == 0:
                     partner.time_failure = None
                     self.logger.info("subscriber '%s' backlog caught up" % (
                         subscriber))
+                    if more is not None:
+                        self._enqueue(time.time(), more)
                     return
 
                 # <-- there is a backlog and a history of failure
@@ -442,16 +543,19 @@ class PubSub:
                     partner.time_failure = None
                     return
 
-                # TODO: we are only releasing one update at a time
-                # and not more to be done in parallel--this could result in
-                # a slow comeback.  BUT, maybe slow is good if the client
-                # is experiencing congestion
-                self._enqueue(cur_time, queue_record)
+                # Put it back at the front of what is waiting, so the
+                # backlog drains ahead of anything published since, and
+                # send for this subscriber.
+                partner.pending.appendleft(queue_record)
+                if not partner.queued:
+                    partner.queued = True
+                    self._enqueue(cur_time, subscriber)
 
             else:
                 # failure!
-                # add this update to the partner's backlog
-                partner.backlog.append(queue_record)
+                # the whole run goes to the backlog, in the order it was
+                # published, so that nothing is reordered by having failed
+                partner.backlog.extend(records)
 
                 delivery_delay = min(self.max_delivery_delay,
                                      partner.delivery_delay)
@@ -500,7 +604,14 @@ class PubSub:
                 # try to rebuild it
                 self.proxy_error(subscriber, partner)
 
-            self._enqueue(cur_time, queue_record)
+                # Ahead of anything published since, so the backlog keeps
+                # its order relative to itself.
+                partner.pending.appendleft(queue_record)
+                already_queued = partner.queued
+                partner.queued = True
+
+            if not already_queued:
+                self._enqueue(cur_time, subscriber)
 
         task = Task.FuncTask(__requeue, [subscriber, partner], {},
                              logger=self.logger)
@@ -528,9 +639,9 @@ class PubSub:
                 last_warn = cur_time
 
             try:
-                priority, _seq, queue_record = self.outqueue.get(True, 0.25)
+                priority, _seq, subscriber = self.outqueue.get(True, 0.25)
 
-                self._individual_update(queue_record)
+                self._individual_update(subscriber)
 
             except queue.Empty:
                 continue
@@ -539,10 +650,9 @@ class PubSub:
         return self.outqueue.qsize()
 
     def get_qelts(self):
-        # (priority, subscriber) for each queued update; elt is
-        # (priority, sequence, record) and the record's first field is the
-        # subscriber.
-        res = [ (elt[0], elt[2][0]) for elt in self.outqueue.queue ]
+        # (priority, subscriber) for each subscriber with updates waiting;
+        # elt is (priority, sequence, subscriber).
+        res = [ (elt[0], elt[2]) for elt in self.outqueue.queue ]
         return res
 
     ######## PUBLIC METHODS ########
@@ -793,6 +903,45 @@ class PubSub:
 
         return ro.OK
 
+
+    def remote_update_many(self, updates):
+        """Several updates from one publisher, oldest first.
+
+        The batched form of :py:meth:`remote_update`, and the reason
+        batching is worth anything: one call carries a run of updates that
+        gathered while the last call was in flight, so the round trip is
+        paid once rather than per update.
+
+        They are applied in the order they were published.  Nothing on a
+        network guarantees that order across calls, but there is no reason
+        for us to lose it within one.
+
+        A publisher discovers whether a subscriber has this by calling it;
+        one that has not been upgraded refuses, and is sent single updates
+        from then on.
+        """
+        for update in updates:
+            value, names, channels = update
+            self.remote_update(value, names, channels)
+
+        return ro.OK
+
+    def setup_batch(self, limit_sec=None, limit_num=100):
+        """Set how many updates may travel together in one call.
+
+        Batches gather on their own: an update goes out immediately unless a
+        call to that subscriber is already in flight, in which case it waits
+        for the next one and travels with whatever else arrived meanwhile.
+        So nothing is ever delayed to make a batch, and this is a ceiling
+        rather than a target -- under light traffic none form at all.
+
+        :param limit_sec: Accepted and unused.  Holding updates back for a
+            fixed window would trade latency for fewer calls; batches here
+            cost no latency to begin with, so there is nothing to tune.
+        :param limit_num: The most updates to carry in one call.
+        """
+        if limit_num is not None:
+            self.batch_limit_num = max(1, int(limit_num))
 
     def notify(self, value, channels, priority=0):
         """

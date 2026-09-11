@@ -210,6 +210,8 @@ def test_two_updates_of_equal_priority_do_not_collide():
     which do not compare, and raising inside the delivery path."""
     pubsub = PubSub.PubSub('queued', ro.nullLogger(), numthreads=2)
 
+    # As the queue held them when the bug was live: whole records, whose
+    # payload dicts are what the comparison reached.
     same = ('sub', {'a': 1}, ['p'], ['ch'], 0)
     other = ('sub', {'b': 2}, ['p'], ['ch'], 0)
     pubsub._enqueue(100.0, same)
@@ -229,8 +231,11 @@ def test_priority_still_orders_the_queue():
 
 
 def test_the_queue_inspector_still_reports_subscribers():
+    """The queue carries a subscriber rather than one update now -- what to
+    send is decided when a delivery thread gets there -- so the inspector
+    reads it out of a different place and reports the same thing."""
     pubsub = PubSub.PubSub('elts', ro.nullLogger(), numthreads=2)
-    pubsub._enqueue(5.0, ('whoever', {'a': 1}, [], [], 0))
+    pubsub._enqueue(5.0, 'whoever')
 
     assert pubsub.get_qelts() == [(5.0, 'whoever')]
 

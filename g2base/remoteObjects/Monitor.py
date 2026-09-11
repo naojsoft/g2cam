@@ -350,11 +350,6 @@ class Monitor(ps.PubSub):
                 str(e)))
 
 
-    def setup_batch(self, limit_sec, limit_num=100):
-        # For future compatibility
-        pass
-
-
     # Get deprecate these item interface methods if we remove dict-style
     # uses of these objects
 
