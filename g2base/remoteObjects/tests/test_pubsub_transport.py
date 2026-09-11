@@ -11,8 +11,7 @@ XML-RPC.  Nothing is negotiated to arrange that: the publisher looks the
 subscriber up by name, and the registration says what it answers to.
 """
 
-import itertools
-import queue
+import logging
 import socket
 import threading
 import time
@@ -234,3 +233,182 @@ def test_the_queue_inspector_still_reports_subscribers():
     pubsub._enqueue(5.0, ('whoever', {'a': 1}, [], [], 0))
 
     assert pubsub.get_qelts() == [(5.0, 'whoever')]
+
+
+# ------------------------------------------------- doing work in place --
+
+def test_publishing_does_not_hand_the_work_to_a_thread():
+    """notify() only works out who wants the value and queues it -- a few
+    microseconds -- while handing that to the pool cost 63us to defer it.
+    The sending is the delivery threads' job either way."""
+    pubsub = PubSub.PubSub('inline', ro.nullLogger(), numthreads=2)
+    pubsub.add_channel('ch')
+
+    seen = []
+    original = pubsub._named_update
+
+    def watching(value, names, channels, priority=0):
+        seen.append(threading.current_thread())
+        return original(value, names, channels, priority=priority)
+
+    pubsub._named_update = watching
+    pubsub.notify({'a': 1}, ['ch'])
+
+    assert seen == [threading.current_thread()], \
+        'notify() should do this on the caller thread, not defer it'
+
+
+def test_a_debug_message_is_not_built_when_debug_is_off():
+    """The delivery path formatted its arguments before calling the logger,
+    so a large status value was rendered on every update whether or not
+    anyone was reading it."""
+    class Recording:
+        level_asked = None
+
+        def isEnabledFor(self, level):
+            self.level_asked = level
+            return False
+
+        def debug(self, msg):
+            raise AssertionError('should not have been called')
+
+    class Exploding:
+        def __str__(self):
+            raise AssertionError('should not have been rendered')
+
+    pubsub = PubSub.PubSub('quiet', Recording(), numthreads=2)
+    pubsub._debug('value=%s', Exploding())
+    assert pubsub.logger.level_asked == logging.DEBUG
+
+
+def test_a_logger_that_cannot_say_still_gets_its_message():
+    """Not every logger here is a logging.Logger; the minimal ones take a
+    string and have no isEnabledFor."""
+    class Minimal:
+        def __init__(self):
+            self.messages = []
+
+        def debug(self, msg):
+            self.messages.append(msg)
+
+    pubsub = PubSub.PubSub('minimal', Minimal(), numthreads=2)
+    pubsub._debug('value=%s', 42)
+    assert pubsub.logger.messages == ['value=42']
+
+
+def test_a_remote_update_is_handled_on_the_calling_worker():
+    """The RPC server already gave this call a thread.  Storing the value
+    takes microseconds, so a second hand-off cost more than the work."""
+    monitor = Monitor.Monitor('inplace', ro.nullLogger(), numthreads=4)
+    monitor.start()
+    try:
+        seen = []
+        original = monitor.do_update
+
+        def watching(path, value):
+            seen.append(threading.current_thread())
+            return original(path, value)
+
+        monitor.do_update = watching
+        monitor.remote_update(
+            {'msg': 'update', 'path': 'A.B', 'value': {'v': 1}},
+            ['somebody'], ['ch'])
+
+        assert seen == [threading.current_thread()]
+        assert dict(monitor['A.B']) == {'v': 1}
+    finally:
+        monitor.stop()
+
+
+def test_a_subscriber_that_cannot_store_does_not_stall_its_own_feed():
+    """Doing the work in place made a store failure reach the publisher,
+    which is the wrong trade: the publisher marks the partner failed, every
+    later update queues behind the bad one, and it retries a value that can
+    never be stored.  A status stream would rather lose one value than
+    stop."""
+    monitor = Monitor.Monitor('poison', ro.nullLogger(), numthreads=4)
+    monitor.start()
+    try:
+        def boom(path, value):
+            raise RuntimeError('store is broken')
+
+        monitor.do_update = boom
+        result = monitor.remote_update(
+            {'msg': 'update', 'path': 'A.B', 'value': {'v': 1}},
+            ['somebody'], ['ch'])
+
+        assert result == ro.OK, 'the publisher should be told to move on'
+    finally:
+        monitor.stop()
+
+
+def test_reporting_that_failure_does_not_itself_raise():
+    """The handler logged with exc_info=, which the minimal loggers do not
+    take -- so the one place meant to stop an exception raised its own, and
+    the publisher saw a failure after all."""
+    class Minimal:
+        """As small as the loggers that get passed in really are."""
+
+        def __init__(self):
+            self.errors = []
+
+        def error(self, msg):
+            self.errors.append(msg)
+
+        def debug(self, msg):
+            pass
+
+        def info(self, msg):
+            pass
+
+        def warning(self, msg):
+            pass
+
+        warn = warning
+
+    monitor = Monitor.Monitor('reporting', Minimal(), numthreads=4)
+    monitor.start()
+    try:
+        def boom(path, value):
+            raise RuntimeError('store is broken')
+
+        monitor.do_update = boom
+        assert monitor.remote_update(
+            {'msg': 'update', 'path': 'A.B', 'value': {'v': 1}},
+            ['somebody'], ['ch']) == ro.OK
+        assert monitor.logger.errors, 'and it should say so somewhere'
+        assert 'store is broken' in monitor.logger.errors[0]
+    finally:
+        monitor.stop()
+
+
+def test_publishing_does_not_fail_the_caller_over_a_fault_in_delivery():
+    """The task notify() used to spawn swallowed whatever went wrong in
+    there.  Doing the work in place would have handed it to the caller --
+    and notify() and update() are public, so the method scan exposes them
+    and that caller can be a remote one, which would see an RPC fault for a
+    fault in the machinery rather than in its own value."""
+    class Recording:
+        def __init__(self):
+            self.errors = []
+
+        def error(self, msg):
+            self.errors.append(msg)
+
+        def debug(self, msg):
+            pass
+
+        def isEnabledFor(self, level):
+            return False
+
+    pubsub = PubSub.PubSub('faulty', Recording(), numthreads=2)
+    pubsub.add_channel('ch')
+
+    def explode(*args, **kwargs):
+        raise RuntimeError('machinery broke')
+
+    pubsub._named_update = explode
+    pubsub.notify({'a': 1}, ['ch'])          # must not raise
+
+    assert pubsub.logger.errors, 'and it should still be reported'
+    assert 'machinery broke' in pubsub.logger.errors[0]

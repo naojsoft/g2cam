@@ -15,7 +15,9 @@ import sys
 import os
 import time
 import itertools
+import logging
 import threading
+import traceback
 from collections import deque as Deque
 import queue
 
@@ -138,6 +140,25 @@ class PubSub:
 
         self.cb_subscr_cnt = 0
 
+
+    def _debug(self, fmt, *args):
+        """Log at debug level without building the message first.
+
+        The delivery path formatted its arguments into a string *before*
+        calling the logger, so a 120-key status value cost 17.5us to render
+        on every update whether or not anyone was reading debug output --
+        half the cost of the update itself.
+
+        Loggers here are not all :py:class:`logging.Logger`; some are the
+        minimal stand-ins from remoteObjects, which take a single string and
+        have no isEnabledFor.  So ask, and fall back to formatting for the
+        ones that cannot say.
+        """
+        logger = self.logger
+        enabled = getattr(logger, 'isEnabledFor', None)
+        if enabled is not None and not enabled(logging.DEBUG):
+            return
+        logger.debug(fmt % args if args else fmt)
 
     def get_threadPool(self):
         return self.threadPool
@@ -292,8 +313,8 @@ class PubSub:
         names of the pubsubs doing the updating.  _channels_ is the
         channel(s) to which this update applies.
         """
-        self.logger.debug("update: names=%s, channels=%s value=%s" % (
-            str(names), str(channels), str(value)))
+        self._debug("update: names=%s, channels=%s value=%s",
+                    names, channels, value)
 
         self._subscriber_update(value, names, channels, priority)
 
@@ -305,17 +326,16 @@ class PubSub:
         a task to call this method via the thread pool.  The update includes
         any local objects or remote objects by proxy.
         """
-        self.logger.debug("subscriber update: names=%s, channels=%s value=%s" % (
-            str(names), str(channels), str(value)))
-        #self.logger.debug("value=%s" % (str(value)))
+        self._debug("subscriber update: names=%s, channels=%s value=%s",
+                    names, channels, value)
 
         # Get a list of partners that we should update for this value
         subscribers, all_channels = self._get_subscribers(channels)
         # sets don't go across remoteObjects (yet)
         all_channels = list(all_channels)
 
-        self.logger.debug("subscribers for channel=%s are %s" % (
-            str(channels), str(subscribers)))
+        self._debug("subscribers for channel=%s are %s",
+                    channels, subscribers)
 
         # Add ourself to the set of names (prevents cyclic updates)
         if self.name in names:
@@ -358,8 +378,8 @@ class PubSub:
 
     def _individual_update(self, queue_record):
         subscriber, value, names, channels, priority = queue_record
-        self.logger.debug("attempting to update subscriber '%s' on channels(%s)  with value: %s" % (
-            subscriber, str(channels), str(value)))
+        self._debug("attempting to update subscriber '%s' on channels(%s)"
+                    "  with value: %s", subscriber, channels, value)
 
         partner = None
         with self._lock:
@@ -678,7 +698,7 @@ class PubSub:
         """
         if isinstance(channels, str):
             channels = [channels]
-        self.logger.debug("channels=%s" % str(channels))
+        self._debug("channels=%s", channels)
 
         with self._lock:
             # Optomization for case where there is only one channel
@@ -743,19 +763,33 @@ class PubSub:
         if self.name in names:
             return ro.OK
 
-        # Monitor update--this can be removed once Monitor is
-        # no longer a subclass of PubSub
-        if hasattr(self, 'monitor_update'):
-            task = Task.FuncTask(self._monitor_update,
-                                 (value, names, channels, 0),
-                                 {}, logger=self.logger)
-        else:
-            task = Task.FuncTask(self._named_update,
-                                 (value, names, channels),
-                                 {'priority': 0},
-                                 logger=self.logger)
+        # We are already running on a worker: the RPC server handed this
+        # call to one.  Storing the value takes microseconds and passing it
+        # on only puts it on the delivery queue, so handing either to a
+        # second thread costs far more than doing them here.
+        #
+        # What the task did do is swallow failures, and that is kept
+        # deliberately.  Letting one reach the publisher sounds better --
+        # it would retry from its backlog -- but a value this subscriber
+        # cannot store is not one the publisher can fix by sending again,
+        # and a partner marked failed has every later update queued behind
+        # the bad one.  So one poison value would stall the whole feed while
+        # it was retried.  For a status stream, moving on is worth more than
+        # not losing one value.
+        try:
+            if hasattr(self, 'monitor_update'):
+                self._monitor_update(value, names, channels, 0)
+            else:
+                self._named_update(value, names, channels, priority=0)
 
-        task.init_and_start(self)
+        except Exception as e:
+            # No exc_info=: the loggers passed in here are not all
+            # logging.Logger, and the minimal ones take a message and
+            # nothing else -- so asking for a traceback would raise inside
+            # the handler that exists to stop things raising.
+            self.logger.error(
+                "update from %s on channels %s could not be handled: %s\n%s"
+                % (names, channels, e, traceback.format_exc()))
 
         return ro.OK
 
@@ -767,14 +801,26 @@ class PubSub:
             value
             channels    one (a string) or more (a list) of channel names to
                         which to send the specified update
+
+        The work done here is only working out who wants this value and
+        putting it on the delivery queue -- 3.5us for a small one -- and the
+        sending is the delivery threads' job either way.  Handing that to
+        the thread pool cost 63us to defer 3.5us of work, so the caller
+        waited longer for the hand-off than for the thing itself.
+
+        The task also swallowed anything that went wrong in there, and that
+        is kept: publishing a value should not fail the caller's own work
+        over a fault in the machinery carrying it.  It matters more than it
+        looks -- notify() and update() are public, so the method scan
+        exposes them, and the caller can be a remote one.
         """
         names = [ self.name ]
-        task = Task.FuncTask(self._named_update,
-                             (value, names, channels),
-                             {'priority': priority},
-                             logger=self.logger)
+        try:
+            self._named_update(value, names, channels, priority=priority)
 
-        task.init_and_start(self)
+        except Exception as e:
+            self.logger.error("could not publish to channels %s: %s\n%s"
+                              % (channels, e, traceback.format_exc()))
 
     def clear_proxy_cache(self):
         with self._lock:
