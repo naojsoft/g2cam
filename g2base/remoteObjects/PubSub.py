@@ -16,6 +16,7 @@ import os
 import time
 import itertools
 import logging
+import random
 import threading
 import traceback
 from collections import deque as Deque
@@ -124,8 +125,17 @@ class PubSub:
         # number of seconds to wait before unsubscribing a subscriber
         # who is unresponsive
         self.failure_limit = 30.0
-        # initial delay assigned after a delivery failure
-        self.redelivery_delay = 0.001
+        # Initial delay assigned after a delivery failure.  It used to be a
+        # millisecond, which is below any round trip worth the name: the
+        # first few retries were spent before the network could have
+        # changed its mind.
+        self.redelivery_delay = 0.05
+        # How much to spread retries either side of the computed delay, as a
+        # fraction of it.  Without this every partner that failed on the
+        # same tick -- which is what a name service or a host restarting
+        # looks like -- retries in lockstep, and keeps doing so all the way
+        # up the backoff.
+        self.redelivery_jitter = 0.5
         # delay is increased by this factor with each subsequent failure
         self.redelivery_increase_factor = 2.0
         # delay is decreased by this factor with each subsequent success
@@ -267,6 +277,12 @@ class PubSub:
                                       pending=Deque(),
                                       sending=False,
                                       queued=False,
+                                      # Whether this run of failures has
+                                      # already had the proxy replaced.
+                                      proxy_rebuilt=False,
+                                      # Updates the backlog had to drop
+                                      # because it was full.
+                                      dropped=0,
                                       # Cleared the first time a batch call
                                       # is refused, which is how an
                                       # un-upgraded subscriber is spotted.
@@ -387,7 +403,7 @@ class PubSub:
                 # If there is a current failure indicated for this subscriber
                 # then add this update to the partner's backlog
                 if partner.time_failure is not None:
-                    partner.backlog.append(queue_record)
+                    self._backlog_add(subscriber, partner, [queue_record])
                     continue
 
                 partner.pending.append(queue_record)
@@ -497,14 +513,19 @@ class PubSub:
 
         # failure to deliver update!
         with self._lock:
-            # Whoever comes next for this subscriber is free to go, and if
-            # anything gathered while we were away, send for them.
+            # Whoever comes next for this subscriber is free to go.
             partner.sending = False
-            if partner.pending and not partner.queued:
+
+            # Claiming `queued` and then not queuing anything is how a
+            # partner gets stranded: nothing will claim it again, and
+            # nothing is on the way.  So it is only claimed where the
+            # enqueue certainly follows -- which is here, on success, and
+            # not on the failure path, where the timer decides when we next
+            # try and the backlog holds what to send.
+            more = None
+            if success and partner.pending and not partner.queued:
                 partner.queued = True
                 more = subscriber
-            else:
-                more = None
 
             if success:
                 # successful update
@@ -523,6 +544,7 @@ class PubSub:
 
                 if backlog_n == 0:
                     partner.time_failure = None
+                    partner.proxy_rebuilt = False
                     self.logger.info("subscriber '%s' backlog caught up" % (
                         subscriber))
                     if more is not None:
@@ -555,10 +577,16 @@ class PubSub:
                 # failure!
                 # the whole run goes to the backlog, in the order it was
                 # published, so that nothing is reordered by having failed
-                partner.backlog.extend(records)
+                self._backlog_add(subscriber, partner, records)
 
                 delivery_delay = min(self.max_delivery_delay,
                                      partner.delivery_delay)
+                # Spread the actual firing without disturbing the schedule:
+                # delivery_delay keeps doubling as before, and only when
+                # the timer is set does chance get a say.
+                spread = delivery_delay * self.redelivery_jitter
+                delivery_delay = max(0.0, delivery_delay
+                                     + random.uniform(-spread, spread))
                 # increase future delays by increase retry factor
                 partner.delivery_delay = min(self.max_delivery_delay,
                                              partner.delivery_delay *
@@ -571,6 +599,29 @@ class PubSub:
                 # set up a delay before retrying
                 self.logger.debug("setting timer")
                 partner.timer.cond_set(delivery_delay)
+
+    def _backlog_add(self, subscriber, partner, records):
+        """Add to a partner's backlog, and notice what falls off the end.
+
+        The backlog is a bounded deque, so appending to a full one discards
+        from the front.  Dropping the oldest is the right end for status --
+        what a subscriber missed matters less than where things now stand --
+        but it happened silently, and a subscriber could lose hundreds of
+        updates with nothing said.
+        """
+        room = partner.backlog.maxlen
+        if room is not None:
+            overflow = len(partner.backlog) + len(records) - room
+            if overflow > 0:
+                had = partner.dropped
+                partner.dropped += overflow
+                if had == 0 or partner.dropped // 1000 != had // 1000:
+                    self.logger.warning(
+                        "backlog for subscriber '%s' is full (%d); dropping "
+                        "the oldest updates -- %d lost so far"
+                        % (subscriber, room, partner.dropped))
+
+        partner.backlog.extend(records)
 
     def _timer_cb(self, timer, subscriber, partner):
 
@@ -598,11 +649,19 @@ class PubSub:
                 except IndexError:
                     # backlog is empty
                     partner.time_failure = None
+                    partner.proxy_rebuilt = False
                     return
 
-                # There may be a problem with this partner/proxy:
-                # try to rebuild it
-                self.proxy_error(subscriber, partner)
+                # A proxy looked up by name already re-resolves itself
+                # when a call fails -- call_failover() asks the name
+                # service again and tries the other providers -- so
+                # rebuilding it on every retry threw away one that had just
+                # healed and paid for another lookup to get back where we
+                # were.  Once per episode is enough to clear a proxy that
+                # is genuinely stale.
+                if not partner.proxy_rebuilt:
+                    partner.proxy_rebuilt = True
+                    self.proxy_error(subscriber, partner)
 
                 # Ahead of anything published since, so the backlog keeps
                 # its order relative to itself.
@@ -935,9 +994,20 @@ class PubSub:
         So nothing is ever delayed to make a batch, and this is a ceiling
         rather than a target -- under light traffic none form at all.
 
-        :param limit_sec: Accepted and unused.  Holding updates back for a
-            fixed window would trade latency for fewer calls; batches here
-            cost no latency to begin with, so there is nothing to tune.
+        :param limit_sec: **Accepted and ignored.**  It is here because
+            services already pass it -- ``setup_batch(0.1)`` and
+            ``setup_batch(0.25)`` appear in a dozen places -- and because
+            those calls have never done anything: this was a stub until
+            batching existed.
+
+            Honouring it would mean holding updates back for a window,
+            which buys fewer calls at the price of that much latency on
+            every update after the first.  Batches here already cost no
+            latency, so there is nothing to buy and a synchronisation
+            system is the wrong place to spend a tenth of a second.  If you
+            do want a floor on the call rate, ask and it can be added as
+            its own thing rather than smuggled in behind an argument that
+            has meant nothing for years.
         :param limit_num: The most updates to carry in one call.
         """
         if limit_num is not None:
