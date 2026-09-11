@@ -420,9 +420,14 @@ def test_the_null_logger_is_a_real_logger():
     """It was a hand-written stand-in taking a message and nothing else, so
     a caller writing what the standard library documents got a TypeError
     from the object whose whole job is to keep quiet."""
+    from g2base import ssdlog
+
     logger = ro.nullLogger()
 
     assert isinstance(logger, logging.Logger)
+    assert ro.nullLogger is ssdlog.NullLogger, \
+        'one implementation, reachable by the name each caller already uses'
+
     for method in ('debug', 'info', 'warning', 'warn', 'error', 'critical',
                    'exception', 'log', 'isEnabledFor', 'setLevel'):
         assert callable(getattr(logger, method, None)), method
@@ -454,7 +459,7 @@ def test_the_null_logger_still_writes_when_given_a_file():
     import io
 
     stream = io.StringIO()
-    logger = ro.nullLogger(stream)
+    logger = ro.nullLogger(f_out=stream)
     logger.info('written: %s', 'yes')
 
     assert 'written: yes' in stream.getvalue()

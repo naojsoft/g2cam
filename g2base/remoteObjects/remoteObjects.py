@@ -31,8 +31,6 @@ import threading
 # binascii encoding/decoding is much faster than xmlrpclib's
 # built-in Binary class
 import binascii
-import itertools
-import logging
 import zlib
 import traceback
 import inspect
@@ -1472,60 +1470,18 @@ remoteObjectSPAll = remoteObjectProxyAll
 
 # Null logger in case a logger is not passed to the remoteObjectServer
 #
-class nullLogger(logging.Logger):
-    """A logger for code that has not been given one.
-
-    It really is a :py:class:`logging.Logger` now, and that is worth more
-    than it sounds.  The hand-written version took a message and nothing
-    else -- no ``exc_info``, no lazy arguments, and no ``critical``,
-    ``exception``, ``log`` or ``isEnabledFor`` at all -- so a caller that
-    wrote what the standard library documents got a TypeError or an
-    AttributeError from the object that exists to keep quiet.  That is a
-    poor thing to discover from a handler whose job is to stop an exception.
-
-    It is also faster where it counts.  Taking only a message forced every
-    caller to format its own before calling, so the work was done whether or
-    not anyone would read it:
-
-    ==============================  ==========  ==========
-    call                              before      after
-    ==============================  ==========  ==========
-    ``debug("hello")``               0.034us     0.078us
-    a 120-key value interpolated    16.711us     0.093us
-    ==============================  ==========  ==========
-
-    Forty nanoseconds worse on a bare string, and a hundred and eighty times
-    better on anything with an argument -- because the argument is now the
-    logger's to format, and it does not.
-
-    :param f_out: Write records here instead of discarding them, as the
-        previous version did when given a file.
-    """
-
-    #: Each instance gets its own name so that two of them cannot end up
-    #: sharing handlers.  They are deliberately not registered with the
-    #: logging manager: these are throwaways, and a process that makes many
-    #: should not accumulate them.
-    _serial = itertools.count()
-
-    def __init__(self, f_out=None):
-        super().__init__('ro.null.%d' % (next(self._serial),))
-        # Nothing reaches the root logger's handlers: this is a stand-in for
-        # having no logger, not a quiet route into somebody else's output.
-        self.propagate = False
-
-        if f_out is None:
-            self.addHandler(logging.NullHandler())
-            # Above CRITICAL, so every level short-circuits in the level
-            # check and no record is ever built.
-            self.setLevel(logging.CRITICAL + 1)
-        else:
-            self.addHandler(logging.StreamHandler(f_out))
-            self.setLevel(logging.DEBUG)
-
-    def warn(self, msg, *args, **kwargs):
-        """Kept because callers use it and Python 3.13 removed it."""
-        return self.warning(msg, *args, **kwargs)
+#: A logger for code that has not been given one.
+#:
+#: The implementation lives in :py:class:`g2base.ssdlog.NullLogger`, which
+#: is where the other logging machinery is; this name is kept because it is
+#: what the fifty-odd callers here import, and because code outside this
+#: package reaches for ``ro.nullLogger``.
+#:
+#: One difference from the version that used to be defined here: the first
+#: argument is the logger's *name*, not a file to write to.  That is the
+#: signature ssdlog.NullLogger already had and that Gen2 already calls it
+#: with; pass ``f_out=`` by keyword to write records somewhere.
+nullLogger = ssdlog.NullLogger
 
 
 # EXPORTED MODULE-LEVEL FUNCTIONS
