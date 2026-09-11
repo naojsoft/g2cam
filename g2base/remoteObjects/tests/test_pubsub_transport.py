@@ -412,3 +412,58 @@ def test_publishing_does_not_fail_the_caller_over_a_fault_in_delivery():
 
     assert pubsub.logger.errors, 'and it should still be reported'
     assert 'machinery broke' in pubsub.logger.errors[0]
+
+
+# ------------------------------------------------------- the null logger --
+
+def test_the_null_logger_is_a_real_logger():
+    """It was a hand-written stand-in taking a message and nothing else, so
+    a caller writing what the standard library documents got a TypeError
+    from the object whose whole job is to keep quiet."""
+    logger = ro.nullLogger()
+
+    assert isinstance(logger, logging.Logger)
+    for method in ('debug', 'info', 'warning', 'warn', 'error', 'critical',
+                   'exception', 'log', 'isEnabledFor', 'setLevel'):
+        assert callable(getattr(logger, method, None)), method
+
+
+def test_the_null_logger_takes_the_usual_arguments():
+    """Lazy arguments and exc_info, neither of which it used to accept --
+    and exc_info is the one that bit, inside a handler written to stop an
+    exception reaching a publisher."""
+    logger = ro.nullLogger()
+
+    logger.debug('a lazy %s and a %d', 'string', 2)
+    try:
+        raise RuntimeError('boom')
+    except RuntimeError:
+        logger.error('failed: %s', 'boom', exc_info=True)
+        logger.exception('also fine')
+
+
+def test_the_null_logger_discards_by_default():
+    logger = ro.nullLogger()
+    assert not logger.isEnabledFor(logging.CRITICAL), \
+        'set above CRITICAL so no record is built at any level'
+    assert not logger.propagate, \
+        'a stand-in for having no logger, not a quiet route into the root one'
+
+
+def test_the_null_logger_still_writes_when_given_a_file():
+    import io
+
+    stream = io.StringIO()
+    logger = ro.nullLogger(stream)
+    logger.info('written: %s', 'yes')
+
+    assert 'written: yes' in stream.getvalue()
+
+
+def test_two_null_loggers_do_not_share_handlers():
+    """They are throwaways; a process that makes many should not find them
+    accumulating on one name."""
+    first, second = ro.nullLogger(), ro.nullLogger()
+
+    assert first.name != second.name
+    assert len(first.handlers) == 1 and len(second.handlers) == 1
