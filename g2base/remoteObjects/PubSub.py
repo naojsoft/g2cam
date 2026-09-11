@@ -14,6 +14,7 @@ Main issues to think about/resolve:
 import sys
 import os
 import time
+import itertools
 import threading
 from collections import deque as Deque
 import queue
@@ -62,6 +63,14 @@ class PubSub:
         self.outlimit = outlimit
         self.inlimit = inlimit
         self.outqueue = queue.PriorityQueue()
+        # A tiebreaker for the queue.  Its items are (priority, record), and
+        # two equal priorities send Python on to compare the records -- which
+        # reach the payload dicts and raise TypeError, taking the update with
+        # them.  Equal priorities are not hypothetical: the two backlog
+        # requeues below share one timestamp, so the exposure is worst while
+        # a subscriber is catching up after a failure.  A counter between the
+        # two keeps them apart and preserves FIFO order within a priority.
+        self._seq = itertools.count()
 
         # Handles to subscriber remote proxies
         self._partner = {}
@@ -343,10 +352,8 @@ class PubSub:
                     partner.backlog.append(queue_record)
                     continue
 
-            adj_priority = time.time() + priority
-
             # queue up this update
-            self.outqueue.put((adj_priority, queue_record))
+            self._enqueue(time.time() + priority, queue_record)
 
 
     def _individual_update(self, queue_record):
@@ -419,8 +426,7 @@ class PubSub:
                 # and not more to be done in parallel--this could result in
                 # a slow comeback.  BUT, maybe slow is good if the client
                 # is experiencing congestion
-                adj_priority = cur_time
-                self.outqueue.put((adj_priority, queue_record))
+                self._enqueue(cur_time, queue_record)
 
             else:
                 # failure!
@@ -474,13 +480,20 @@ class PubSub:
                 # try to rebuild it
                 self.proxy_error(subscriber, partner)
 
-            adj_priority = cur_time
-
-            self.outqueue.put((adj_priority, queue_record))
+            self._enqueue(cur_time, queue_record)
 
         task = Task.FuncTask(__requeue, [subscriber, partner], {},
                              logger=self.logger)
         task.init_and_start(self)
+
+    def _enqueue(self, priority, queue_record):
+        """Put an update on the delivery queue.
+
+        The sequence number is what stops two equal priorities being settled
+        by comparing the records themselves, which ends at the payload dicts
+        and raises.
+        """
+        self.outqueue.put((priority, next(self._seq), queue_record))
 
     def _delivery_daemon(self, i):
         last_warn = time.time()
@@ -495,7 +508,7 @@ class PubSub:
                 last_warn = cur_time
 
             try:
-                priority, queue_record = self.outqueue.get(True, 0.25)
+                priority, _seq, queue_record = self.outqueue.get(True, 0.25)
 
                 self._individual_update(queue_record)
 
@@ -506,7 +519,10 @@ class PubSub:
         return self.outqueue.qsize()
 
     def get_qelts(self):
-        res = [ (elt[0], elt[1][0]) for elt in self.outqueue.queue ]
+        # (priority, subscriber) for each queued update; elt is
+        # (priority, sequence, record) and the record's first field is the
+        # subscriber.
+        res = [ (elt[0], elt[2][0]) for elt in self.outqueue.queue ]
         return res
 
     ######## PUBLIC METHODS ########
@@ -803,7 +819,8 @@ class PubSub:
             if 'secure' in options:
                 kwdargs['secure'] = options['secure']
             if 'transport' in options:
-                kwdargs['transport'] = options['transport']
+                kwdargs.update(self._transport_options(subscriber,
+                                                       options['transport']))
 
             # subscriber can be a service name or a host:port
             if ':' not in subscriber:
@@ -819,6 +836,28 @@ class PubSub:
 
             return proxy_obj
 
+
+    def _transport_options(self, subscriber, transport):
+        """Turn a 'transport' option into what a proxy understands.
+
+        A **list** is an order of preference, and cannot fail: whatever the
+        subscriber offers that we both know is used, and its registration
+        decides the rest.  A **string** pins one protocol, which is what to
+        say when only one will do -- and means a subscriber that does not
+        offer it is unreachable rather than reached more slowly.
+
+        Nothing has to be said at all.  Left out, a proxy follows the
+        subscriber's registration and takes the fastest way in it offers,
+        which is usually what was wanted.
+        """
+        if isinstance(transport, (list, tuple)):
+            return {'prefer': list(transport)}
+
+        self.logger.debug(
+            "subscriber '%s' pinned to transport '%s'; it will be "
+            "unreachable if it does not offer that"
+            % (subscriber, transport))
+        return {'transport': transport}
 
     def subscribe(self, subscriber, channels, options):
         """Register a subscriber (named by _subscriber_) for updates on
@@ -910,7 +949,8 @@ class PubSub:
             if 'pubsecure' in options:
                 kwdargs['secure'] = options['pubsecure']
             if 'pubtransport' in options:
-                kwdargs['transport'] = options['pubtransport']
+                kwdargs.update(self._transport_options(publisher,
+                                                       options['pubtransport']))
             if 'name' in options:
                 name = options['name']
             else:
@@ -1053,19 +1093,31 @@ class PubSub:
                      threaded_server=default_threaded_server,
                      authDict=None, default_auth=use_default_auth,
                      secure=default_secure, cert_file=default_cert,
-                     ns=None,
+                     ns=None, transport=default_transport,
                      usethread=True, wait=True, timeout=None):
+        """Expose this pubsub for remote subscribers.
 
+        :param transport: One protocol name, or a list of them with the
+            most widely spoken first.  A list means this pubsub listens
+            every one of those ways at once, so a publisher updating us
+            reaches for the fastest it can speak while one that has not
+            been upgraded still finds XML-RPC where it expects it.
+
+            Nothing has to be negotiated for that: a publisher looks us up
+            by name and the registration says what we answer to.
+        """
         if not svcname:
             svcname = self.name
         # make our RO server for remote interface
         self.server = ro.remoteObjectServer(svcname=svcname, obj=self,
                                             logger=self.logger,
                                             ev_quit=self.ev_quit,
+                                            host=host,
                                             port=port, usethread=usethread,
                                             threadPool=self.threadPool,
                                             threaded_server=threaded_server,
                                             numthreads=self.inlimit,
+                                            transport=transport,
                                             authDict=authDict, default_auth=default_auth,
                                             secure=secure, cert_file=cert_file)
 
