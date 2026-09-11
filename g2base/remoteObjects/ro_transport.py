@@ -352,7 +352,21 @@ class ZmqTransportSpec(TransportSpec):
         return (OSError, zmq.ZMQError)
 
     def url(self, host, port):
+        """Where a client connects to."""
         return 'tcp://%s:%d' % (host or '127.0.0.1', port)
+
+    def bind_url(self, bindhost, port):
+        """Where a server listens, which is not the same question.
+
+        An empty bindhost means every interface, as it does to
+        :py:meth:`socket.socket.bind`.  0mq spells that ``*``, and spells
+        nothing at all as an error -- so this used to fall back on the
+        client's default of 127.0.0.1 and quietly bind loopback only.  A
+        service that did that registered the address its clients should use
+        and then answered on none of them, which looks like the service
+        being down rather than like a bind that went somewhere else.
+        """
+        return 'tcp://%s:%d' % (bindhost or '*', port)
 
     def server_port(self, transport):
         return int(transport.endpoint.rsplit(':', 1)[1])
@@ -364,7 +378,7 @@ class ZmqTransportSpec(TransportSpec):
                 "the '%s' transport cannot be encrypted" % (self.name,))
         from tinyrpc.transports.zmq import ZmqServerTransport
         return ZmqServerTransport.create(self.context,
-                                         self.url(bindhost, port),
+                                         self.bind_url(bindhost, port),
                                          poll_timeout=poll_timeout)
 
     def make_client_transport(self, host, port, auth=None, secure=False,
