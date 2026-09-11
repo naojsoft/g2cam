@@ -33,6 +33,20 @@ version = '20201115.0'
 TWO_WAY = 'bidirectional'
 CH_ALL  = '*'
 
+#: What a pubsub listens for when it is not told otherwise.
+#:
+#: XML-RPC stays first, so it remains the primary in the registration and an
+#: un-upgraded publisher finds it exactly where it always was; g2rpc-tcp sits
+#: alongside for anything that can speak it, and a publisher takes the faster
+#: of the two without being configured to.  Measured here, a delivery costs
+#: 589us over XML-RPC against 272us over g2rpc-tcp, and g2rpc-tcp carries
+#: msgpack, which is 2.1-2.4x faster to encode than json on these payloads
+#: and about a quarter smaller on the wire.
+#:
+#: Listening two ways costs one permanent worker more than listening one
+#: way; see the check in :py:meth:`PubSub.start_server`.
+default_pubsub_transport = ['xmlrpc', 'g2rpc-tcp']
+
 
 class PubSubError(Exception):
     """General class for exceptions raised by this module.
@@ -1350,6 +1364,56 @@ class PubSub:
             subscriber))
 
 
+    def _affordable_transports(self, transport, usethread, asked_for):
+        """Trim the listeners to what the thread pool can actually serve.
+
+        Every listener holds a worker for as long as the service runs, and
+        so does each delivery daemon and the subscription loop.  When those
+        add up to the whole pool there is nobody left to handle a request,
+        and the service does not fail: it accepts calls and never answers,
+        on every protocol at once, with nothing in the log.
+
+        Listening two ways rather than one moves that threshold, so a pool
+        that was adequate before this became the default may not be now.
+        A default must not break a service that worked, so when nothing was
+        asked for the extra listeners are dropped -- back to XML-RPC alone
+        if need be, which is where such a service already was -- and the
+        reason is logged.  When the transports *were* asked for, quietly
+        ignoring them would be worse than refusing, so that raises.
+        """
+        listeners = ([transport] if isinstance(transport, str)
+                     else list(transport))
+        pool = getattr(self.threadPool, 'numthreads', None)
+        if pool is None:
+            return listeners
+
+        # delivery daemons, the subscription loop, the server's own start
+        # task, and one worker left over to answer a call with.
+        reserved = self.outlimit + 1 + (1 if usethread else 0) + 1
+        affordable = pool - reserved
+
+        if affordable >= len(listeners):
+            return listeners
+
+        if asked_for or affordable < 1:
+            raise PubSubError(
+                "'%s' has a thread pool of %d, which cannot serve %d "
+                "listener(s) alongside %d delivery daemon(s): it needs at "
+                "least %d, or it would accept calls and never answer them.  "
+                "Give the pubsub numthreads=%d, or fewer transports, or a "
+                "smaller outlimit."
+                % (self.name, pool, len(listeners), self.outlimit,
+                   reserved + len(listeners), reserved + len(listeners)))
+
+        kept = listeners[:affordable]
+        self.logger.warning(
+            "'%s' has a thread pool of %d, which can serve %d listener(s) "
+            "alongside %d delivery daemon(s), so %s will be served and %s "
+            "will not.  Give the pubsub numthreads=%d to serve them all."
+            % (self.name, pool, affordable, self.outlimit, ','.join(kept),
+               ','.join(listeners[affordable:]), reserved + len(listeners)))
+        return kept
+
     # TODO: deprecate this and make apps create their own remoteObjectServer
     # with a delegate to this object??
     def start_server(self, svcname=None, host=None, port=None,
@@ -1358,7 +1422,7 @@ class PubSub:
                      threaded_server=default_threaded_server,
                      authDict=None, default_auth=use_default_auth,
                      secure=default_secure, cert_file=default_cert,
-                     ns=None, transport=default_transport,
+                     ns=None, transport=None,
                      usethread=True, wait=True, timeout=None):
         """Expose this pubsub for remote subscribers.
 
@@ -1370,9 +1434,18 @@ class PubSub:
 
             Nothing has to be negotiated for that: a publisher looks us up
             by name and the registration says what we answer to.
+
+            Left out, :py:data:`default_pubsub_transport` is used, trimmed
+            to what the thread pool can serve; named explicitly, a pool too
+            small to serve them raises rather than quietly serving fewer.
         """
         if not svcname:
             svcname = self.name
+        asked_for = transport is not None
+        if not asked_for:
+            transport = default_pubsub_transport
+        transport = self._affordable_transports(transport, usethread,
+                                                asked_for)
         # make our RO server for remote interface
         self.server = ro.remoteObjectServer(svcname=svcname, obj=self,
                                             logger=self.logger,

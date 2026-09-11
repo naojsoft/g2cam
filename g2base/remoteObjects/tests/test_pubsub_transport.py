@@ -25,6 +25,9 @@ from g2base.remoteObjects import ro_transport
 
 HOST = '127.0.0.1'
 
+#: Tell the fixture to pass no transport at all, and take the default.
+_UNSPECIFIED = object()
+
 
 class FakePubSub:
     def subscribe(self, channel):
@@ -47,15 +50,36 @@ def nameservice():
 
 
 @pytest.fixture
+def recording():
+    """A logger that keeps what it is told, and takes what a logger takes."""
+
+    class Recording:
+        def __init__(self):
+            self.warnings = []
+
+        def warning(self, msg, *args, **kwargs):
+            self.warnings.append(msg % args if args else msg)
+
+        warn = warning
+
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: None
+
+    return Recording()
+
+
+@pytest.fixture
 def monitors(nameservice):
     started = []
 
     def _make(name, transport='xmlrpc'):
         monitor = Monitor.Monitor(name, ro.nullLogger(), numthreads=12)
         monitor.start()
+        extra = ({} if transport is _UNSPECIFIED
+                 else {'transport': transport})
         monitor.start_server(svcname=name, host=HOST, ns=nameservice,
-                             default_auth=False, transport=transport,
-                             usethread=True, wait=True)
+                             default_auth=False, usethread=True, wait=True,
+                             **extra)
         started.append(monitor)
         return monitor
 
@@ -112,6 +136,90 @@ def test_a_subscriber_offering_more_is_called_back_the_faster_way(monitors,
 
     assert deliver(publisher, subscriber)
     assert chosen_transport(publisher, subscriber) == faster
+
+
+def test_a_pubsub_listens_two_ways_unless_told_otherwise(monitors,
+                                                          nameservice):
+    """XML-RPC first, so it stays the primary in the registration and an
+    un-upgraded publisher finds it where it always was."""
+    assert PubSub.default_pubsub_transport == ['xmlrpc', 'g2rpc-tcp']
+
+    monitors('sub-d2', transport=_UNSPECIFIED)
+
+    offered = [protocol for protocol, _port, _encoding
+               in ro.endpoints_in(nameservice.getInfo('sub-d2')[0])]
+    assert offered == ['xmlrpc', 'g2rpc-tcp']
+
+
+def test_the_default_reaches_a_subscriber_the_faster_way(monitors):
+    publisher = monitors('pub-s')
+    subscriber = monitors('sub-s',
+                          transport=PubSub.default_pubsub_transport)
+
+    assert deliver(publisher, subscriber)
+    assert chosen_transport(publisher, subscriber) == 'g2rpc-tcp'
+
+
+def test_the_default_still_registers_xmlrpc_as_the_primary(monitors,
+                                                           nameservice):
+    """Which is what a caller too old to read the alternates will use."""
+    monitors('sub-t', transport=PubSub.default_pubsub_transport)
+
+    assert nameservice.getInfo('sub-t')[0]['protocol'] == 'xmlrpc'
+
+
+# ------------------------------------------------- the thread budget --
+
+def test_transports_asked_for_that_cannot_be_served_are_refused():
+    """Listeners and delivery daemons each hold a worker for the life of
+    the service.  When they add up to the whole pool the service accepts
+    calls and never answers them, on every protocol, silently.  Serving
+    fewer than were asked for would be as quiet, so this raises."""
+    pubsub = PubSub.PubSub('starved', ro.nullLogger(), numthreads=8)
+
+    with pytest.raises(PubSub.PubSubError) as caught:
+        pubsub._affordable_transports(['xmlrpc', 'g2rpc-tcp'], True,
+                                      asked_for=True)
+    assert 'numthreads' in str(caught.value)
+
+
+def test_the_default_gives_way_to_a_pool_that_cannot_serve_it(recording):
+    """A default must not break a service that worked.  This one runs on
+    XML-RPC alone, which is exactly where it already was."""
+    pubsub = PubSub.PubSub('starved2', recording, numthreads=8)
+
+    kept = pubsub._affordable_transports(['xmlrpc', 'g2rpc-tcp'], True,
+                                         asked_for=False)
+
+    assert kept == ['xmlrpc']
+    assert any('numthreads' in m for m in recording.warnings)
+
+
+def test_a_pool_that_can_serve_them_keeps_them_all():
+    pubsub = PubSub.PubSub('adequate', ro.nullLogger(), numthreads=12)
+
+    assert pubsub._affordable_transports(['xmlrpc', 'g2rpc-tcp'], True,
+                                         asked_for=False) == ['xmlrpc',
+                                                              'g2rpc-tcp']
+
+
+def test_the_budget_counts_the_delivery_daemons_too():
+    """Fewer daemons leaves room for more listeners in the same pool."""
+    pubsub = PubSub.PubSub('fewer', ro.nullLogger(), numthreads=8)
+    pubsub.outlimit = 2
+
+    assert pubsub._affordable_transports(['xmlrpc', 'g2rpc-tcp'], True,
+                                         asked_for=False) == ['xmlrpc',
+                                                              'g2rpc-tcp']
+
+
+def test_a_pool_too_small_for_even_one_listener_is_refused(recording):
+    """There is nothing to fall back to, so falling back quietly would
+    leave a service that accepts calls and never answers."""
+    pubsub = PubSub.PubSub('hopeless', recording, numthreads=4)
+
+    with pytest.raises(PubSub.PubSubError):
+        pubsub._affordable_transports(['xmlrpc'], True, asked_for=False)
 
 
 def test_start_server_takes_one_transport_or_a_list(monitors):
