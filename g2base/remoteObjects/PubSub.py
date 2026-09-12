@@ -1249,8 +1249,11 @@ class PubSub:
             if 'pubsecure' in options:
                 kwdargs['secure'] = options['pubsecure']
             if 'pubtransport' in options:
-                kwdargs.update(self._transport_options(publisher,
-                                                       options['pubtransport']))
+                # Handed over as it was given, for _getProxy to make sense
+                # of: translating it here turned a list into 'prefer',
+                # which _getProxy does not look for, so an order of
+                # preference was quietly dropped and a pinned one was not.
+                kwdargs['transport'] = options['pubtransport']
             if 'name' in options:
                 name = options['name']
             else:
@@ -1275,6 +1278,8 @@ class PubSub:
                 kwdargs['auth'] = options['pubauth']
             if 'pubsecure' in options:
                 kwdargs['secure'] = options['pubsecure']
+            if 'pubtransport' in options:
+                kwdargs['transport'] = options['pubtransport']
             if 'name' in options:
                 name = options['name']
             else:

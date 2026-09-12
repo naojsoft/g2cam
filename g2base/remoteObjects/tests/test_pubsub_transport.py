@@ -301,6 +301,58 @@ def test_start_server_honours_the_host_it_is_given(monitors):
     assert monitor.server.host == HOST
 
 
+# --------------------------------------- old and new, in both roles --
+
+@pytest.mark.parametrize('subscriber_offers,expected', [
+    (_UNSPECIFIED, 'g2rpc-tcp'),
+    ('xmlrpc', 'xmlrpc'),
+])
+def test_the_faster_way_is_used_where_both_ends_can(monitors,
+                                                    subscriber_offers,
+                                                    expected):
+    """g2rpc-tcp where it is offered, XML-RPC where it is not.  Neither end
+    is asked and nothing is negotiated: the subscriber's registration says
+    what it answers to, and the publisher takes the best of it that it can
+    speak."""
+    publisher = monitors('pub-m1-%s' % expected)
+    subscriber = monitors('sub-m1-%s' % expected, transport=subscriber_offers)
+
+    assert deliver(publisher, subscriber)
+    assert chosen_transport(publisher, subscriber) == expected
+
+
+def test_a_publisher_that_only_knows_xmlrpc_is_still_served(monitors):
+    """The other direction: a subscriber offering both must not become
+    unreachable to a publisher that asks for the old way."""
+    publisher = monitors('pub-m2')
+    subscriber = monitors('sub-m2', transport=_UNSPECIFIED)
+
+    assert deliver(publisher, subscriber, {'transport': 'xmlrpc'})
+    assert chosen_transport(publisher, subscriber) == 'xmlrpc'
+
+
+# ------------------------------------- reaching back to a publisher --
+
+@pytest.mark.parametrize('shape', ['g2rpc-tcp', ['g2rpc-tcp', 'xmlrpc']])
+def test_pubtransport_reaches_the_proxy_whichever_shape_it_takes(shape):
+    """Regression.  A 'pubtransport' list was translated here into
+    'prefer', which _getProxy does not look for, so an order of preference
+    was quietly dropped on the way to the publisher -- while a pinned one,
+    translated to 'transport', survived.  Both are handed over as given
+    now, and translated once."""
+    pubsub = PubSub.PubSub('reaching', ro.nullLogger(), numthreads=2)
+    seen = {}
+    pubsub._getProxy = lambda name, options: seen.setdefault(name,
+                                                             dict(options))
+
+    pubsub._subscribe_remote('pubX', ['c'], {'pubtransport': shape})
+    assert seen['pubX'] == {'transport': shape}
+
+    seen.clear()
+    pubsub._unsubscribe_remote('pubX', ['c'], {'pubtransport': shape})
+    assert seen['pubX'] == {'transport': shape}, 'and on the way back out'
+
+
 # ------------------------------------------- what the option can say --
 
 def test_a_string_pins_one_protocol(monitors):
