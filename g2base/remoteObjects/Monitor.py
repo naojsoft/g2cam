@@ -106,7 +106,8 @@ def has_keys(valDict, keys):
 class Monitor(ps.PubSub):
 
     def __init__(self, name, logger, dbpath=None, useSync=False,
-                 ev_quit=None, threadPool=None, numthreads=30):
+                 ev_quit=None, threadPool=None, numthreads=30,
+                 minthreads=None):
 
         self._store = NestedBunch.NestedBunch(dbpath=dbpath)
         self.defaultChannels = [name]
@@ -115,9 +116,8 @@ class Monitor(ps.PubSub):
 
         # Superclass initialization
         super().__init__(name, logger,
-#                                      ev_quit=None, threadPool=None,
-                                      ev_quit=ev_quit, threadPool=threadPool,
-                                      numthreads=numthreads)
+                         ev_quit=ev_quit, threadPool=threadPool,
+                         numthreads=numthreads, minthreads=minthreads)
 
         # number of seconds after which a delivery to a subscriber is
         # considered "late"
@@ -385,7 +385,8 @@ class Minimon(Monitor):
     """
 
     def __init__(self, name, logger, dbpath=None, useSync=False,
-                 ev_quit=None, threadPool=None, numthreads=30):
+                 ev_quit=None, threadPool=None, numthreads=30,
+                 minthreads=None):
 
         # dictionary of lists of condition variables for synchronization
         self.syncd = {}
@@ -394,9 +395,8 @@ class Minimon(Monitor):
         self.wait_interval = 0.1
 
         super().__init__(name, logger,
-                                      ev_quit=ev_quit,
-                                      threadPool=threadPool,
-                                      numthreads=numthreads)
+                         ev_quit=ev_quit, threadPool=threadPool,
+                         numthreads=numthreads, minthreads=minthreads)
 
     def getitem(self, path, block=True, timeout=None):
         with self.lock:

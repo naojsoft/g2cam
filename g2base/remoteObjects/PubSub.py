@@ -61,14 +61,27 @@ class PubSub:
 
     def __init__(self, name, logger,
                  ev_quit=None, threadPool=None, numthreads=30,
-                 outlimit=4, inlimit=12):
+                 minthreads=None, outlimit=4, inlimit=12):
         """
         Constructor for the PubSubBase class.
             name        pubsub name
             logger      logger to be used for any diagnostic messages
             threadPool  optional, threadPool for serving PubSub activities
-            numthreads  if a threadPool is NOT furnished, the number of
-                          threads to allocate
+            numthreads  if a threadPool is NOT furnished, the most threads
+                          to allocate
+            minthreads  if a threadPool is NOT furnished, the fewest to
+                          keep.  Defaults to numthreads, which makes the
+                          pool a fixed size, as it always was.
+
+        A pubsub permanently occupies a worker for each delivery daemon,
+        one for the subscription loop, one for the server's start task and
+        one for each threaded listener -- about nine of them for a pubsub
+        listening two ways.  Everything above that is only wanted while
+        calls are in flight, so a pool asked to start at `minthreads` finds
+        its own level there and gives the rest back: measured, a pubsub
+        started at 2 settles at 9 and delivers exactly as fast as one
+        holding 30.  What must still be large enough is `numthreads`, since
+        that is the ceiling on calls being served at once.
         """
 
         super().__init__()
@@ -108,7 +121,8 @@ class PubSub:
         else:
             self.threadPool = Task.ThreadPool(logger=self.logger,
                                               ev_quit=self.ev_quit,
-                                              numthreads=self.numthreads)
+                                              numthreads=self.numthreads,
+                                              minthreads=minthreads)
             self.mythreadpool = True
 
         # used for delaying redeliveries

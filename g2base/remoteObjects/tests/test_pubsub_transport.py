@@ -168,6 +168,69 @@ def test_the_default_still_registers_xmlrpc_as_the_primary(monitors,
     assert nameservice.getInfo('sub-t')[0]['protocol'] == 'xmlrpc'
 
 
+# ------------------------------------------------ a pool that expands --
+
+def test_a_pubsub_can_be_started_with_a_small_pool_that_grows():
+    """A pubsub permanently holds a worker per delivery daemon, one for the
+    subscription loop, one for the server's start task and one per threaded
+    listener.  Everything above that is only wanted while calls are in
+    flight, so the pool need not be held open at full width."""
+    pubsub = PubSub.PubSub('elastic', ro.nullLogger(), numthreads=30,
+                           minthreads=2)
+
+    assert pubsub.threadPool.numthreads == 30
+    assert pubsub.threadPool.minthreads == 2
+
+
+def test_a_pool_is_still_a_fixed_size_unless_a_floor_is_given():
+    """Which is what every existing caller gets."""
+    pubsub = PubSub.PubSub('fixed', ro.nullLogger(), numthreads=12)
+
+    assert pubsub.threadPool.minthreads == 12
+
+
+def test_monitor_passes_the_floor_down(monitors):
+    monitor = Monitor.Monitor('floored', ro.nullLogger(), numthreads=24,
+                              minthreads=3)
+
+    assert monitor.threadPool.minthreads == 3
+    assert monitor.threadPool.numthreads == 24
+
+
+def test_a_pubsub_on_a_growing_pool_still_delivers(monitors, nameservice):
+    """The property that matters: starting small must not strand anyone."""
+    publisher = Monitor.Monitor('grow-pub', ro.nullLogger(), numthreads=30,
+                                minthreads=2)
+    subscriber = Monitor.Monitor('grow-sub', ro.nullLogger(), numthreads=30,
+                                 minthreads=2)
+    arrived = threading.Event()
+    try:
+        for monitor, transport in ((publisher, 'xmlrpc'),
+                                   (subscriber, ['xmlrpc', 'g2rpc-tcp'])):
+            monitor.start()
+            monitor.start_server(svcname=monitor.name, host=HOST,
+                                 ns=nameservice, default_auth=False,
+                                 transport=transport, usethread=True,
+                                 wait=True)
+
+        subscriber.subscribe_cb(lambda value, names, channels: arrived.set(),
+                                ['grow-pub'])
+        publisher.subscribe('grow-sub', ['grow-pub'], {'unsub': False})
+        time.sleep(0.5)
+        publisher.update('TSCS', {'a': 1}, ['grow-pub'])
+
+        assert arrived.wait(20), 'the update reached the local callback'
+        # It grew past its floor to carry its own permanent tasks.
+        assert len(subscriber.threadPool.running) > 2
+    finally:
+        for monitor in (subscriber, publisher):
+            try:
+                monitor.stop_server()
+            except Exception:
+                pass
+            monitor.stop()
+
+
 # ------------------------------------------------- the thread budget --
 
 def test_transports_asked_for_that_cannot_be_served_are_refused():
