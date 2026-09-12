@@ -13,10 +13,18 @@ objectsBasePort    = 8000
 
 # Default protocol.  Named "transport" for the constructor keyword and the
 # name service field it fills, both of which predate the distinction; see
-# ro_transport, which lists what is available.  'xmlrpc' is what un-upgraded
-# clients and services speak, so leave it alone unless everything talking to
-# the service in question has been upgraded.
-default_transport  = 'xmlrpc'
+# ro_transport, which lists what is available.
+#
+# g2rpc-tcp is msgpack over a bare socket: about 2.6x XML-RPC's call rate on
+# a small call, and it costs the service no held threads.  A caller that has
+# not been upgraded cannot speak it and cannot be told to -- a registration
+# whose primary is g2rpc-tcp names a protocol such a caller does not know, so
+# it refuses rather than mistaking it for something else.  That is the
+# intended behaviour: a service still called by old clients should say so,
+# with transport=['xmlrpc', 'g2rpc-tcp'], which keeps XML-RPC as the primary
+# they read while everything else takes the faster way.
+default_transport  = 'g2rpc-tcp'
+#default_transport  = 'xmlrpc'
 #default_transport  = 'jsonrpc'
 #default_transport  = 'msgpackrpc'
 
@@ -30,9 +38,15 @@ default_transport  = 'xmlrpc'
 # since unpickling runs whatever it is sent.
 default_encoding  = None
 
-# Name service protocol.  The name service is what clients use to find
-# everything else, so it is the last thing that should stop speaking a
-# protocol an un-upgraded client understands.
+# The name service's protocol, for both ends.  It cannot be looked up -- it
+# is what lookups go through -- so a client dials it by fixed port and fixed
+# protocol rather than reading a registration, and there is no negotiating
+# it.  That makes it the last thing that should stop speaking what an
+# un-upgraded caller understands, so it stays on XML-RPC while the default
+# for everything else moves on.
+#
+# Serving a second protocol here would need a well-known port for it as
+# well, since there is no registration for a caller to learn one from.
 ns_transport  = 'xmlrpc'
 ns_encoding  = None
 

@@ -38,9 +38,11 @@ if __name__ == '__main__':
                         default='pubsub',
                         help="Register using NAME as service name")
     argprs.add_argument("--transport", dest="transport", metavar="NAMES",
-                        default=None,
-                        help="Listen these ways, most widely spoken first "
-                        "(default: xmlrpc,g2rpc-tcp).  'g2rpc-tcp-asyncio' "
+                        default='xmlrpc,g2rpc-tcp',
+                        help="Listen these ways, most widely spoken first. "
+                        "Unlike a pubsub embedded in a service, this one is "
+                        "shared by publishers and subscribers of both ages, "
+                        "so it answers both by default.  'g2rpc-tcp-asyncio' "
                         "serves from an event loop instead of a thread per "
                         "connection")
     ssdlog.addlogopts(argprs)

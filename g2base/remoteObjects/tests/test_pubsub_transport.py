@@ -138,33 +138,31 @@ def test_a_subscriber_offering_more_is_called_back_the_faster_way(monitors,
     assert chosen_transport(publisher, subscriber) == faster
 
 
-def test_a_pubsub_listens_two_ways_unless_told_otherwise(monitors,
-                                                          nameservice):
-    """XML-RPC first, so it stays the primary in the registration and an
-    un-upgraded publisher finds it where it always was."""
-    assert PubSub.default_pubsub_transport == ['xmlrpc', 'g2rpc-tcp']
-
+def test_a_pubsub_listens_for_the_default_protocol(monitors, nameservice):
+    """A pubsub is not special: told nothing, it serves what any other
+    service serves.  One still spoken to by an un-upgraded peer says so the
+    same way anything else does."""
     monitors('sub-d2', transport=_UNSPECIFIED)
 
     offered = [protocol for protocol, _port, _encoding
                in ro.endpoints_in(nameservice.getInfo('sub-d2')[0])]
-    assert offered == PubSub.default_pubsub_transport
-    assert offered[0] == 'xmlrpc', 'the primary is the widely spoken one'
+    assert offered == [ro.default_transport]
 
 
 def test_the_default_reaches_a_subscriber_the_faster_way(monitors):
     publisher = monitors('pub-s')
-    subscriber = monitors('sub-s',
-                          transport=PubSub.default_pubsub_transport)
+    subscriber = monitors('sub-s', transport=_UNSPECIFIED)
 
     assert deliver(publisher, subscriber)
     assert chosen_transport(publisher, subscriber) == 'g2rpc-tcp'
 
 
-def test_the_default_still_registers_xmlrpc_as_the_primary(monitors,
-                                                           nameservice):
-    """Which is what a caller too old to read the alternates will use."""
-    monitors('sub-t', transport=PubSub.default_pubsub_transport)
+def test_a_pubsub_that_says_so_still_registers_xmlrpc_as_the_primary(
+        monitors, nameservice):
+    """The escape hatch, for a pubsub shared with un-upgraded peers -- the
+    standalone one that ro_ps_svc runs, above all.  XML-RPC first is what
+    makes it the primary such a caller reads."""
+    monitors('sub-t', transport=['xmlrpc', 'g2rpc-tcp'])
 
     assert nameservice.getInfo('sub-t')[0]['protocol'] == 'xmlrpc'
 
@@ -322,10 +320,11 @@ def test_the_faster_way_is_used_where_both_ends_can(monitors,
 
 
 def test_a_publisher_that_only_knows_xmlrpc_is_still_served(monitors):
-    """The other direction: a subscriber offering both must not become
-    unreachable to a publisher that asks for the old way."""
+    """The other direction, and why a pubsub shared with un-upgraded peers
+    has to say so: a subscriber offering both is reachable to a publisher
+    that asks for the old way, and one left on the default is not."""
     publisher = monitors('pub-m2')
-    subscriber = monitors('sub-m2', transport=_UNSPECIFIED)
+    subscriber = monitors('sub-m2', transport=['xmlrpc', 'g2rpc-tcp'])
 
     assert deliver(publisher, subscriber, {'transport': 'xmlrpc'})
     assert chosen_transport(publisher, subscriber) == 'xmlrpc'

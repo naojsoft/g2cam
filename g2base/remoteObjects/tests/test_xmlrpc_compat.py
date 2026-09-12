@@ -198,6 +198,9 @@ class TinyrpcServer:
         self.server = ro.remoteObjectServer(
             svcname=None, name='compat', obj=ServiceObject(),
             host=HOST, logger=ro.nullLogger(), usethread=True,
+            # Named, not defaulted: XML-RPC is what this file is about, and
+            # the module default is no longer it.
+            transport='xmlrpc',
             ns=False, default_auth=False, authDict=auth_dict,
             method_list=['echo', 'add', 'boom'])
         self.server.ro_start(wait=True, timeout=10.0)

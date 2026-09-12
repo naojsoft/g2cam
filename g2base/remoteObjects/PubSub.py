@@ -34,26 +34,6 @@ version = '20201115.0'
 TWO_WAY = 'bidirectional'
 CH_ALL  = '*'
 
-#: What a pubsub listens for when it is not told otherwise.
-#:
-#: XML-RPC stays first, so it remains the primary in the registration and an
-#: un-upgraded publisher finds it exactly where it always was; g2rpc-tcp sits
-#: alongside for anything that can speak it, and a publisher takes the faster
-#: of the two without being configured to.  Measured here, a delivery costs
-#: 589us over XML-RPC against 272us over g2rpc-tcp, and g2rpc-tcp carries
-#: msgpack, which is 2.1-2.4x faster to encode than json on these payloads
-#: and about a quarter smaller on the wire.
-#:
-#: Listening two ways costs one permanent worker more than listening one
-#: way; see the check in :py:meth:`PubSub.start_server`.
-#:
-#: 'g2rpc-tcp-asyncio' is deliberately absent.  It serves from an event loop
-#: rather than a thread per connection, which is worth having where a burst
-#: of connections would otherwise be a burst of threads -- but it is slower
-#: per call, and most pubsubs share a pool with the rest of their service
-#: rather than owning one.  Name it to use it.
-default_pubsub_transport = ['xmlrpc', 'g2rpc-tcp']
-
 
 class PubSubError(Exception):
     """General class for exceptions raised by this module.
@@ -1478,15 +1458,20 @@ class PubSub:
             Nothing has to be negotiated for that: a publisher looks us up
             by name and the registration says what we answer to.
 
-            Left out, :py:data:`default_pubsub_transport` is used, trimmed
-            to what the thread pool can serve; named explicitly, a pool too
-            small to serve them raises rather than quietly serving fewer.
+            Left out, :py:data:`~ro_config.default_transport` is used, as
+            it is for any other service: a pubsub is not special, and one
+            still spoken to by an un-upgraded peer says so the same way
+            anything else does, with ``['xmlrpc', 'g2rpc-tcp']``.
+
+            What is left out is trimmed to what the thread pool can serve;
+            what is named explicitly is not, and a pool too small for it
+            raises rather than quietly serving fewer.
         """
         if not svcname:
             svcname = self.name
         asked_for = transport is not None
         if not asked_for:
-            transport = default_pubsub_transport
+            transport = default_transport
         transport = self._affordable_transports(transport, usethread,
                                                 asked_for)
         # make our RO server for remote interface

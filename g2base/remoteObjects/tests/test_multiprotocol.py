@@ -337,7 +337,7 @@ def test_an_xmlrpc_only_service_is_reached_either_way(nameservice):
     server = ro.remoteObjectServer(
         svcname='plain', obj=Service(), host=HOST, logger=ro.nullLogger(),
         usethread=True, ns=nameservice, default_auth=False,
-        method_list=['echo'])
+        transport='xmlrpc', method_list=['echo'])
     server.ro_start(wait=True, timeout=15)
     try:
         for kwargs in ({}, {'transport': 'xmlrpc'}):

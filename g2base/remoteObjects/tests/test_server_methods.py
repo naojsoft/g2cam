@@ -42,6 +42,9 @@ def service():
         kwargs.setdefault('usethread', True)
         kwargs.setdefault('ns', False)
         kwargs.setdefault('default_auth', False)
+        # call() below speaks XML-RPC, so say so rather than relying on the
+        # module default, which is no longer XML-RPC.
+        kwargs.setdefault('transport', 'xmlrpc')
         svc = cls(**kwargs)
         svc.ro_start(wait=True, timeout=10.0)
         started.append(svc)

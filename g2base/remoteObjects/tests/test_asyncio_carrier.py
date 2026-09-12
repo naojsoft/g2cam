@@ -112,10 +112,8 @@ def test_it_is_opt_in():
     from the event loop to the pool and back, so it is worth naming where
     the connections are many and not worth it otherwise.
     """
-    from g2base.remoteObjects import PubSub
-
     assert CARRIER not in ro.default_protocol_preference
-    assert CARRIER not in PubSub.default_pubsub_transport
+    assert CARRIER != ro.default_transport
 
 
 def test_a_call_is_answered(service, nameservice):

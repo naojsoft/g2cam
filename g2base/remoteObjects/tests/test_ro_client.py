@@ -74,9 +74,17 @@ class FakeNameService:
 
 
 def record(port, host=HOST):
+    """A registration describing the services the fixture above starts.
+
+    It has to name what they really serve: these tests are about how a proxy
+    reads a record and fails over between providers, not about any one
+    protocol, so the record follows the default rather than fixing it.
+    """
+    spec = ro.ro_transport.get(ro.default_transport)
     return dict(name='testsvc', host=host, port=port, secure=False,
-                transport='xmlrpc', encoding='xml', keep=False,
-                pingtime=0, registrar=host)
+                protocol=spec.name, encoding=spec.encoding,
+                transport=spec.legacy_transport or spec.name,
+                keep=False, pingtime=0, registrar=host)
 
 
 # ------------------------------------------------------------------ auth --

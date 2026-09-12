@@ -30,7 +30,21 @@ def test_the_default_transport_resolves():
     """ro_config.default_transport must name something real, or every
     service that does not ask for a transport fails at construction."""
     spec = ro_transport.get(ro_config.default_transport)
-    assert spec.name == 'xmlrpc'
+    assert spec.name == 'g2rpc-tcp'
+
+    # An un-upgraded caller cannot speak it and must not be able to mistake
+    # it for something it can: a registration whose primary is this names a
+    # protocol such a caller does not know, rather than one it misreads.
+    assert spec.legacy_transport is None
+
+
+def test_the_name_service_stays_on_the_widely_spoken_protocol():
+    """It cannot be looked up -- it is what lookups go through -- so both
+    ends take its protocol from configuration rather than negotiating one.
+    That makes it the last thing that should stop answering an un-upgraded
+    caller, whatever the default for everything else has become."""
+    assert ro_config.ns_transport == 'xmlrpc'
+    assert ro_transport.get(ro_config.ns_transport).name == 'xmlrpc'
 
 
 def test_the_name_service_transport_resolves():

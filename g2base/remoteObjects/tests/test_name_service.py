@@ -80,12 +80,18 @@ def test_every_old_transport_value_translates(nameservice, legacy, protocol):
 
 
 def test_the_oldest_api_still_works(nameservice):
-    """Older still: options was a bare bool meaning 'secure'."""
+    """Older still: options was a bare bool meaning 'secure'.
+
+    Read as XML-RPC rather than as whatever the module default has become:
+    a registration in this shape came from a caller old enough to send it,
+    and that is what such a caller speaks.  Reading it as the current
+    default would hand out an endpoint speaking something else.
+    """
     nameservice.register('svc', HOST, 8000, True)
 
     rec = only_record(nameservice, 'svc')
     assert rec['secure'] is True
-    assert rec['protocol'] == ro.default_transport
+    assert rec['protocol'] == 'xmlrpc'
 
 
 # --------------------------------------------------- registering, new shape --
@@ -196,9 +202,12 @@ def test_a_server_registers_and_a_proxy_finds_it(nameservice):
     svc.ro_start(wait=True, timeout=10.0)
     try:
         rec = only_record(nameservice, 'echosvc')
-        assert rec['protocol'] == 'xmlrpc'
-        assert rec['encoding'] == 'xml'
-        assert rec['transport'] == 'xmlrpc', "still there for old clients"
+        assert rec['protocol'] == 'g2rpc-tcp', "the current default"
+        assert rec['encoding'] == 'msgpack'
+        # The legacy field carries the protocol's own name where it has no
+        # older equivalent, so a client too old to read 'protocol' finds a
+        # name it does not know and refuses, rather than one it misreads.
+        assert rec['transport'] == 'g2rpc-tcp'
         assert rec['port'] == svc.port
 
         proxy = ro.remoteObjectProxy('echosvc', ns=nameservice,
@@ -214,6 +223,9 @@ def test_a_proxy_can_read_a_record_written_by_an_old_service(nameservice):
     svc = ro.remoteObjectServer(
         svcname=None, name='echosvc', obj=EchoService(),
         host='127.0.0.1', logger=ro.nullLogger(), usethread=True,
+        # An un-upgraded service speaks XML-RPC, whatever the default here
+        # has since become -- which is the whole premise of this test.
+        transport='xmlrpc',
         ns=False, default_auth=False, method_list=['echo'])
     svc.ro_start(wait=True, timeout=10.0)
     try:

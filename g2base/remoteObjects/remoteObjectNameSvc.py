@@ -133,7 +133,11 @@ def normalize_options(options, logger):
     protocol = options.get('protocol')
     if protocol is None:
         # An un-upgraded service.  Its 'transport' is a protocol name.
-        legacy = options.get('transport', ro.default_transport)
+        # 'xmlrpc' rather than the module default: a registration with no
+        # protocol field came from a service old enough not to write one,
+        # and that is what such a service speaks whatever the default has
+        # since become.
+        legacy = options.get('transport', 'xmlrpc')
         protocol = ro.ro_transport.resolve_legacy_transport(legacy)
         logger.debug("registration without a protocol field; reading "
                      "transport '%s' as protocol '%s'" % (legacy, protocol))
@@ -357,7 +361,7 @@ class remoteObjectNameService:
                 port = int(port)
                 secure = val_d.get('secure', ro.default_secure)
                 protocol = val_d.get('protocol') or val_d.get(
-                    'transport', ro.default_transport)
+                    'transport', 'xmlrpc')
                 encoding = val_d.get('encoding')
                 pingtime = val_d.get('pingtime', 0)
                 registrar = val_d['registrar']
