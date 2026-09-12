@@ -839,12 +839,26 @@ class WorkerThread:
     def stop(self):
         self.my_quit.set()
 
-    def cleanup(self):
-        if self.thread is not None:
-            alive = self.thread.is_alive()
-            if not alive:
-                self.thread.join()
-            self.thread = None
+    def cleanup(self, timeout=2.0):
+        """Join our old thread, so the worker can be used again.
+
+        :return: True when the thread is really finished.  False means it
+            is still on its way out and this worker must not be handed back
+            yet -- starting it again would leave two threads running the
+            same worker, and forgetting the old thread rather than waiting
+            for it is how that used to happen.
+
+        Bounded, because the pool reaps on the path that submits work: a
+        worker on its way out is gone within one queue poll, and a worker
+        that is not must not hold up the submission that found it.
+        """
+        if self.thread is None:
+            return True
+        self.thread.join(timeout=timeout)
+        if self.thread.is_alive():
+            return False
+        self.thread = None
+        return True
 
 
 # ------------ THREAD POOL ------------
@@ -876,9 +890,11 @@ class ThreadPool:
         the same priority, and a plain queue is far cheaper than an ordered
         one -- 0.03us to put against 1.49us with workers pulling.  Turn it on
         for a pool that genuinely needs some tasks to jump the queue.
-    :param analyze_interval: Accepted for compatibility and ignored.  The
-        periodic analysis ran on the pool-monitoring thread, which no longer
-        exists; call :py:meth:`analyze_threads` when you want a report.
+    :param analyze_interval: Seconds between periodic thread reports, or
+        ``None`` for none.  This used to ride on the pool-monitoring thread,
+        which no longer exists; asking for it now starts a thread of its own,
+        so a pool that does not want the reports does not pay for one.
+        :py:meth:`analyze_threads` is also callable directly.
     """
 
     def __init__(self, numthreads=1, logger=None, ev_quit=None,
@@ -928,6 +944,17 @@ class ThreadPool:
         self.running = []
         self.cleanup = []
         self._started = False
+        self._analyze_thread = None
+
+    def _analyze_loop(self):
+        """Report on the process's threads every analyze_interval seconds."""
+        while not self.ev_quit.wait(timeout=self.analyze_interval):
+            try:
+                self.analyze_threads()
+            except Exception:
+                if self.logger is not None:
+                    self.logger.error("error analyzing threads",
+                                      exc_info=True)
 
     def _reap(self):
         """Join the threads of workers that have retired.
@@ -940,15 +967,20 @@ class ThreadPool:
             if not self.cleanup:
                 return
             reclaim, self.cleanup = self.cleanup, []
+        done, still_going = [], []
         for worker in reclaim:
             try:
-                worker.cleanup()
+                (done if worker.cleanup() else still_going).append(worker)
             except Exception:
+                still_going.append(worker)
                 if self.logger is not None:
                     self.logger.error("error reclaiming a worker",
                                       exc_info=True)
         with self.regcond:
-            self.waiting.extend(reclaim)
+            # Only the ones whose threads have really finished go back into
+            # circulation; the rest are looked at again next time.
+            self.waiting.extend(done)
+            self.cleanup.extend(still_going)
 
     def _grow(self):
         """Start one more worker, if there is room and one to start."""
@@ -1000,6 +1032,12 @@ class ThreadPool:
         for _i in range(started):
             self._idle.release()
 
+        if self.analyze_interval is not None and self._analyze_thread is None:
+            self._analyze_thread = threading.Thread(target=self._analyze_loop,
+                                                    name='pool-analyze')
+            self._analyze_thread.daemon = True
+            self._analyze_thread.start()
+
         if wait:
             with self.regcond:
                 while self.status != 'up' and not self.ev_quit.is_set():
@@ -1021,6 +1059,9 @@ class ThreadPool:
                 while self.running:
                     self.regcond.wait(timeout=0.25)
         self._reap()
+        thread, self._analyze_thread = self._analyze_thread, None
+        if thread is not None:
+            thread.join(timeout=2.0)
         with self.lock:
             self._started = False
 
@@ -1096,9 +1137,15 @@ class ThreadPool:
     def offer_to_quit(self, worker):
         """Called by WorkerThread objects when they have been idle
         for a certain period.
+
+        A worker that has already been told to stop is still in ``running``
+        until its thread finishes, so counting it as one of ours would let
+        several workers retire on the strength of the same headroom and take
+        the pool below ``minthreads``.  They are counted out here instead.
         """
         with self.regcond:
-            if len(self.running) <= self.minthreads or self.queue.qsize() > 0:
+            staying = sum(1 for w in self.running if not w.my_quit.is_set())
+            if staying <= self.minthreads or self.queue.qsize() > 0:
                 return
             worker.stop()
 
