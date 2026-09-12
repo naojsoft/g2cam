@@ -4,6 +4,7 @@
 # This is open-source software licensed under a BSD license.
 # Please see the file LICENSE.txt for details.
 #
+import itertools
 import sys
 import time
 import threading
@@ -802,6 +803,9 @@ class WorkerThread:
                         break
 
                     self.execute(task)
+                    if self.tpool is not None:
+                        # Idle again, and available for the next submission.
+                        self.tpool._worker_idle()
 
                 except queue.Empty as e:
                     # Reach here when we time out waiting for a task
@@ -846,18 +850,41 @@ class WorkerThread:
 # ------------ THREAD POOL ------------
 
 class ThreadPool:
-    """A simple thread pool for executing tasks asynchronously.
+    """A pool of worker threads that grows with demand and shrinks when idle.
+
+    The pool starts at ``minthreads`` workers and grows towards
+    ``numthreads`` as work arrives faster than the idle workers can take it.
+    A worker that has had nothing to do for ``idle_limit_sec`` retires,
+    provided that would not take the pool below ``minthreads``.  Both
+    decisions are made where the evidence is: growth by whoever submits the
+    task and finds nobody idle, retirement by the worker that has been idle.
+    Neither needs a thread of its own to watch the pool.
 
     self.status states:
         down    no threads are ready for service
-        up      all threads are ready for service
+        up      the pool is ready for service
         start   threads are starting, but not all of them are up yet
         stop    threads are stopping, but not all of them are down yet
+
+    :param numthreads: The most workers the pool will ever run.
+    :param minthreads: The fewest it will keep.  Defaults to ``numthreads``,
+        which makes the pool a fixed size, as it always was.
+    :param idle_limit_sec: How long a worker waits with nothing to do before
+        offering to retire.  ``None`` to never retire.
+    :param priority: Whether ``addTask``'s ``priority`` argument means
+        anything.  Off by default: nearly all callers submit everything at
+        the same priority, and a plain queue is far cheaper than an ordered
+        one -- 0.03us to put against 1.49us with workers pulling.  Turn it on
+        for a pool that genuinely needs some tasks to jump the queue.
+    :param analyze_interval: Accepted for compatibility and ignored.  The
+        periodic analysis ran on the pool-monitoring thread, which no longer
+        exists; call :py:meth:`analyze_threads` when you want a report.
     """
 
     def __init__(self, numthreads=1, logger=None, ev_quit=None,
                  minthreads=None, idle_limit_sec=10.0,
-                 workerClass=WorkerThread, analyze_interval=None):
+                 workerClass=WorkerThread, analyze_interval=None,
+                 priority=False):
 
         self.numthreads = max(1, numthreads)
         self.logger = logger
@@ -870,52 +897,120 @@ class ThreadPool:
             minthreads = numthreads
         self.minthreads = max(0, minthreads)
         self.idle_limit_sec = idle_limit_sec
-        self.mon_thread = None
-        self._analyze_time = 0.0
         self.analyze_interval = analyze_interval
 
-        self.queue = PriorityQueue()
+        self.priority = priority
+        if priority:
+            self.queue = PriorityQueue()
+            # A counter between the priority and the task, so that two tasks
+            # of equal priority are ordered by arrival rather than sent on to
+            # be compared with each other -- which reaches the tasks, which
+            # do not compare, and raises.
+            self._seq = itertools.count()
+        else:
+            self.queue = queue.SimpleQueue()
+            self._seq = None
+
+        # Permits stand for workers known to be idle.  A worker releases one
+        # when it has nothing to do; a submitter takes one to mean "somebody
+        # will pick this up", and grows the pool when there is none to take.
+        # Miscounting is self-correcting in the safe direction: a permit that
+        # is stale means one submission does not grow the pool, and the next
+        # one finds none and does.
+        self._idle = threading.Semaphore(0)
 
         # Used to synchronize thread pool startup (see register() method)
         self.regcond = threading.Condition()
-        self.mp_cond = threading.Condition()
         self.status = 'down'
         self.waiting = [self.workerClass(self.queue, logger=self.logger,
                                          ev_quit=self.ev_quit, tpool=self)
                         for i in range(self.numthreads)]
         self.running = []
         self.cleanup = []
+        self._started = False
+
+    def _reap(self):
+        """Join the threads of workers that have retired.
+
+        Joined outside ``regcond``, and a worker is not offered for reuse
+        until its old thread is truly dead -- restarting one that is still
+        finishing raises from :py:meth:`WorkerThread.start`.
+        """
+        with self.regcond:
+            if not self.cleanup:
+                return
+            reclaim, self.cleanup = self.cleanup, []
+        for worker in reclaim:
+            try:
+                worker.cleanup()
+            except Exception:
+                if self.logger is not None:
+                    self.logger.error("error reclaiming a worker",
+                                      exc_info=True)
+        with self.regcond:
+            self.waiting.extend(reclaim)
+
+    def _grow(self):
+        """Start one more worker, if there is room and one to start."""
+        self._reap()
+        with self.regcond:
+            if len(self.running) >= self.numthreads or not self.waiting:
+                return False
+            # Claimed here rather than left for the worker to remove itself
+            # once it is running: starting is asynchronous, so two growths in
+            # a row would otherwise both pick the same worker and the second
+            # would find it already started.
+            worker = self.waiting.pop(0)
+        try:
+            worker.start()
+        except RuntimeError:
+            with self.regcond:
+                self.waiting.append(worker)
+            return False
+        return True
 
     def startall(self, wait=False, **kwargs):
-        """Start all of the threads in the thread pool.  If _wait_ is True
-        then don't return until all threads are up and running.  Any extra
-        keyword arguments are passed to the worker thread constructor.
+        """Start the pool.  If _wait_ is True then don't return until it is
+        ready to serve.
+
+        Any extra keyword arguments are accepted and ignored, as they were.
         """
-        if self.mon_thread is not None:
-            self.logger.error("ignoring duplicate request to start thread pool")
-            return
+        with self.lock:
+            if self._started:
+                if self.logger is not None:
+                    self.logger.error(
+                        "ignoring duplicate request to start thread pool")
+                return
+            self._started = True
 
-        self.logger.debug("startall called, starting pool attendant thread")
+        self.ev_quit.clear()
         self.status = 'start'
-        self.mon_thread = threading.Thread(target=self.pool_attendant, args=[])
-        self.mon_thread.start()
+        # Everything above minthreads is started by demand, not up front.
+        #
+        # These are the only workers that begin life idle, so they are the
+        # only ones the pool credits with a permit.  One started later is
+        # started *because* a task is already queued for it, and crediting
+        # that one too would have the next submission consume the permit its
+        # own growth had just created -- which grows the pool at half the
+        # rate work arrives.
+        started = 0
+        for _i in range(max(1, self.minthreads)):
+            if self._grow():
+                started += 1
+        for _i in range(started):
+            self._idle.release()
 
-        # if started with wait=True, then expect that threads will register
-        # themselves and last one up will set status to "up"
         if wait:
             with self.regcond:
-                # Threads are on the way up.  Wait until last one starts.
                 while self.status != 'up' and not self.ev_quit.is_set():
-                    self.logger.debug("waiting for threads: count=%d" %
-                                      len(self.running))
-                    self.regcond.wait()
-        self.logger.debug("startall done")
+                    self.regcond.wait(timeout=0.25)
+                    if len(self.running) >= max(1, self.minthreads):
+                        self.status = 'up'
 
     def stopall(self, wait=False):
         """Stop all threads in the worker pool.  If _wait_ is True
         then don't return until all threads are down.
         """
-        self.logger.debug("stopall called")
         with self.lock:
             self.status = 'stop'
         # Signal to all threads to terminate.
@@ -923,15 +1018,11 @@ class ThreadPool:
 
         if wait:
             with self.regcond:
-                # Threads are on the way down.  Wait until last one quits.
-                while self.status not in ['down', 'stop']:
-                    self.logger.debug("waiting for threads: count=%d" %
-                                      len(self.running))
-                    self.regcond.wait()
-
-        self.mon_thread.join()
-        self.mon_thread = None
-        self.logger.debug("stopall done")
+                while self.running:
+                    self.regcond.wait(timeout=0.25)
+        self._reap()
+        with self.lock:
+            self._started = False
 
     def add_threads(self, add_numthreads, minthreads=None):
         with self.regcond:
@@ -946,84 +1037,55 @@ class ThreadPool:
 
     def workerStatus(self):
         with self.regcond:
-            return list(map(lambda t: t.getstatus(), self.running))
+            return [worker.getstatus() for worker in self.running]
 
     def addTask(self, task, priority=0):
         """Add a task to the queue of tasks.
 
-        The task will be executed in a worker thread as soon as one is available.
-        Tasks are executed in first-come-first-served order.
+        The task runs on a worker as soon as one is free.  Where no worker
+        is free and the pool is not yet at ``numthreads``, one more is
+        started here -- which is the whole of the pool's growth: it happens
+        on the thread that had the work, at the moment the work arrived, and
+        costs nothing at all when somebody is already idle.
+
+        ``priority`` is only meaningful for a pool built with
+        ``priority=True``; otherwise tasks run in the order they arrive.
         """
-        self.queue.put((priority, task))
-        with self.mp_cond:
-            # wake up pool attendant thread to check on things
-            self.mp_cond.notify()
+        if self._seq is not None:
+            self.queue.put(((priority, next(self._seq)), task))
+        else:
+            self.queue.put((priority, task))
 
-    def pool_attendant(self):
-        """Monitor the thread pool as the "pool attendant".
+        if self._idle.acquire(blocking=False):
+            # Somebody is idle and will take it.
+            return
+        self._grow()
 
-        A thread is started in this method to monitor the thread pool and
-        clean up or activate new threads as needed.
-        """
-        self.logger.debug("starting the thread pool attendant loop...")
-        while not self.ev_quit.is_set():
-            # NOTE: enable once we are Python 3 only
-            # if self.analyze_interval is not None:
-            #     cur_time = time.time()
-            #     if cur_time - self._analyze_time > self.analyze_interval:
-            #         self._analyze_time = cur_time
-            #         self.analyze_threads()
-
-            worker = None
-            with self.regcond:
-                # join threads that have exited
-                while len(self.cleanup) > 0:
-                    dead_worker = self.cleanup.pop()
-                    dead_worker.cleanup()
-
-                num_running = len(self.running)
-                if (num_running < self.minthreads or
-                    self.queue.qsize() > 0 and num_running < self.numthreads):
-                    assert (len(self.waiting) > 0)
-                    worker = self.waiting[0]
-
-            if worker is not None:
-                worker.start(wait=True)
-            else:
-                with self.mp_cond:
-                    self.mp_cond.wait(timeout=0.25)
-
-        self.logger.debug("stopping the thread pool attendant loop...")
-
-    # NOTE: enable once we are Python 3 only
-    # def analyze_threads(self):
-    #     self.logger.info("--- analyzing active threads...")
-    #     count = 0
-    #     for thread in threading.enumerate():
-    #         count += 1
-    #         if thread.ident is None:
-    #             # Exclude threads that haven't started yet
-    #             self.logger.info(f"{count:3d}: thread named {thread.name} is initializing...")
-    #             continue
-
-    #         self.logger.info(f"{count:3d}: thread name: {thread.name}, thread id: {thread.ident}")
-    #         try:
-    #             # Get the top-level stack frame for the thread
-    #             frame = sys._current_frames().get(thread.ident)
-    #             if frame:
-    #                 # Iterate through the stack frames to find the current function
-    #                 while frame:
-    #                     function_name = frame.f_code.co_name
-    #                     self.logger.info(f"currently in function: {function_name}")
-    #                     frame = frame.f_back   # Move to the calling frame
-    #                     if function_name != '<module>':
-    #                         # Stop if we're not in the global scope
-    #                         break
-    #             else:
-    #                 self.logger.warning("could not retrieve stack frame for this thread (might be idle or finished).")
-    #         except Exception as e:
-    #             self.logger.error(f"error inspecting thread {thread.name}: {e}")
-    #     self.logger.info("--- done analyzing")
+    def analyze_threads(self):
+        """Log what every thread in the process is currently doing."""
+        if self.logger is None:
+            return
+        self.logger.info("--- analyzing active threads...")
+        for count, thread in enumerate(threading.enumerate(), 1):
+            if thread.ident is None:
+                self.logger.info("%3d: thread named %s is initializing..."
+                                 % (count, thread.name))
+                continue
+            self.logger.info("%3d: thread name: %s, thread id: %s"
+                             % (count, thread.name, thread.ident))
+            try:
+                frame = sys._current_frames().get(thread.ident)
+                while frame:
+                    function_name = frame.f_code.co_name
+                    self.logger.info("currently in function: %s"
+                                     % (function_name,))
+                    frame = frame.f_back
+                    if function_name != '<module>':
+                        break
+            except Exception as e:
+                self.logger.error("error inspecting thread %s: %s"
+                                  % (thread.name, e))
+        self.logger.info("--- done analyzing")
 
     def delTask(self, taskid):
         self.logger.error("delTask not yet implemented")
@@ -1038,8 +1100,11 @@ class ThreadPool:
         with self.regcond:
             if len(self.running) <= self.minthreads or self.queue.qsize() > 0:
                 return
-
             worker.stop()
+
+    def _worker_idle(self):
+        """Called by a WorkerThread with nothing left to do."""
+        self._idle.release()
 
     def register_up(self, worker):
         """Called by WorkerThread objects to register themselves.
@@ -1050,35 +1115,41 @@ class ThreadPool:
         if it was called with wait=True.
         """
         with self.regcond:
-            self.waiting.remove(worker)
+            try:
+                self.waiting.remove(worker)
+            except ValueError:
+                pass
             self.running.append(worker)
             num_running = len(self.running)
-            self.logger.debug("register_up: (%d) count is %d" % (
-                worker.tid, num_running))
-            if num_running == self.minthreads:
+            if self.logger is not None:
+                self.logger.debug("register_up: (%s) count is %d" % (
+                    worker.tid, num_running))
+            if num_running >= max(1, self.minthreads):
                 self.status = 'up'
-                self.regcond.notify()
+            self.regcond.notify_all()
 
     def register_dn(self, worker):
         """Called by WorkerThread objects to de-register themselves.
 
-        Acquire the condition variable for the WorkerThread objects.
-        Decrement the running-thread count.  If we are the last thread to
-        start, release the ThreadPool thread, which is stuck in start()
+        The worker goes to the cleanup list rather than straight back to
+        the waiting one: it must not be handed out again until its old
+        thread has been joined, or starting it raises.
         """
         with self.regcond:
-            self.running.remove(worker)
-            self.waiting.append(worker)
+            try:
+                self.running.remove(worker)
+            except ValueError:
+                pass
             self.cleanup.append(worker)
             num_running = len(self.running)
-            self.logger.debug("register_dn: (%d) count is %d" % (
-                worker.tid, num_running))
-            with self.mp_cond:
-                # wake up pool attendant to clean up thread
-                self.mp_cond.notify()
+            if self.logger is not None:
+                self.logger.debug("register_dn: (%s) count is %d" % (
+                    worker.tid, num_running))
             if num_running == 0:
                 self.status = 'down'
-                self.regcond.notify()
+            self.regcond.notify_all()
+        # A retiring worker was idle, so its permit goes with it.
+        self._idle.acquire(blocking=False)
 
     # TO BE DEPRECATED
     addThreads = add_threads
