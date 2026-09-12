@@ -213,6 +213,15 @@ class TransportSpec:
     def make_client_transport(self, host, port, **kwargs):
         raise NotImplementedError
 
+    #: Whether this carrier's serve loop occupies a worker from the
+    #: service's thread pool for as long as the service runs.
+    #:
+    #: True for every carrier that submits its loop to the executor, which
+    #: is what makes a listener cost a worker and what the pubsub's thread
+    #: budget counts.  A carrier that runs its own event loop thread costs
+    #: the pool nothing and says so.
+    server_holds_pool_worker = True
+
     def make_rpc_server(self, rpc_transport, protocol, dispatcher, executor,
                         ev_quit=None, logger=None):
         """The server that drives this listener.
@@ -590,6 +599,10 @@ class G2RPCTcpAsyncioSpec(G2RPCTcpSpec):
     and hangs up.  Only the server differs, which is what makes the two
     comparable -- and means a caller needs to know nothing about it.
     """
+
+    #: The loop runs on a thread of its own, so it takes nothing from the
+    #: pool -- which is the point of it.
+    server_holds_pool_worker = False
 
     def make_server_transport(self, bindhost, port, logger=None,
                               ssl_context=None, poll_timeout=0.5, **kwargs):

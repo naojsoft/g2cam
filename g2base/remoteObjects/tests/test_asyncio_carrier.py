@@ -104,11 +104,17 @@ def test_the_carrier_is_registered_and_available():
 
 
 def test_it_is_opt_in():
-    """Nothing reaches for it on its own: a service has to name it, and so
-    the committed defaults are untouched by its existing."""
-    assert CARRIER not in ro.default_protocol_preference
+    """Nothing reaches for it on its own: a service has to name it.
 
+    It is the same as g2rpc-tcp to a caller -- the client transport is
+    identical -- and differs only in what the service pays for a burst of
+    connections.  It is also slower per call, since every request crosses
+    from the event loop to the pool and back, so it is worth naming where
+    the connections are many and not worth it otherwise.
+    """
     from g2base.remoteObjects import PubSub
+
+    assert CARRIER not in ro.default_protocol_preference
     assert CARRIER not in PubSub.default_pubsub_transport
 
 

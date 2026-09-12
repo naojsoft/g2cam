@@ -182,6 +182,11 @@ def make_basic_authenticator(authDict, logger):
 #: A protocol this end cannot load -- 0mq without pyzmq -- is skipped, so
 #: the list can name more than any one caller has installed.
 #:
+#: 'g2rpc-tcp-asyncio' is deliberately absent.  It is the same as g2rpc-tcp
+#: to a caller -- the client transport is identical -- and differs only in
+#: what the service pays for a burst of connections, which is a decision for
+#: the service being called rather than for everything that calls it.
+#:
 #: 'g2rpc-tcp-persistent' is deliberately absent: holding a connection open
 #: is what makes multiplexing possible and what makes a connection able to
 #: go stale, and that is a choice to make deliberately rather than to fall

@@ -20,9 +20,13 @@ if __name__ == '__main__':
                         help="Enter the pdb debugger on main()")
     argprs.add_argument("--inlimit", dest="inlimit", type=int, default=20,
                         help="Limit incoming connections to NUM", metavar="NUM")
+    argprs.add_argument("--minthreads", dest="minthreads", type=int,
+                        default=4,
+                        help="Keep at least NUM threads, growing to "
+                        "--numthreads as calls arrive", metavar="NUM")
     argprs.add_argument("--numthreads", dest="numthreads", type=int,
                         default=100,
-                        help="Use NUM threads", metavar="NUM")
+                        help="Use at most NUM threads", metavar="NUM")
     argprs.add_argument("--outlimit", dest="outlimit", type=int, default=6,
                         help="Limit outgoing connections to NUM", metavar="NUM")
     argprs.add_argument("--port", dest="port", type=int, default=None,
@@ -33,6 +37,12 @@ if __name__ == '__main__':
     argprs.add_argument("--svcname", dest="svcname", metavar="NAME",
                         default='pubsub',
                         help="Register using NAME as service name")
+    argprs.add_argument("--transport", dest="transport", metavar="NAMES",
+                        default=None,
+                        help="Listen these ways, most widely spoken first "
+                        "(default: xmlrpc,g2rpc-tcp).  'g2rpc-tcp-asyncio' "
+                        "serves from an event loop instead of a thread per "
+                        "connection")
     ssdlog.addlogopts(argprs)
 
     (options, args) = argprs.parse_known_args(sys.argv[1:])

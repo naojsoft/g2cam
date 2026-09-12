@@ -24,6 +24,7 @@ import queue
 
 from g2base import Bunch, Task, ssdlog
 from g2base.remoteObjects import remoteObjects as ro
+from g2base.remoteObjects import ro_transport
 from g2base.remoteObjects import Timer
 from g2base.remoteObjects.ro_config import *
 
@@ -45,6 +46,12 @@ CH_ALL  = '*'
 #:
 #: Listening two ways costs one permanent worker more than listening one
 #: way; see the check in :py:meth:`PubSub.start_server`.
+#:
+#: 'g2rpc-tcp-asyncio' is deliberately absent.  It serves from an event loop
+#: rather than a thread per connection, which is worth having where a burst
+#: of connections would otherwise be a burst of threads -- but it is slower
+#: per call, and most pubsubs share a pool with the rest of their service
+#: rather than owning one.  Name it to use it.
 default_pubsub_transport = ['xmlrpc', 'g2rpc-tcp']
 
 
@@ -1406,7 +1413,17 @@ class PubSub:
         reserved = self.outlimit + 1 + (1 if usethread else 0) + 1
         affordable = pool - reserved
 
-        if affordable >= len(listeners):
+        # Only a carrier whose serve loop runs on the pool costs a worker;
+        # one that runs its own event loop thread is free of this budget,
+        # so it is kept whatever the pool can spare.
+        def costs_a_worker(name):
+            try:
+                return ro_transport.get(name).server_holds_pool_worker
+            except Exception:
+                return True             # unknown: assume the dearer case
+
+        wanted = sum(1 for name in listeners if costs_a_worker(name))
+        if affordable >= wanted:
             return listeners
 
         if asked_for or affordable < 1:
@@ -1416,16 +1433,23 @@ class PubSub:
                 "least %d, or it would accept calls and never answer them.  "
                 "Give the pubsub numthreads=%d, or fewer transports, or a "
                 "smaller outlimit."
-                % (self.name, pool, len(listeners), self.outlimit,
-                   reserved + len(listeners), reserved + len(listeners)))
+                % (self.name, pool, wanted, self.outlimit,
+                   reserved + wanted, reserved + wanted))
 
-        kept = listeners[:affordable]
+        kept, spent = [], 0
+        for name in listeners:
+            cost = 1 if costs_a_worker(name) else 0
+            if spent + cost > affordable:
+                continue
+            spent += cost
+            kept.append(name)
         self.logger.warning(
             "'%s' has a thread pool of %d, which can serve %d listener(s) "
             "alongside %d delivery daemon(s), so %s will be served and %s "
             "will not.  Give the pubsub numthreads=%d to serve them all."
             % (self.name, pool, affordable, self.outlimit, ','.join(kept),
-               ','.join(listeners[affordable:]), reserved + len(listeners)))
+               ','.join(n for n in listeners if n not in kept),
+               reserved + wanted))
         return kept
 
     # TODO: deprecate this and make apps create their own remoteObjectServer
@@ -1565,6 +1589,7 @@ def main(options, args):
     # Create our pubsub and start it
     pubsub = PubSub(options.svcname, logger,
                     numthreads=options.numthreads,
+                    minthreads=getattr(options, 'minthreads', None),
                     outlimit=options.outlimit,
                     inlimit=options.inlimit)
 
@@ -1576,8 +1601,12 @@ def main(options, args):
     pubsub.start()
     try:
         try:
+            transport = getattr(options, 'transport', None)
+            if transport:
+                transport = transport.split(',')
             pubsub.start_server(port=options.port, wait=True,
-                                 usethread=usethread)
+                                transport=transport,
+                                usethread=usethread)
 
         except KeyboardInterrupt:
             logger.error("Caught keyboard interrupt!")

@@ -148,7 +148,8 @@ def test_a_pubsub_listens_two_ways_unless_told_otherwise(monitors,
 
     offered = [protocol for protocol, _port, _encoding
                in ro.endpoints_in(nameservice.getInfo('sub-d2')[0])]
-    assert offered == ['xmlrpc', 'g2rpc-tcp']
+    assert offered == PubSub.default_pubsub_transport
+    assert offered[0] == 'xmlrpc', 'the primary is the widely spoken one'
 
 
 def test_the_default_reaches_a_subscriber_the_faster_way(monitors):
