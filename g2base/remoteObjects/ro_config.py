@@ -28,6 +28,15 @@ default_transport  = 'g2rpc-tcp'
 #default_transport  = 'jsonrpc'
 #default_transport  = 'msgpackrpc'
 
+# What a service says when it is still spoken to by callers of both ages.
+#
+# XML-RPC first, so it stays the primary an un-upgraded caller reads, with
+# the current default beside it for everything else.  Named rather than
+# written out at each such service, so that there is one place to look for
+# which services are still carrying XML-RPC for somebody -- and one line to
+# change when the last of those callers is gone.
+compat_transports = ['xmlrpc', default_transport]
+
 # Default encoding, or None for "whatever the protocol uses".
 #
 # For a standardised protocol the encoding is not a separate choice at all:

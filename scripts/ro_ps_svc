@@ -7,6 +7,7 @@ import argparse
 
 from g2base import ssdlog
 from g2base.remoteObjects import PubSub
+from g2base.remoteObjects import remoteObjects as ro
 
 
 if __name__ == '__main__':
@@ -38,7 +39,7 @@ if __name__ == '__main__':
                         default='pubsub',
                         help="Register using NAME as service name")
     argprs.add_argument("--transport", dest="transport", metavar="NAMES",
-                        default='xmlrpc,g2rpc-tcp',
+                        default=','.join(ro.compat_transports),
                         help="Listen these ways, most widely spoken first. "
                         "Unlike a pubsub embedded in a service, this one is "
                         "shared by publishers and subscribers of both ages, "
