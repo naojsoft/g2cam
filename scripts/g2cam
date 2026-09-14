@@ -71,7 +71,8 @@ def main(options, args):
 
     # Create process-wide thread pool for autonomous tasks
     threadPool = Task.ThreadPool(logger=logger, ev_quit=ev_quit,
-                                 numthreads=options.numthreads)
+                                 numthreads=options.numthreads,
+                                 minthreads=options.minthreads)
 
     # Create monitor for PubSub style feedback
     monitor = Monitor.Monitor('%s.mon' % svcname, logger,
@@ -181,9 +182,14 @@ if __name__ == '__main__':
     argprs.add_argument("-n", "--obcpnum", dest="obcpnum", type=int,
                         default=9,
                         help="Use NUM as the OBCP number", metavar="NUM")
+    argprs.add_argument("--minthreads", dest="minthreads", type=int,
+                        default=30,
+                        help="Keep at least NUM threads in the pool, growing "
+                        "to --numthreads as work arrives", metavar="NUM")
     argprs.add_argument("--numthreads", dest="numthreads", type=int,
                         default=200,
-                        help="Use NUM threads in thread pool", metavar="NUM")
+                        help="Use at most NUM threads in thread pool",
+                        metavar="NUM")
     argprs.add_argument("--port", dest="port", type=int,
                         default=9081, metavar="NUM",
                         help="Use port number NUM for command connections")
