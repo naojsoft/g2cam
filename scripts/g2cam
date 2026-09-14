@@ -183,7 +183,7 @@ if __name__ == '__main__':
                         default=9,
                         help="Use NUM as the OBCP number", metavar="NUM")
     argprs.add_argument("--minthreads", dest="minthreads", type=int,
-                        default=30,
+                        default=8,
                         help="Keep at least NUM threads in the pool, growing "
                         "to --numthreads as work arrives", metavar="NUM")
     argprs.add_argument("--numthreads", dest="numthreads", type=int,

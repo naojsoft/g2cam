@@ -470,10 +470,11 @@ def main(options, args):
 
     # Four of these workers never come back: the pubsub subscribe loop, the
     # publish loop, the server's own command loop and one serve loop per
-    # listener all run until ev_quit.  Everything above that is wanted only
-    # while a lookup or a registration is in flight, and a lookup gives its
-    # worker straight back -- so the pool starts with the four it must have
-    # and four ready to answer, and grows towards numthreads from there.
+    # listener all run until ev_quit.  The floor need not cover them -- the
+    # pool grows as they are submitted, and cannot shrink back through them
+    # afterwards, since only an idle worker ever retires.  It is here to
+    # leave a few workers ready to answer a lookup without growing the pool
+    # first; the service settles at whatever it actually holds.
     t_pool = Task.ThreadPool(logger=logger, ev_quit=ev_quit,
                              numthreads=options.numthreads,
                              minthreads=8)

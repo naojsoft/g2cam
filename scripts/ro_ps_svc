@@ -22,7 +22,7 @@ if __name__ == '__main__':
     argprs.add_argument("--inlimit", dest="inlimit", type=int, default=20,
                         help="Limit incoming connections to NUM", metavar="NUM")
     argprs.add_argument("--minthreads", dest="minthreads", type=int,
-                        default=4,
+                        default=8,
                         help="Keep at least NUM threads, growing to "
                         "--numthreads as calls arrive", metavar="NUM")
     argprs.add_argument("--numthreads", dest="numthreads", type=int,
