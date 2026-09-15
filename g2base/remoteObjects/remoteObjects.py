@@ -623,7 +623,18 @@ class remoteObjectServer:
 
     def ro_stop(self, wait=False, timeout=None):
         '''Stop/disable remote object server.'''
+        # Every listener, not just the primary.  A service that carries a
+        # second transport for older callers has a second bound socket, and
+        # leaving it to the serve loop's own cleanup means it stays bound
+        # for as long as that loop takes to notice -- after ro_stop has
+        # returned, and forever if nobody waits.  A caller that stops a
+        # service to restart it in its place then finds the port taken.
         self.server.stop()
+        for server in self._servers:
+            try:
+                server.stop()
+            except Exception:
+                self.logger.error("error stopping a listener", exc_info=True)
         self.ev_quit.set()
 
         if self.__own_executor:

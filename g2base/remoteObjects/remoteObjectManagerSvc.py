@@ -657,7 +657,7 @@ def main(options, args):
 
     # Simple signal handler to shutdown the world when we receive a signal
     def handler(signum, frame):
-        logger.error('Signal handler called with signal', signum)
+        logger.error('Signal handler called with signal %d' % (signum,))
         ms.shutdown()
 
     signal.signal(signal.SIGTERM, handler)

@@ -428,3 +428,29 @@ def test_every_listener_shares_one_pool_of_workers(nameservice):
         threaded_server=True, transport=WAYS, method_list=['echo'])
 
     assert server.executor._max_workers >= len(WAYS) + 4
+
+
+def test_stopping_releases_every_port_before_it_returns(service):
+    """A caller that stops a service to start another in its place has only
+    ro_stop's return to go on.  Closing the primary listener there and
+    leaving the rest to the serve loop meant the other ports stayed bound
+    afterwards -- for as long as the loop took to notice, and for good when
+    nobody waited -- so the replacement could not bind them."""
+    import socket
+
+    server = service(transports=['xmlrpc', 'g2rpc-tcp'])
+    ports = list(server.ports)
+    assert len(ports) == 2, 'expected a listener per transport'
+
+    server.ro_stop(wait=False)
+
+    for port in ports:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((HOST, port))
+        except OSError as e:
+            pytest.fail('port %d still bound when ro_stop returned: %s'
+                        % (port, e))
+        finally:
+            sock.close()
