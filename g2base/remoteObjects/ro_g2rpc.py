@@ -35,6 +35,7 @@ from tinyrpc.protocols.flexrpc import (ERROR_APPLICATION,  # noqa: F401
                                        ERROR_REFUSED, FlexRPCError,
                                        FlexRPCProtocol, require_principal)
 
+from . import ro_config
 from .packers import pack_xml
 
 #: Gen2's XML packing, offered to tinyrpc under an id in the range reserved
@@ -95,8 +96,9 @@ class G2RPCProtocol(FlexRPCProtocol):
 
 #: Deriving a key from a password is deliberately slow -- that is what makes
 #: a weak one expensive to attack -- so it must happen once per key and not
-#: once per call.  Two hundred thousand PBKDF2 rounds is about 60ms; doing
-#: that per message would cost more than the call.
+#: once per call.  How slow is ro_config.kdf_rounds, which says there what
+#: the slowness is worth; doing it per message would cost more than the call
+#: at any setting.
 _derived: dict = {}
 
 
@@ -108,10 +110,11 @@ def key_for(password: str, service: str = '') -> bytes:
     either service's callers sign for the other.
     """
     salt = ('g2rpc:' + service).encode('utf-8')
-    cached = _derived.get((password, salt))
+    rounds = ro_config.kdf_rounds
+    cached = _derived.get((password, salt, rounds))
     if cached is None:
-        cached = derive_key(password, salt=salt)
-        _derived[(password, salt)] = cached
+        cached = derive_key(password, salt=salt, rounds=rounds)
+        _derived[(password, salt, rounds)] = cached
     return cached
 
 
