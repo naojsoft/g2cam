@@ -387,3 +387,75 @@ def test_both_ports_answer_the_same_service():
         assert new.getInfo('svc')[0]['port'] == 9999
     finally:
         nssvc.ro_stop(wait=True, timeout=10.0)
+
+
+def test_a_shared_registration_keeps_its_other_ways_in():
+    """The primary is deliberately the oldest protocol a service offers, so
+    a peer that drops the alternates does not fail -- it silently resolves
+    every such service to XML-RPC, which is exactly the thing multi-protocol
+    registration exists to stop."""
+    pubsub = FakePubSub()
+    a = ns_mod.remoteObjectNameService('names', pubsub, ro.nullLogger(),
+                                       'hostA')
+    a.register('svc', 'hostA', 8000,
+               dict(protocol='xmlrpc',
+                    alternates=[dict(protocol='g2rpc-tcp', port=8001,
+                                     encoding='msgpack')]))
+    a.share_our_registrations()
+
+    b = ns_mod.remoteObjectNameService('names', FakePubSub(),
+                                       ro.nullLogger(), 'hostB')
+    b.update_offsite_registrations(None, 'names', pubsub.published[-1])
+
+    rec = only_record(b, 'svc')
+    assert rec['alternates'] == [dict(protocol='g2rpc-tcp', port=8001,
+                                      encoding='msgpack')]
+
+    # What the whole thing is for: a client asking the peer still finds the
+    # faster way in, rather than falling back to the primary.
+    assert ro.choose_endpoint(rec) == ('g2rpc-tcp', 8001, 'msgpack')
+
+
+def test_a_shared_registration_with_no_alternates_is_unchanged():
+    pubsub = FakePubSub()
+    a = ns_mod.remoteObjectNameService('names', pubsub, ro.nullLogger(),
+                                       'hostA')
+    a.register('svc', 'hostA', 8000, dict(protocol='g2rpc-tcp'))
+    a.share_our_registrations()
+
+    b = ns_mod.remoteObjectNameService('names', FakePubSub(),
+                                       ro.nullLogger(), 'hostB')
+    b.update_offsite_registrations(None, 'names', pubsub.published[-1])
+
+    assert only_record(b, 'svc')['alternates'] == []
+
+
+def test_a_peer_revalidates_what_it_is_sent():
+    """A peer's registrations arrive over the wire like any other, so they
+    are normalized on the way in rather than trusted -- one bad alternate
+    costs that way in, not the service."""
+    b = ns_mod.remoteObjectNameService('names', FakePubSub(),
+                                       ro.nullLogger(), 'hostB')
+
+    b.update_offsite_registrations(None, 'names', dict(
+        registrar='hostA',
+        names=[dict(name='svc', host='hostA', port=8000, pingtime=1.0,
+                    registrar='hostA', protocol='xmlrpc',
+                    alternates=[dict(protocol='g2rpc-tcp', port=8001),
+                                dict(protocol='g2rpc-tcp'),   # no port
+                                'not even a dict'])]))
+
+    rec = only_record(b, 'svc')
+    assert rec['alternates'] == [dict(protocol='g2rpc-tcp', port=8001,
+                                      encoding='msgpack')]
+
+
+def test_every_shared_field_is_one_normalize_options_reads():
+    """The two lists have to agree.  They did not, which is how alternates
+    came to be registered and not shared."""
+    known = ns_mod.normalize_options(dict(protocol='xmlrpc'),
+                                     ro.nullLogger())
+
+    for field in ns_mod.SHARED_FIELDS:
+        assert field in known or field == 'transport', \
+            "'%s' is shared but normalize_options does not read it" % (field,)

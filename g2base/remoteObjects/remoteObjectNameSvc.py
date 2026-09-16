@@ -159,6 +159,23 @@ def normalize_options(options, logger):
                                                 logger))
 
 
+#: What a registration carries from one name server to another.
+#:
+#: Here rather than spelled out at the point of use because the two have to
+#: agree and did not: 'alternates' was added to a registration and not to
+#: the list that shares it, so a service's second way in reached the name
+#: server it registered with and no other.  A caller resolving through a
+#: peer then saw only the primary -- which is the oldest protocol on offer,
+#: chosen to be what an un-upgraded caller can speak -- and quietly used
+#: that.
+#:
+#: 'transport' is in the list because a registration from an un-upgraded
+#: service carries it in place of 'protocol', and normalize_options reads it
+#: when 'protocol' is absent.
+SHARED_FIELDS = ('secure', 'protocol', 'transport', 'encoding', 'keep',
+                 'alternates')
+
+
 class remoteObjectNameService:
 
     def __init__(self, svcname, pubsub, logger, myhost, purge_delta=30.0):
@@ -424,9 +441,7 @@ class remoteObjectNameService:
         if env['registrar'] != self.myhost:
             self.logger.info("notified of service on another node: %s" % env['registrar'])
             for rec in env['names']:
-                options = {key: rec[key]
-                           for key in ['secure', 'protocol', 'transport',
-                                       'encoding', 'keep']
+                options = {key: rec[key] for key in SHARED_FIELDS
                            if key in rec}
                 self._register(rec['name'], rec['host'], rec['port'],
                                rec['registrar'], options, rec['pingtime'])
