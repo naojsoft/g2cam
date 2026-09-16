@@ -239,3 +239,151 @@ def test_a_proxy_can_read_a_record_written_by_an_old_service(nameservice):
         assert proxy.echo('hi') == 'hi'
     finally:
         svc.ro_stop(wait=True, timeout=10.0)
+
+
+# ----------------------------------------------------------- two ways in --
+#
+# The name service cannot be looked up -- it is what lookups go through --
+# so a second protocol cannot be advertised in a registration the way every
+# other service advertises one.  It lives on a second agreed port instead,
+# and a client finds it by trying.
+
+def test_the_faster_way_in_comes_first(monkeypatch):
+    monkeypatch.setattr(ro, 'ns_rpc_transport', 'g2rpc-tcp')
+    monkeypatch.setattr(ro, 'ns_rpc_encoding', None)
+
+    ways = ro.ns_endpoints()
+
+    assert ways[0] == (ro.nameServiceRpcPort, 'g2rpc-tcp', None)
+    assert ways[-1] == (ro.nameServicePort, ro.ns_transport, ro.ns_encoding)
+
+
+def test_turning_it_off_leaves_only_the_old_way(monkeypatch):
+    """ns_rpc_transport = None is how a site stops offering the second port
+    -- and, on the client side, stops paying to try it."""
+    monkeypatch.setattr(ro, 'ns_rpc_transport', None)
+
+    assert ro.ns_endpoints() == [(ro.nameServicePort, ro.ns_transport,
+                                  ro.ns_encoding)]
+
+
+def test_the_faster_way_is_used_when_it_answers(monkeypatch):
+    monkeypatch.setattr(ro, 'ns_rpc_transport', 'g2rpc-tcp')
+    monkeypatch.setattr(ro, 'ns_rpc_encoding', None)
+    tried = []
+
+    class Handle:
+        def __init__(self, port):
+            self.port = port
+
+        def ro_echo(self, value):
+            tried.append(self.port)
+            return value
+
+    handle = ro._first_working(lambda port, protocol, encoding: Handle(port))
+
+    assert handle.port == ro.nameServiceRpcPort
+    assert tried == [ro.nameServiceRpcPort], 'the old port was not needed'
+
+
+def test_it_falls_back_when_the_faster_port_refuses(monkeypatch):
+    """A port with nothing behind it refuses at once, which is what makes
+    trying cheaper than asking."""
+    monkeypatch.setattr(ro, 'ns_rpc_transport', 'g2rpc-tcp')
+    monkeypatch.setattr(ro, 'ns_rpc_encoding', None)
+    tried = []
+
+    class Handle:
+        def __init__(self, port):
+            self.port = port
+
+        def ro_echo(self, value):
+            tried.append(self.port)
+            raise ro.remoteObjectError('connection refused')
+
+    handle = ro._first_working(lambda port, protocol, encoding: Handle(port))
+
+    assert handle.port == ro.nameServicePort
+    assert tried == [ro.nameServiceRpcPort], \
+        'the last way in is handed back unproven'
+
+
+def test_the_last_way_in_is_not_probed(monkeypatch):
+    """There is nothing left to fall back to, so proving it costs a round
+    trip and buys nothing: a caller that cannot reach the name service at
+    all should hear about it from its own call, in its own terms."""
+    monkeypatch.setattr(ro, 'ns_rpc_transport', None)
+    tried = []
+
+    class Handle:
+        def ro_echo(self, value):
+            tried.append(1)
+            return value
+
+    ro._first_working(lambda port, protocol, encoding: Handle())
+
+    assert tried == []
+
+
+def test_the_name_service_records_both_ways_in(monkeypatch):
+    """Nothing needs to read this to find it -- a client that could read it
+    has found it already -- but a record describing half the service would
+    be a lie to anything listing what is running."""
+    monkeypatch.setattr(ro, 'ns_rpc_transport', 'g2rpc-tcp')
+    monkeypatch.setattr(ro, 'ns_rpc_encoding', None)
+    nssvc = ns_mod.remoteObjectNameService('names', FakePubSub(),
+                                           ro.nullLogger(), HOST)
+
+    nssvc.register_self()
+
+    rec = only_record(nssvc, 'names')
+    assert rec['protocol'] == ro.ns_transport
+    assert rec['port'] == ro.nameServicePort
+    # Recorded with a concrete encoding rather than the None it was given:
+    # the record is what a reader builds a client from, and 'whatever the
+    # default is' is not something a reader can act on.
+    assert rec['alternates'] == [dict(protocol='g2rpc-tcp',
+                                      port=ro.nameServiceRpcPort,
+                                      encoding='msgpack')]
+
+
+def test_it_records_one_way_in_when_that_is_all_there_is(monkeypatch):
+    monkeypatch.setattr(ro, 'ns_rpc_transport', None)
+    nssvc = ns_mod.remoteObjectNameService('names', FakePubSub(),
+                                           ro.nullLogger(), HOST)
+
+    nssvc.register_self()
+
+    assert only_record(nssvc, 'names')['alternates'] == []
+
+
+def test_both_ports_answer_the_same_service():
+    """End to end, on two real sockets: the same name service, reached the
+    way an upgraded client reaches it and the way an un-upgraded one does."""
+    nsobj = ns_mod.remoteObjectNameService('names', FakePubSub(),
+                                           ro.nullLogger(), '127.0.0.1')
+    nssvc = ro.remoteObjectServer(
+        name='names', obj=nsobj, svcname=None, host='127.0.0.1',
+        transport=[ro.ns_transport, 'g2rpc-tcp'], encoding=ro.ns_encoding,
+        port=[0, 0], logger=ro.nullLogger(), usethread=True,
+        ns=False, default_auth=False)
+    nssvc.ro_start(wait=True, timeout=10.0)
+    try:
+        old_port, new_port = nssvc.ports
+        assert old_port != new_port
+
+        old = ro.remoteObjectClient(host='127.0.0.1', port=old_port,
+                                    transport=ro.ns_transport,
+                                    encoding=ro.ns_encoding, auth=None)
+        new = ro.remoteObjectClient(host='127.0.0.1', port=new_port,
+                                    transport='g2rpc-tcp', auth=None)
+
+        assert old.ro_echo(1) == 1
+        assert new.ro_echo(1) == 1
+
+        # And the state behind them is one service, not two.
+        old.register('svc', '127.0.0.1', 9999,
+                     dict(protocol='g2rpc-tcp', encoding='msgpack'))
+        assert new.getInfo('svc')[0]['port'] == 9999
+    finally:
+        nssvc.ro_stop(wait=True, timeout=10.0)

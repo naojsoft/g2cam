@@ -263,10 +263,20 @@ class remoteObjectNameService:
         return 0
 
     def register_self(self):
+        """Record what we answer to, as any other service would.
+
+        Nothing needs to read this to find us -- a client that could read it
+        has found us already -- but a registration that described only half
+        the service would be a lie to anything listing what is running.
+        """
         options = dict(secure=ro.default_secure,
                        protocol=ro.ns_transport,
                        encoding=ro.ns_encoding,
                        keep=True)
+        if ro.ns_rpc_transport:
+            options['alternates'] = [dict(protocol=ro.ns_rpc_transport,
+                                          port=ro.nameServiceRpcPort,
+                                          encoding=ro.ns_rpc_encoding)]
 
         hosttime = time.time()
         return self._register(self.channel, self.myhost, ro.nameServicePort,
@@ -482,11 +492,21 @@ def main(options, args):
     # Create remote object server for this object.
     # svcname to None temporarily because we get into infinite loop
     # try to register ourselves.
+    # Two ways in, on two agreed ports: XML-RPC on the one every client
+    # knows, and the current default beside it for those that can speak it.
+    # A client tries the second first and falls back, which is why they are
+    # separate ports rather than alternates in a registration -- there is no
+    # registration to read before you have found the name service.
+    ways, ports = [ro.ns_transport], [options.port]
+    if ro.ns_rpc_transport:
+        ways.append(ro.ns_rpc_transport)
+        ports.append(options.rpcport)
+
     nssvc = ro.remoteObjectServer(name=options.svcname, obj=nsobj,
                                   svcname=None,  #?!!
-                                  transport=ro.ns_transport,
+                                  transport=ways,
                                   encoding=ro.ns_encoding,
-                                  port=options.port, logger=logger,
+                                  port=ports, logger=logger,
                                   usethread=True, threadPool=t_pool,
                                   ev_quit=ev_quit,
                                   #authDict=authDict,

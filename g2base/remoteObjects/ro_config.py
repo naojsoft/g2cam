@@ -8,6 +8,13 @@ managerServicePort = 7070
 # Port for name service to run on
 nameServicePort    = 7075
 
+# Second port for the name service, where it answers the current default
+# protocol.  The name service cannot be looked up -- it is what lookups go
+# through -- so a client cannot be told where it is; it has to be somewhere
+# already agreed.  Hence a second well-known port rather than an alternate
+# discovered from a registration.
+nameServiceRpcPort = 7074
+
 # Beginning of range of ports for remote object services
 objectsBasePort    = 8000
 
@@ -47,17 +54,24 @@ compat_transports = ['xmlrpc', default_transport]
 # since unpickling runs whatever it is sent.
 default_encoding  = None
 
-# The name service's protocol, for both ends.  It cannot be looked up -- it
-# is what lookups go through -- so a client dials it by fixed port and fixed
-# protocol rather than reading a registration, and there is no negotiating
-# it.  That makes it the last thing that should stop speaking what an
-# un-upgraded caller understands, so it stays on XML-RPC while the default
-# for everything else moves on.
-#
-# Serving a second protocol here would need a well-known port for it as
-# well, since there is no registration for a caller to learn one from.
+# What the name service answers on nameServicePort, and what a client that
+# knows nothing else can always speak to it.  It is the last thing that
+# should stop speaking what an un-upgraded caller understands, so it stays
+# on XML-RPC while the default for everything else moves on.
 ns_transport  = 'xmlrpc'
 ns_encoding  = None
+
+# What it answers on nameServiceRpcPort, for callers that can speak it.
+#
+# A client tries this one first and falls back to the pair above.  Nothing
+# is negotiated and nothing is discovered: a port with nothing behind it
+# refuses in microseconds, which is cheaper than asking, and is the whole
+# reason this is a second port rather than an alternate in a registration.
+#
+# Set ns_rpc_transport to None to stop offering it, and clients to stop
+# trying it.
+ns_rpc_transport = default_transport
+ns_rpc_encoding = None
 
 # Do you want to default to SSL connections (slower)
 # [only for transport=xmlrpc]

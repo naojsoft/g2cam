@@ -8,7 +8,8 @@ import argparse
 from g2base import ssdlog
 from g2base.remoteObjects import remoteObjects as ro
 from g2base.remoteObjects import remoteObjectNameSvc as ro_ns
-from g2base.remoteObjects.ro_config import nameServicePort
+from g2base.remoteObjects.ro_config import (nameServicePort,
+                                            nameServiceRpcPort)
 
 
 if __name__ == '__main__':
@@ -20,7 +21,12 @@ if __name__ == '__main__':
                         help="Use NUM threads", metavar="NUM")
     argprs.add_argument("--port", dest="port", type=int,
                         default=nameServicePort,
-                        help="Register using PORT", metavar="PORT")
+                        help="Answer XML-RPC on PORT", metavar="PORT")
+    argprs.add_argument("--rpcport", dest="rpcport", type=int,
+                        default=nameServiceRpcPort,
+                        help="Answer the default protocol on PORT, which is "
+                        "where a client that can speak it looks first",
+                        metavar="PORT")
     argprs.add_argument("--pshost", dest="pubsub_host", type=str,
                         default='localhost',
                         help="Connect to pub/sub using HOST", metavar="HOST")

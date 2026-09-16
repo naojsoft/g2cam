@@ -1638,9 +1638,18 @@ def get_hosts(svcname, nshost=None, port=nameServicePort,
 
     # Make a handle to the remote object name service on the local
     # machine.  Query it to see the list of hosts running svcname
-    tmpns = remoteObjectClient(host=nshost, port=port,
-                               transport=ns_transport,
-                               auth=auth, secure=secure)
+    if port == nameServicePort:
+        # The caller did not ask for a particular way in, so take the best
+        # one that answers.
+        def build(p, protocol, encoding):
+            return remoteObjectClient(host=nshost, port=p,
+                                      transport=protocol, encoding=encoding,
+                                      auth=auth, secure=secure)
+        tmpns = _first_working(build)
+    else:
+        tmpns = remoteObjectClient(host=nshost, port=port,
+                                   transport=ns_transport,
+                                   auth=auth, secure=secure)
 
     hostports = tmpns.getHosts(svcname)
 
@@ -1735,17 +1744,70 @@ def getms(hosts=None, auth=None, secure=default_secure):
     return make_mspack(hosts, auth=auth, secure=secure)
 
 
-def make_nspack(hosts, auth=None, secure=default_secure):
+def ns_endpoints():
+    """The ways in to a name service, best first.
+
+    Each is ``(port, protocol, encoding)``.  The name service cannot be
+    looked up -- it is what lookups go through -- so these are agreed in
+    ro_config rather than discovered: there is nowhere to read them from
+    that does not require having found it already.
+    """
+    ways = []
+    if ns_rpc_transport:
+        ways.append((nameServiceRpcPort, ns_rpc_transport, ns_rpc_encoding))
+    ways.append((nameServicePort, ns_transport, ns_encoding))
+    return ways
+
+
+def _first_working(build, logger=None):
+    """Return the first handle from `build` that answers.
+
+    `build` is called with each of :py:func:`ns_endpoints` in turn.  A port
+    with nothing behind it refuses at once -- microseconds, not a timeout --
+    so trying the faster way first and falling back costs far less than
+    asking a name service which ways it offers, and works against one too
+    old to have been asked.
+    """
+    ways = ns_endpoints()
+    last = None
+    for i, (port, protocol, encoding) in enumerate(ways):
+        handle = build(port, protocol, encoding)
+        if i == len(ways) - 1:
+            # The last way in is the one every client can speak.  Hand it
+            # back without proving it: there is nothing left to fall back
+            # to, and a caller that cannot reach the name service at all
+            # should hear about it from its own call, in its own terms.
+            return handle
+        try:
+            handle.ro_echo(1)
+            return handle
+        except Exception as e:
+            last = e
+            if logger:
+                logger.debug("name service does not answer %s on port %d "
+                             "(%s); trying the next way in"
+                             % (protocol, port, e))
+    raise remoteObjectError("no way in to the name service: %s" % (last,))
+
+
+def make_nspack(hosts, auth=None, secure=default_secure, logger=None):
     """A failover handle to the name service on each of _hosts_.
 
     Deliberately built from an explicit host list rather than by lookup:
     this is the handle used to *do* lookups, so it cannot rely on one.
+
+    One handle speaks one protocol to every host in it, so this is not a
+    per-host choice: either they are all reached the faster way or none of
+    them is.  Name services are upgraded together, which is what makes that
+    reasonable.
     """
-    return remoteObjectProxy('names',
-                             hostports=[(host, nameServicePort)
-                                        for host in hosts],
-                             transport=ns_transport, encoding=ns_encoding,
-                             auth=auth, secure=secure)
+    def build(port, protocol, encoding):
+        return remoteObjectProxy('names',
+                                 hostports=[(host, port) for host in hosts],
+                                 transport=protocol, encoding=encoding,
+                                 auth=auth, secure=secure)
+
+    return _first_working(build, logger=logger)
 
 
 def getns(hosts=None, auth=None, secure=default_secure):
