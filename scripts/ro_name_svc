@@ -27,16 +27,25 @@ if __name__ == '__main__':
                         help="Answer the default protocol on PORT, which is "
                         "where a client that can speak it looks first",
                         metavar="PORT")
-    argprs.add_argument("--pshost", dest="pubsub_host", type=str,
-                        default='localhost',
-                        help="Connect to pub/sub using HOST", metavar="HOST")
-    argprs.add_argument("--psport", dest="pubsub_port", type=int,
-                        default=6379,
-                        help="Connect to pub/sub using PORT", metavar="PORT")
-    argprs.add_argument("--publish-interval", dest="publish_interval",
-                        type=float, metavar="SECS",
-                        default=10.0,
-                        help="How often (SECS) to purge dead services")
+    argprs.add_argument("--id", dest="node_id", type=str, default=None,
+                        metavar="ID",
+                        help="Identify this name server as ID, instead of "
+                        "deriving one from its host and port.  Needed only "
+                        "to keep an identity across a host rename")
+    argprs.add_argument("--peer", dest="peer", type=str, default=None,
+                        metavar="HOST[,HOST...]",
+                        help="Exchange registrations directly with the name "
+                        "servers on these hosts, without a broker in the "
+                        "middle.  One is enough: the rest are discovered "
+                        "from it and kept current thereafter")
+    argprs.add_argument("--peer-interval", dest="peer_interval", type=float,
+                        default=10.0, metavar="SECS",
+                        help="How often (SECS) to exchange registrations "
+                        "with peer name servers")
+    argprs.add_argument("--peer-timeout", dest="peer_timeout", type=float,
+                        default=2.0, metavar="SECS",
+                        help="How long (SECS) to wait on a peer that is not "
+                        "answering before moving on to the next")
     argprs.add_argument("--purge-interval", dest="purge_interval",
                         type=float, metavar="SECS",
                         default=60.0,
@@ -54,6 +63,10 @@ if __name__ == '__main__':
     (options, args) = argprs.parse_known_args(sys.argv[1:])
 
     if len(args) != 0:
-        argprs.error("incorrect number of arguments")
+        # Named, rather than counted.  The options that reached a broker
+        # this program no longer uses were removed, so the first thing a
+        # stale boot configuration will see is this message, and "incorrect
+        # number of arguments" would tell it nothing about which.
+        argprs.error("unrecognized arguments: %s" % (' '.join(args),))
 
     ro_ns.main(options, args)

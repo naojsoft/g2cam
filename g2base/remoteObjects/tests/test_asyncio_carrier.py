@@ -30,17 +30,6 @@ HOST = '127.0.0.1'
 CARRIER = 'g2rpc-tcp-asyncio'
 
 
-class FakePubSub:
-    def subscribe(self, channel):
-        pass
-
-    def add_callback(self, channel, fn):
-        pass
-
-    def publish(self, channel, envelope, pack_info):
-        pass
-
-
 class Service:
     def __init__(self):
         self.entered = threading.Event()
@@ -57,8 +46,7 @@ class Service:
 
 @pytest.fixture
 def nameservice():
-    service = ns_mod.remoteObjectNameService('names', FakePubSub(),
-                                             ro.nullLogger(), HOST)
+    service = ns_mod.remoteObjectNameService('names', ro.nullLogger(), HOST)
     previous, ro.default_ns = ro.default_ns, service
     yield service
     ro.default_ns = previous

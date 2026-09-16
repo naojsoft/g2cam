@@ -23,17 +23,6 @@ HOST = '127.0.0.1'
 WAYS = ['xmlrpc', 'g2rpc-tcp', 'g2rpc-zmq']
 
 
-class FakePubSub:
-    def subscribe(self, channel):
-        pass
-
-    def add_callback(self, channel, fn):
-        pass
-
-    def publish(self, channel, envelope, pack_info):
-        pass
-
-
 class Service:
     def echo(self, value):
         return value
@@ -41,8 +30,7 @@ class Service:
 
 @pytest.fixture
 def nameservice():
-    return ns_mod.remoteObjectNameService('names', FakePubSub(),
-                                          ro.nullLogger(), HOST)
+    return ns_mod.remoteObjectNameService('names', ro.nullLogger(), HOST)
 
 
 @pytest.fixture

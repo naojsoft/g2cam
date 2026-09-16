@@ -29,21 +29,9 @@ HOST = '127.0.0.1'
 _UNSPECIFIED = object()
 
 
-class FakePubSub:
-    def subscribe(self, channel):
-        pass
-
-    def add_callback(self, channel, fn):
-        pass
-
-    def publish(self, channel, envelope, pack_info):
-        pass
-
-
 @pytest.fixture
 def nameservice():
-    service = ns_mod.remoteObjectNameService('names', FakePubSub(),
-                                             ro.nullLogger(), HOST)
+    service = ns_mod.remoteObjectNameService('names', ro.nullLogger(), HOST)
     previous, ro.default_ns = ro.default_ns, service
     yield service
     ro.default_ns = previous
