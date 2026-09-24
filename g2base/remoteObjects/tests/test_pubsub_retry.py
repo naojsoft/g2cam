@@ -10,7 +10,6 @@ on the same tick retried in lockstep -- a first delay above the noise floor,
 and any word about the updates it was quietly throwing away.
 """
 
-import threading
 import time
 from collections import deque as Deque
 

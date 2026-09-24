@@ -20,7 +20,7 @@ def getFrameInfoFromPath(fitspath):
     # Extract frame id from file path
     (fitsdir, fitsname) = os.path.split(fitspath)
     ridx = fitsname.rindex('.fits')
-    frameid, ext = fitsname[:ridx], fitsname[ridx + 1:]
+    frameid, _ext = fitsname[:ridx], fitsname[ridx + 1:]
 
     match = frame_regex1.match(frameid)
     if match:

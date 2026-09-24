@@ -153,7 +153,7 @@ class processObj:
 
                         stop_proc.kill()
 
-                    except myproc.myprocError as e:
+                    except myproc.myprocError:
                         pass
 
                 self.logger.info("Sending SIGTERM to top process associated with '%s'..." % \
@@ -185,7 +185,7 @@ class processObj:
                         self.proc = None
                         return ro.OK
 
-                except myproc.myprocError as e:
+                except myproc.myprocError:
                     pass
 
                 # Last sanity check
@@ -201,7 +201,7 @@ class processObj:
     def restart(self):
         try:
             self.stop()
-        except Exception as e:
+        except Exception:
             pass
 
         # Manual restarts reset the stopcount
@@ -352,7 +352,7 @@ class remoteObjectManagerService(ro.remoteObjectServer):
                 self.logger.info("Using STDOUT for default output")
                 self.stdout = sys.stdout
 
-        except IOError as e:
+        except IOError:
             self.logger.info("Using /dev/null for default output")
             self.stdout = open("/dev/null", "a")
 
@@ -385,7 +385,7 @@ class remoteObjectManagerService(ro.remoteObjectServer):
         with self.lock:
             try:
                 return self.map[name]
-            except KeyError as e:
+            except KeyError:
                 raise managerSvcError("there is no process associated with '%s'" % name)
 
 
@@ -576,7 +576,7 @@ class remoteObjectManagerService(ro.remoteObjectServer):
         hostports = [(host, ro.managerServicePort) \
                      for host in hosts]
         sp = ro.remoteObjectSPAll('mgrsvc', hostports=hostports)
-        results = sp.shutdown()
+        sp.shutdown()
 
 
     # This gets called when a service has stopped responding (however that is

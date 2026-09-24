@@ -23,7 +23,6 @@ is all that is wanted.
 """
 
 import asyncio
-import socket
 import threading
 
 from tinyrpc.server import AsyncioRPCServer

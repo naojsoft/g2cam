@@ -347,7 +347,7 @@ def parse_logspec(spec, options):
                 unit = unit.lower()
                 val = int(val)
                 rotopts[unit] = val
-            except IndexError as ValueError:
+            except (IndexError, ValueError):
                 raise LoggingError("Bad time rotation spec: '%s'" % (options.logtime))
 
     return (name, level, options.logsize, options.logbackups, rotopts)

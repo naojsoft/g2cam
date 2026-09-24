@@ -13,7 +13,6 @@ together on the next one.  So a batch costs no latency -- the first update
 goes immediately -- and forms only when the traffic is there to form it.
 """
 
-import threading
 import time
 
 import pytest

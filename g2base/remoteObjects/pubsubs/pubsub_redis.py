@@ -218,6 +218,6 @@ class PubSub(Callback.Callbacks):
     def close(self):
         try:
             self.redis.close()
-        except Exception as e:
+        except Exception:
             pass
         self.redis = None

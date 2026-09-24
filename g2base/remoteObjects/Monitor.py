@@ -451,7 +451,7 @@ class Minimon(Monitor):
             try:
                 res[path] = self._store.getitem(path)
 
-            except KeyError as e:
+            except KeyError:
                 # Store does not contain item.
                 continue
 
@@ -522,7 +522,6 @@ class Minimon(Monitor):
 
     def getitem_all(self, tags, timeout=None, eventlist=None):
 
-        start_time = time.time()
         # Calculate deadline if timeout was specified
         if timeout is not None:
             deadline = time.time() + timeout
@@ -725,7 +724,6 @@ def main(options, args):
         logger.error("Error initializing remote objects subsystem: %s" % str(e))
         sys.exit(1)
 
-    ev_quit = threading.Event()
     usethread=False
 
     # Create our monitor and start it

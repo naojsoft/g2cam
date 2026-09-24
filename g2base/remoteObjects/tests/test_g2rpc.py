@@ -16,7 +16,7 @@ on one connection.
 import pytest
 
 from g2base.remoteObjects import remoteObjects as ro
-from g2base.remoteObjects import ro_g2rpc, ro_packer, ro_transport
+from g2base.remoteObjects import ro_g2rpc, ro_transport
 
 HOST = '127.0.0.1'
 ENCODINGS = list(ro_g2rpc.ENCODINGS)

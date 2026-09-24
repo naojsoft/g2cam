@@ -169,7 +169,7 @@ class SIMCAM(BASECAM):
             # Try to look up the named method
             method = getattr(self, cmdName)
 
-        except AttributeError as e:
+        except AttributeError:
             result = "ERROR: No such method in subsystem: %s" % (cmdName)
             self.logger.error(result)
             raise CamCommandError(result)
@@ -267,8 +267,7 @@ class SIMCAM(BASECAM):
             #py_f = pyfits.open(filename)
 
             self.logger.info("verifying pass #1")
-            hdulist = py_f[0:]
-            #hdulist.verify()
+            #py_f.verify()
 
             hdu = py_f[0]
             updDict = {'FRAMEID': frame_no,
@@ -286,8 +285,7 @@ class SIMCAM(BASECAM):
                 hdu.header.set(key, val)
 
             self.logger.info("verifying pass #2")
-            hdulist = py_f[0:]
-            #hdulist.verify()
+            #py_f.verify()
             self.logger.info("flushing")
             py_f.flush(output_verify='ignore')
             self.logger.info("closing")
@@ -336,7 +334,7 @@ class SIMCAM(BASECAM):
         # Convert number to an integer
         try:
             frame_cnt = int(match.group(3))
-        except ValueError as e:
+        except ValueError:
             raise SIMCAMError("Error in frame_no: '%s'" % frame_no)
 
         statusDict = {
@@ -345,7 +343,7 @@ class SIMCAM(BASECAM):
             'FITS.SUK.OBJECT': 'None',
             }
         try:
-            res = self.ocs.requestOCSstatus(statusDict)
+            self.ocs.requestOCSstatus(statusDict)
             self.logger.debug("Status returned: %s" % (str(statusDict)))
 
         except SIMCAMError as e:

@@ -511,7 +511,7 @@ class PubSub:
             partner.sending = True
             proxy_obj = partner.proxy
 
-        value, names, channels = records[0][1], records[0][2], records[0][3]
+        value, _names, channels = records[0][1], records[0][2], records[0][3]
         self._debug("attempting to update subscriber '%s' on channels(%s)"
                     "  with %d update(s), first value: %s",
                     subscriber, channels, len(records), value)
@@ -1573,7 +1573,6 @@ def main(options, args):
         logger.error("Error initializing remote objects subsystem: %s" % str(e))
         sys.exit(1)
 
-    ev_quit = threading.Event()
     usethread=False
 
     # Create our pubsub and start it

@@ -1987,7 +1987,6 @@ def svxequ(st, jd, eo, pr, r0, d0, xx, cx, cy):
     z = math.sin(d0)*math.cos(r) + math.cos(d0)*math.sin(r)*math.cos(th)
     dt = math.atan2(z, math.sqrt(x*x+y*y))
     # TODO: assign symbolic constants....EJ
-    jo = (eo-2000.0)*365.25 + 2451545.0
     # Comment out by George 2000/06/23
     # prcsn1(jd,jo,rt,dt,rs,ds);
 
@@ -2023,14 +2022,11 @@ def svequx(st, jd, eo, es, pr, r0, d0, rs, ds, cx):
       double cy: offset y on the CCD (pix)
     """
 
-    rad = math.pi / 180.0
 
     r0 = math.radians(15.0*r0); d0 = math.radians(d0)
     rs = math.radians(15.0*rs); ds = math.radians(ds)
     pr = math.radians(pr)
     # TODO: assign symbolic constants....EJ
-    jo = (eo-2000.0)*365.25 + 2451545.0
-    js = (es-2000.0)*365.25 + 2451545.0
     # Comment out by George  2000/06/23
     # prcsn1(jo,jd,r0,d0,&r0,&d0); prcsn1(js,jd,rs,ds,&rs,&ds);
 

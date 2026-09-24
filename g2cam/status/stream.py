@@ -157,6 +157,6 @@ class StatusStream:
     def close(self):
         try:
             self.rs.close()
-        except Exception as e:
+        except Exception:
             pass
         self.rs = None

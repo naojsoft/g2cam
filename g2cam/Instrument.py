@@ -185,7 +185,7 @@ class Instrument:
             # Get the class constructor for this instrument personality
             classObj = getattr(module, camName)
 
-        except AttributeError as e:
+        except AttributeError:
             # Not in this module, keep looking...
             self.logger.error("Cannot find a class corresponding to name '%s'" % \
                               camName)
@@ -249,7 +249,12 @@ class Instrument:
             self.logger.warn("No instrument personality '%s' to stop" % \
                              camName)
         else:
-            camInfo = self.cams[camName]
+            camInfo = self.cams[camName]  # noqa: F841
+            # NOTE: this has never actually stopped the cam, so shutdown
+            # and _reload_and_restart() leave it running.  Enabling the
+            # call below would change what running instruments do at
+            # shutdown and reload, so it is left for a deliberate decision.
+            #camInfo.cam.stop(wait=wait)
 
 
     def shutdown(self, res):
@@ -349,12 +354,12 @@ class Instrument:
                 # Try to look up the named method
                 method = getattr(camInfo.cam, cmdName)
 
-            except AttributeError as e:
+            except AttributeError:
                 # Push command name back on argument list as first arg
                 args.insert(0, cmdName)
                 try:
                     method = getattr(camInfo.cam, 'defaultCommand')
-                except AttributeError as e:
+                except AttributeError:
                     result = "ERROR: No such method in subsystem: %s" % (cmdName)
                     self.logger.error(result)
                     raise CamError(result)
@@ -577,7 +582,7 @@ class Instrument:
         try:
             tableBunch = self._mystatus[tableName]
 
-        except KeyError as e:
+        except KeyError:
             raise CamError("No such table defined: '%s'" % (tableName))
 
         return tableBunch

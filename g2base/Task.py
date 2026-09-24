@@ -8,7 +8,7 @@ import itertools
 import sys
 import time
 import threading
-import queue
+import queue as Queue
 
 # NOTE: See http://bugs.python.org/issue7946
 # we cannot effectively use threading for loading files/network/etc.
@@ -541,7 +541,7 @@ class ConcurrentAndTaskset(Task):
                 try:
                     task.stop()
 
-                except TaskError as e:
+                except TaskError:
                     # Task does not have a way to stop it.
                     # TODO: notify who?
                     pass
@@ -599,7 +599,7 @@ class QueueTaskset(Task):
         while True:
             try:
                 self.queue.get(block=False)
-            except queue.Empty:
+            except Queue.Empty:
                 break
 
     def stop(self):
@@ -610,7 +610,7 @@ class QueueTaskset(Task):
             if self.task:
                 self.task.stop()
 
-        except TaskError as e:
+        except TaskError:
             #self.logger.error("Error cancelling child task: %s" % (str(e)))
             pass
 
@@ -624,7 +624,7 @@ class QueueTaskset(Task):
             if self.task:
                 self.task.stop()
 
-        except TaskError as e:
+        except TaskError:
             #self.logger.error("Error cancelling child task: %s" % (str(e)))
             pass
 
@@ -667,7 +667,7 @@ class QueueTaskset(Task):
                     # If task raised exception then it didn't call done,
                     task.done(e, noraise=True)
 
-            except queue.Empty:
+            except Queue.Empty:
                 # No task available.  Continue trying to get one.
                 continue
 
@@ -693,7 +693,7 @@ class QueueTaskset(Task):
 
 # ------------ PRIORITY QUEUES ------------
 
-class PriorityQueue(queue.PriorityQueue):
+class PriorityQueue(Queue.PriorityQueue):
     pass
 
 
@@ -807,7 +807,7 @@ class WorkerThread:
                         # Idle again, and available for the next submission.
                         self.tpool._worker_idle()
 
-                except queue.Empty as e:
+                except Queue.Empty:
                     # Reach here when we time out waiting for a task
                     if self.tpool is not None and self.time_idle is not None:
                         idle_sec = time.time() - self.time_idle
@@ -929,7 +929,7 @@ class ThreadPool:
             # do not compare, and raises.
             self._seq = itertools.count()
         else:
-            self.queue = queue.SimpleQueue()
+            self.queue = Queue.SimpleQueue()
             self._seq = None
 
         # Permits stand for workers known to be idle.  A worker releases one

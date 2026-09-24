@@ -59,7 +59,7 @@ class PubSub(Callback.Callbacks):
         cb_fn = self.create_callback_fn(channel)
 
         if self.pubsub is not None:
-            subscription = self.pubsub.subscribe(channel, callback=cb_fn)
+            self.pubsub.subscribe(channel, callback=cb_fn)
 
     def unsubscribe(self, channel):
         if channel in self.subscriptions:

@@ -122,11 +122,11 @@ def main():
 
     cb(None, '0')
     print("Setting timers")
-    t1 = tfact.set(0.0015, cb, 'B')
+    tfact.set(0.0015, cb, 'B')
     t2 = tfact.set(0.0020, cb, 'D')
-    t3 = tfact.set(0.0016, cb, 'C')
-    t4 = tfact.set(0.0001, cb, 'A')
-    t5 = tfact.set(0.0030, cb, 'E')
+    tfact.set(0.0016, cb, 'C')
+    tfact.set(0.0001, cb, 'A')
+    tfact.set(0.0030, cb, 'E')
     t2.clear()
 
     print("Waiting on timers")

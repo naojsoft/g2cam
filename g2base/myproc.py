@@ -111,7 +111,7 @@ def write_pidfile(filepath, pid):
         pid_f.write("%d\n" % pid)
         pid_f.close()
 
-    except IOError as e:
+    except IOError:
         raise myprocError("Failed to open/write pid file: %s" % str(filepath))
 
 
@@ -123,7 +123,7 @@ def read_pidfile(filepath):
 
         return pid
 
-    except IOError as e:
+    except IOError:
         raise myprocError("Failed to open/read pid file: %s" % str(filepath))
 
 
@@ -578,7 +578,7 @@ class myproc:
         try:
             pid, status = os.waitpid(self.pid, waitarg)
 
-        except OSError as e:
+        except OSError:
             self.dead = True
             self.exitcode = 0
             self.stat = 'exited-unknown'
@@ -645,7 +645,7 @@ class getproc:
 
         p = myproc('ps -p ' + str(self.pid) + ' -o pid=')
         output = p.output()
-        s = p.status()        # Force reap
+        p.status()        # Force reap
         if output:
             self.dead = False
             self.stat = 'running'

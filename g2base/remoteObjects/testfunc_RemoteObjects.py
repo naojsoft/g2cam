@@ -153,7 +153,7 @@ class TestROwithServer(unittest.TestCase):
     self.assertEquals(False, os.path.exists(self.rofilename))
     start = time.time()
     self.ROclient.copyfile(self.rofilename,self.filecontents)
-    elapsed = time.time() - start
+    elapsed = time.time() - start  # noqa: F841
     #print "\n\n%f %fKBps\n\n" % (elapsed, len(self.filecontents)/elapsed/1000.0)
     self.assertEquals(True, os.path.exists(self.rofilename))
 
@@ -162,7 +162,7 @@ class TestROwithServer(unittest.TestCase):
     self.assertEquals(False, os.path.exists(self.rofilename))
     start = time.time()
     self.ROclient.sendfile(self.rofilename,self.filecontents)
-    elapsed = time.time() - start
+    elapsed = time.time() - start  # noqa: F841
     #print "\n\n%f %fKBps\n\n" % (elapsed, len(self.filecontents)/elapsed/1000.0)
     self.assertEquals(False, os.path.exists(self.rofilename))
 

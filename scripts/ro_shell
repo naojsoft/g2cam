@@ -78,7 +78,7 @@ class Shell:
         """Switch cursor to remote object service (svcname)"""
 
         try:
-            foo = self.svc[svcname]
+            self.svc[svcname]
             self.cursor = svcname
             return svcname
 

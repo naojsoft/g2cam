@@ -59,7 +59,7 @@ def main(options, args):
             d.update({k: changed[k] for k in d if k in changed})
             print(d)
 
-    except KeyboardInterrupt as e:
+    except KeyboardInterrupt:
         ev_quit.set()
 
 

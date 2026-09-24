@@ -78,7 +78,7 @@ class Gen2TTSNotification(SoundNotification):
     def notify(self, ap, alarm):
         if self.sound_text is not None:
             svc_sound = ap.extras['gen2_sound_svc']
-            self.svc_sound.playText(self.sound_text, self.voice,
+            svc_sound.playText(self.sound_text, self.voice,
                                     self.volume, True, None,
                                     self.priority, self.dst)
 

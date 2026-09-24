@@ -56,7 +56,7 @@ def client2(options, logger):
     time1 = time.time()
 
     for i in range(options.count):
-        res = testro.test(1.0, 2.0, 3.0, 4.0)
+        testro.test(1.0, 2.0, 3.0, 4.0)
 
     tottime = time.time() - time1
     time_per_call = tottime / options.count

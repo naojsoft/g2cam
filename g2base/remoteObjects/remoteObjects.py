@@ -46,7 +46,6 @@ from tinyrpc import exc as tinyrpc_exc
 from tinyrpc.client import RPCClient
 from tinyrpc.client_multiplexing import MultiplexingRPCClient
 from tinyrpc.dispatch import RPCDispatcher
-from tinyrpc.server.executor import RPCServerExecutor
 
 from . import ro_endpoints, ro_executor, ro_g2rpc, ro_transport
 from .ro_config import *
@@ -677,7 +676,6 @@ class remoteObjectServer:
 
 
     def ro_workerStatus(self):
-        res = []
         if self.threadPool:
             return self.threadPool.workerStatus()
         else:
@@ -838,7 +836,7 @@ class remoteObjectServer:
             try:
                 self.ns.unregister(self.svcname, self.host, self.port)
 
-            except remoteObjectError as e:
+            except remoteObjectError:
                 # Just as in SOSSrpc module, sometimes unregistering fails.
                 # It seems best to silently ignore these for now...
                 #self.logger.warn("Failed to unregister to name service: %s" % (
@@ -1686,7 +1684,7 @@ def get_ro_hosts(nshost=None):
         try:
             ro_hosts = get_hosts('names', nshost=nshost)
 
-        except remoteObjectError as e:
+        except remoteObjectError:
             #raise NameServiceWarning("Can't connect to name server; assuming remote hosts=%s" % (str(ro_hosts)))
             pass
 
