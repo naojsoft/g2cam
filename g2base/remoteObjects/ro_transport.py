@@ -21,6 +21,7 @@ XML-RPC implementations that are not Python's.
 
 import socket
 import ssl
+from typing import NamedTuple, Optional, Tuple
 
 from tinyrpc.protocols.jsonrpc import JSONRPCProtocol
 from tinyrpc.protocols.msgpackrpc import MSGPACKRPCProtocol
@@ -42,6 +43,10 @@ class UnknownTransport(KeyError):
 
 
 class TransportSpec:
+    #: What this carrier is called in a transport string.  Subclasses that
+    #: are a carrier say; the base does not know.
+    carrier = None
+
     """One way of speaking RPC: a protocol carried over a transport.
 
     :param name: The protocol name, as it appears in a name-service
@@ -244,6 +249,9 @@ class TransportSpec:
 
 
 class HttpTransportSpec(TransportSpec):
+    #: What this carrier is called in a transport string, after the '/'.
+    carrier = 'http'
+
     """A protocol carried over HTTP, one connection per call.
 
     Nothing is held between calls, so there is no connection to go stale:
@@ -272,6 +280,8 @@ class HttpTransportSpec(TransportSpec):
 
 
 class TcpTransportSpec(TransportSpec):
+    carrier = 'tcp'
+
     """A protocol carried over a bare TCP socket.
 
     Two shapes, chosen by ``persistent``:
@@ -339,6 +349,8 @@ class TcpTransportSpec(TransportSpec):
 
 
 class ZmqTransportSpec(TransportSpec):
+    carrier = 'zmq'
+
     """A protocol carried over 0mq, request/reply.
 
     The server is a ROUTER and each call is a REQ socket, so 0mq queues a
@@ -451,6 +463,258 @@ legacy_transport_names = {
 def resolve_legacy_transport(transport):
     """Map an old ``transport`` value onto a protocol name."""
     return legacy_transport_names.get(transport, transport)
+
+
+#: What a ``+layer`` may ask for, and where it belongs.
+#:
+#: The envelope layers are FlexRPC's, so they mean nothing to a protocol
+#: without one.  'tls' is the carrier's, and is the only one that is not.
+#:
+#: A layer may take one value, ``+layer=value``, naming a *variant*.  Tuning
+#: -- a compression level, a signature's maximum age -- stays in
+#: configuration: it has to match at both ends, and nobody types it twice.
+ENVELOPE_LAYERS = ('auth', 'compress', 'encrypt')
+CARRIER_LAYERS = ('tls',)
+
+#: How the envelope authenticates.  Not called 'sign': only one of these
+#: signs.  A signature is computed over the message and proves the sender
+#: holds the secret; credentials are carried and only claim it, which is the
+#: whole difference between them and not something a name should blur.
+AUTH_VARIANTS = {'hmac': 'signature', 'plain': 'credentials'}
+
+#: Which layers take a value, and whether they must have one.  'auth' must:
+#: the two variants differ in what they guarantee, so defaulting one of them
+#: silently is exactly the wrong kindness.  'compress' and 'encrypt' take an
+#: optional scheme -- there is one of each today, so naming it is how a
+#: second one arrives without the strings written now becoming ambiguous.
+LAYER_VALUES = {'auth': ('required', tuple(AUTH_VARIANTS)),
+                'compress': ('optional', ('deflate',)),
+                'encrypt': ('optional', ('secretbox',)),
+                'tls': ('none', None)}
+
+#: Layers the grammar accepts and nothing yet applies.  Parsed, checked and
+#: then refused, so a string written today means what it will mean when the
+#: layer is built rather than being silently ignored until then.
+UNBUILT_LAYERS = {
+    'compress': "nothing threads extra layers through signing_framing yet, "
+                "and a receiver must hold the layer to undo a compressed "
+                "message -- see tinyrpc.framing's cannot_undo check",
+    'encrypt': "tinyrpc's Encrypt exists but g2cam never builds one, and its "
+               "key would need deriving the way signing keys are, which both "
+               "ends must then agree on",
+}
+
+
+class Transport(NamedTuple):
+    """What a transport string asked for, taken apart.
+
+    A surface syntax for people -- command lines, configuration files -- and
+    not a wire format.  A registration keeps its protocol, encoding and
+    transport in separate fields, and anything that reads one should go on
+    reading those; this is for turning what somebody typed into them.
+    """
+
+    #: The registry name, ready for :py:func:`get`.
+    name: str
+    #: The encoding asked for, or None to take the spec's own.
+    encoding: Optional[str] = None
+    #: 'signature' or 'credentials' for a protocol with an envelope, else None.
+    envelope_auth: Optional[str] = None
+    #: Whether the carrier was asked to encrypt.
+    secure: bool = False
+    #: Envelope layers other than authentication, as ``(name, value)`` pairs
+    #: in the order given.  The framing applies its own order regardless;
+    #: see tinyrpc.framing.
+    layers: Tuple[Tuple[str, Optional[str]], ...] = ()
+
+    @property
+    def spec(self):
+        """The spec this names."""
+        return get(self.name, self.encoding)
+
+
+def parse(spec_string):
+    """Take apart a transport string.
+
+        protocol[:encoding][+layer...][/carrier[+layer...]]
+
+    A plain name is a registry name and is looked up as one, which is what it
+    has always been -- so 'jsonrpc' and 'g2rpc' go on meaning what they mean.
+    Everything else is additive:
+
+    * ``/carrier`` names the carrier: 'g2rpc/tcp' is the spec registered as
+      'g2rpc-tcp', and 'g2rpc/http' is plain 'g2rpc', whose carrier that is.
+    * ``:encoding`` picks the encoding, for the one protocol whose encoding
+      is a choice.
+    * ``+auth=hmac`` or ``+auth=plain`` picks how the envelope
+      authenticates; ``+compress`` and ``+encrypt`` name the other envelope
+      layers, and ``+tls`` asks the carrier to encrypt.  A layer may carry
+      one value naming a variant: ``+compress=deflate``.
+
+    ``-`` is never structural: it is part of a name, as in 'xmlrpc-std' and
+    'tcp-persistent'.
+
+    :raises UnknownTransport: for a name, carrier, encoding or layer that
+        does not exist, or a combination the spec cannot honour.
+    :raises NotImplementedError: for a layer this grammar accepts and
+        nothing yet applies -- see :py:data:`UNBUILT_LAYERS`.  Separate from
+        the above so that a caller can tell a typo from a promise.
+    """
+    text = (spec_string or '').strip()
+    if not text:
+        raise UnknownTransport('empty transport string')
+
+    left, slash, right = text.partition('/')
+    if slash and not right.strip():
+        raise UnknownTransport(
+            "'%s' ends in '/' but names no carrier" % (spec_string,))
+
+    protocol, encoding, layers = _take_apart(left, spec_string)
+    carrier, _enc, carrier_layers = _take_apart(right, spec_string)
+    if _enc is not None:
+        raise UnknownTransport(
+            "'%s' puts an encoding on the carrier; it belongs on the "
+            "protocol, before the '/'" % (spec_string,))
+
+    name = _registry_name(protocol, carrier, spec_string)
+    spec = get(name)                    # raises if the encoding is impossible
+
+    for layer, value in layers:
+        if layer not in ENVELOPE_LAYERS:
+            raise UnknownTransport(
+                "'%s' is not a layer this protocol can carry; it offers %s "
+                "(and '%s' on the carrier)"
+                % (layer, ', '.join(ENVELOPE_LAYERS),
+                   "', '".join(CARRIER_LAYERS)))
+        _check_value(layer, value, spec_string)
+    for layer, value in carrier_layers:
+        if layer not in CARRIER_LAYERS:
+            raise UnknownTransport(
+                "'%s' belongs on the protocol, before the '/', not on the "
+                "carrier" % (layer,))
+        _check_value(layer, value, spec_string)
+
+    if encoding is not None and not spec.encoding_is_selectable:
+        raise UnknownTransport(
+            "'%s' fixes its own encoding, so ':%s' means nothing; only %s "
+            "has a choice" % (protocol, encoding,
+                              ', '.join(n for n in sorted(registry)
+                                        if registry[n].encoding_is_selectable)))
+    if encoding is not None:
+        spec.check_encoding(encoding)
+
+    asked = [layer for layer, _value in layers]
+    if asked and spec.auth_mechanism != 'signature':
+        raise UnknownTransport(
+            "'%s' has no envelope to put '%s' in; only the g2rpc protocols do"
+            % (protocol, '+'.join(asked)))
+    if len(set(asked)) != len(asked):
+        raise UnknownTransport("'%s' names a layer twice" % (spec_string,))
+
+    secure = any(layer == 'tls' for layer, _value in carrier_layers)
+    if secure and not spec.supports_tls:
+        raise UnknownTransport(
+            "the '%s' carrier cannot encrypt; use an HTTP-carried protocol"
+            % (carrier or spec.carrier,))
+
+    envelope_auth = None
+    rest = []
+    for layer, value in layers:
+        if layer == 'auth':
+            # One value, so a service cannot ask to authenticate two ways at
+            # once: the exclusion is in the grammar rather than in a check.
+            envelope_auth = AUTH_VARIANTS[value]
+        else:
+            rest.append((layer, value))
+    rest = tuple(rest)
+
+    for layer, _value in rest:
+        if layer in UNBUILT_LAYERS:
+            # NotImplementedError rather than UnknownTransport: the caller
+            # did not get it wrong, and a caller that wants to tell those
+            # apart -- to offer a better message, or to fall back -- can.
+            raise NotImplementedError(
+                "'+%s' is understood but not yet wired up: %s"
+                % (layer, UNBUILT_LAYERS[layer]))
+
+    return Transport(name=name, encoding=encoding, envelope_auth=envelope_auth,
+                     secure=secure, layers=rest)
+
+
+def _check_value(layer, value, spec_string):
+    """Whether this layer takes a value, and whether this one is allowed."""
+    need, allowed = LAYER_VALUES[layer]
+    if need == 'none' and value is not None:
+        raise UnknownTransport(
+            "'+%s' takes no value, so '=%s' means nothing" % (layer, value))
+    if need == 'required' and value is None:
+        raise UnknownTransport(
+            "'+%s' needs a value: one of %s" % (layer, ', '.join(allowed)))
+    if allowed is not None and value is not None and value not in allowed:
+        raise UnknownTransport(
+            "'%s' is not a kind of '+%s'; it offers %s"
+            % (value, layer, ', '.join(allowed)))
+
+
+def _take_apart(text, spec_string):
+    """One side of the '/': a name, an optional encoding, and layers."""
+    text = text.strip()
+    if not text:
+        return None, None, ()
+
+    head, plus, tail = text.partition('+')
+    if plus and not tail.strip():
+        raise UnknownTransport(
+            "'%s' has a '+' with no layer after it" % (spec_string,))
+    parts = tuple(part.strip() for part in tail.split('+')) if tail else ()
+    if any(not part for part in parts):
+        raise UnknownTransport(
+            "'%s' has an empty '+' section" % (spec_string,))
+    layers = []
+    for part in parts:
+        layer, equals, value = part.partition('=')
+        layer, value = layer.strip(), value.strip()
+        if not layer:
+            raise UnknownTransport(
+                "'%s' has a '=' with no layer before it" % (spec_string,))
+        if equals and not value:
+            raise UnknownTransport(
+                "'%s' gives '%s' a '=' with no value after it"
+                % (spec_string, layer))
+        layers.append((layer, value if equals else None))
+    layers = tuple(layers)
+
+    name, colon, encoding = head.partition(':')
+    name, encoding = name.strip(), encoding.strip()
+    if colon and not encoding:
+        raise UnknownTransport(
+            "'%s' has a ':' with no encoding after it" % (spec_string,))
+    if not name:
+        raise UnknownTransport("'%s' names no protocol" % (spec_string,))
+
+    return name, (encoding if colon else None), layers
+
+
+def _registry_name(protocol, carrier, spec_string):
+    """The registry key for a protocol and the carrier it was asked for."""
+    protocol = resolve_legacy_transport(protocol)
+    if carrier is None:
+        return protocol
+
+    compound = '%s-%s' % (protocol, carrier)
+    if compound in registry:
+        return compound
+    # 'g2rpc/http' and 'jsonrpc/http': the bare name *is* that carrier's.
+    if protocol in registry and registry[protocol].carrier == carrier:
+        return protocol
+
+    offers = sorted({name for name in registry
+                     if name == protocol or name.startswith(protocol + '-')})
+    raise UnknownTransport(
+        "there is no '%s' over '%s'%s"
+        % (protocol, carrier,
+           '; registered: ' + ', '.join(offers) if offers
+           else "; no protocol named '%s'" % (protocol,)))
 
 
 def get(protocol, encoding=None):
