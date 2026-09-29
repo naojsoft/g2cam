@@ -106,6 +106,27 @@ default_cert       = None
 # since it decides the key rather than merely how long it took to make.
 kdf_rounds = 10000
 
+# How a protocol that carries an envelope of its own authenticates.  Only
+# g2rpc has one; the HTTP-carried protocols use HTTP Basic and ignore this.
+#
+# 'signature'
+#     The caller signs the message with a key derived from its password, and
+#     the far end verifies it.  The password never travels, the message
+#     cannot be altered on the way, and a name that arrives is a name the
+#     caller demonstrably holds.  Costs about 6.5us a message, and that grows
+#     with the message: SHA-256 hashes all of it, so 39us at 64KB.
+#
+# 'credentials'
+#     The caller puts its name and password in the header and the far end
+#     compares them.  Costs about 0.3us and 19 bytes, and does not grow with
+#     the message -- but the password crosses the wire in the clear on every
+#     call, so it defends against a process that has wandered into the wrong
+#     service, not against anyone who can read the traffic.
+#
+# Both ends must agree: a signer talking to a service expecting credentials
+# is refused, and the reverse.
+envelope_auth = 'signature'
+
 # If set to True, and no explicit authentication is supplied
 # servers and clients will resort to using the service name.
 # A good idea to leave True, to prevent accidental masquerading.

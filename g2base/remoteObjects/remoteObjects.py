@@ -31,6 +31,7 @@ import threading
 # binascii encoding/decoding is much faster than xmlrpclib's
 # built-in Binary class
 import binascii
+import hmac
 import zlib
 import traceback
 import inspect
@@ -46,6 +47,7 @@ from tinyrpc import exc as tinyrpc_exc
 from tinyrpc.client import RPCClient
 from tinyrpc.client_multiplexing import MultiplexingRPCClient
 from tinyrpc.dispatch import RPCDispatcher
+from tinyrpc.framing import FLAG_CREDENTIALS, Credentials, Framing
 
 from . import ro_endpoints, ro_executor, ro_g2rpc, ro_transport
 from .ro_config import *
@@ -102,6 +104,8 @@ def make_authenticator(authDict, logger, mechanism='basic'):
     """
     if mechanism == 'signature':
         return make_signature_authenticator(authDict, logger)
+    if mechanism == 'credentials':
+        return make_credentials_authenticator(authDict, logger)
     return make_basic_authenticator(authDict, logger)
 
 
@@ -133,6 +137,46 @@ def make_signature_authenticator(authDict, logger):
                 % (principal,))
 
         logger.debug("Authorized client '%s'" % (principal,))
+
+    return authenticate
+
+
+def make_credentials_authenticator(authDict, logger):
+    """Accept a request whose carried name and password match the authDict.
+
+    The cheap mechanism: the framing refused anything with no credentials
+    section, and what arrives is a *claim*, so unlike a signature it has to
+    be compared here.  A claim is all it is -- anyone who has seen one call
+    can repeat it -- which is why this is a guard against a caller that has
+    wandered into the wrong service rather than against an adversary.
+    """
+    def authenticate(context, request):
+        credentials = getattr(request, 'credentials', None)
+        if credentials is None:
+            # Only reachable if the framing was built without requiring
+            # credentials, which the server does not do when it has an
+            # authDict.
+            logger.error("Request arrived with no credentials")
+            raise remoteObjectError(
+                "Service requires credentials and none were sent")
+
+        username = credentials.username
+        if username not in authDict:
+            logger.error("No user matching '%s'" % (username,))
+            raise remoteObjectError(
+                "Service requires authentication; unknown caller '%s'"
+                % (username,))
+
+        # compare_digest rather than ==: the passwords are not secret enough
+        # for a timing attack to be the weak point, but a constant-time
+        # comparison costs nothing and removes the question.
+        if not hmac.compare_digest(authDict[username], credentials.password):
+            logger.error("Password mismatch for '%s'" % (username,))
+            raise remoteObjectError(
+                "Service requires authentication; username or password "
+                "mismatch")
+
+        logger.debug("Authorized client '%s'" % (username,))
 
     return authenticate
 
@@ -262,22 +306,41 @@ def choose_endpoint(rec, prefer=None, pin=None, logger=None):
     return ways[0]
 
 
-def client_framing(spec, auth, service):
+def client_framing(spec, auth, service, mechanism=envelope_auth):
     """What a client should sign with, or ``None`` if it should not sign.
 
     Deliberately tolerant: it does not *require* a signed reply.  A service
     that has no authDict signs nothing, and refusing its answers would make
     turning authentication on at one end break the other -- while a service
     that does sign is still verified, because the layer is there.
+
+    ``None`` also when the envelope carries plain credentials instead: there
+    is no layer then, only a header section, and that is
+    :py:func:`client_credentials`.
     """
-    if auth is None or spec.auth_mechanism != 'signature':
+    if (auth is None or spec.auth_mechanism != 'signature'
+            or mechanism != 'signature'):
         return None
     user, password = auth
     return ro_g2rpc.signing_framing({user: password}, service=service,
                                     sign_as=user, require=False)
 
 
-def server_framing(spec, authDict, svcname):
+def client_credentials(spec, auth, mechanism=envelope_auth):
+    """The name and password to carry, or ``None`` if we sign instead.
+
+    The same ``auth`` the signing path uses -- one place decides what a
+    caller is called and what it knows, and this decides only whether that
+    is hashed or carried.
+    """
+    if (auth is None or spec.auth_mechanism != 'signature'
+            or mechanism != 'credentials'):
+        return None
+    user, password = auth
+    return Credentials(user, password)
+
+
+def server_framing(spec, authDict, svcname, mechanism=envelope_auth):
     """What a service should sign with, or ``None`` if it should not.
 
     Strict, where the client is tolerant: a service with an authDict refuses
@@ -290,6 +353,11 @@ def server_framing(spec, authDict, svcname):
     """
     if not authDict or spec.auth_mechanism != 'signature':
         return None
+    if mechanism == 'credentials':
+        # No layer to apply, only a section to insist on.  The framing
+        # refuses a message that carries none, so the authenticator can be
+        # sure there is something to compare.
+        return Framing(require=FLAG_CREDENTIALS)
     return ro_g2rpc.signing_framing(authDict, service=svcname, require=True)
 
 
@@ -310,6 +378,7 @@ class remoteObjectServer:
                  threadPool=None, transport=default_transport,
                  encoding=default_encoding,
                  authDict=None, default_auth=use_default_auth,
+                 envelope_auth=envelope_auth,
                  secure=default_secure, cert_file=default_cert,
                  ns=None, method_list=None, method_prefix=None):
 
@@ -386,6 +455,8 @@ class remoteObjectServer:
         self.transport = transport
         self.encoding = encoding
         self.port = port
+
+        self.envelope_auth = envelope_auth
 
         if authDict:
             self.authDict = authDict
@@ -558,7 +629,8 @@ class remoteObjectServer:
         HTTP carrier reads credentials off the request, one with an envelope
         of its own checks a signature in it.
         """
-        framing = server_framing(spec, self.authDict, self.svcname)
+        framing = server_framing(spec, self.authDict, self.svcname,
+                                 mechanism=self.envelope_auth)
         server = spec.make_rpc_server(rpc_transport,
                                       spec.make_protocol(encoding,
                                                          framing=framing),
@@ -568,7 +640,9 @@ class remoteObjectServer:
                                       logger=self.logger)
         if self.authDict:
             server.authenticator = make_authenticator(
-                self.authDict, self.logger, spec.auth_mechanism)
+                self.authDict, self.logger,
+                self.envelope_auth if spec.auth_mechanism == 'signature'
+                else spec.auth_mechanism)
         return server
 
 
@@ -1007,7 +1081,7 @@ class remoteObjectClient:
     def __init__(self, host, port, name='<remote object>', auth=None,
                  default_auth=use_default_auth, secure=default_secure,
                  transport=default_transport, encoding=default_encoding,
-                 timeout=None):
+                 timeout=None, envelope_auth=envelope_auth):
         self.host = host
         self.port = port
         self.name = name
@@ -1024,7 +1098,8 @@ class remoteObjectClient:
             self.proxy = _ServiceProxy(self.spec, host, port, auth=self.auth,
                                        secure=secure, timeout=timeout,
                                        encoding=self.encoding,
-                                       service=name)
+                                       service=name,
+                                       envelope_auth=envelope_auth)
 
         except Exception as e:
             raise remoteObjectError(
@@ -1055,7 +1130,8 @@ class _ServiceProxy:
     """
 
     def __init__(self, spec, host, port, auth=None, secure=False,
-                 timeout=None, encoding=None, service=''):
+                 timeout=None, encoding=None, service='',
+                 envelope_auth=envelope_auth):
         self.spec = spec
         self.host = host
         self.port = port
@@ -1071,7 +1147,10 @@ class _ServiceProxy:
         self._lock = threading.Lock()
         # Built once.  Deriving a key from a password is deliberately slow,
         # and a protocol is made per call.
-        self._framing = client_framing(spec, auth, service)
+        self._framing = client_framing(spec, auth, service,
+                                       mechanism=envelope_auth)
+        self._credentials = client_credentials(spec, auth,
+                                               mechanism=envelope_auth)
 
     def __build(self):
         return self.spec.make_client_transport(
@@ -1113,7 +1192,8 @@ class _ServiceProxy:
         try:
             client = RPCClient(
                 self.spec.make_protocol(self.encoding,
-                                        framing=self._framing),
+                                        framing=self._framing,
+                                        credentials=self._credentials),
                 transport)
             # The timeout has to reach the transport.  A carrier that dials
             # per call fails at connect when a service is down, so nothing
@@ -1204,7 +1284,8 @@ class multiplexingClient:
         self.client = MultiplexingRPCClient(
             self.spec.make_protocol(
                 self.encoding,
-                framing=client_framing(self.spec, self.auth, name)),
+                framing=client_framing(self.spec, self.auth, name),
+                credentials=client_credentials(self.spec, self.auth)),
             self.rpc_transport)
 
         self.ev_quit = threading.Event()
@@ -1349,7 +1430,8 @@ class _ProxyBase:
     def __init__(self, name, hostports=None, ns=None, auth=None,
                  logger=None, default_auth=use_default_auth,
                  secure=default_secure, transport=None,
-                 encoding=default_encoding, timeout=None, prefer=None):
+                 encoding=default_encoding, timeout=None, prefer=None,
+                 envelope_auth=envelope_auth):
         """
         :param transport: One protocol to use and no other.  ``None`` -- the
             default -- means follow what the service registered, which is
@@ -1379,6 +1461,7 @@ class _ProxyBase:
         self.transport = transport
         self.encoding = encoding
         self.timeout = timeout
+        self.envelope_auth = envelope_auth
 
         if hostports is not None:
             self.endpoints = ro_endpoints.StaticEndpoints(
@@ -1408,7 +1491,8 @@ class _ProxyBase:
             host, port, name=self.name, auth=auth, default_auth=False,
             secure=self.secure,
             transport=self.transport or default_transport,
-            encoding=self.encoding, timeout=self.timeout)
+            encoding=self.encoding, timeout=self.timeout,
+            envelope_auth=self.envelope_auth)
 
     def __client_for_record(self, rec):
         """Build a client from one name service registration.
@@ -1431,7 +1515,7 @@ class _ProxyBase:
             secure=rec.get('secure', self.secure),
             transport=protocol or self.transport,
             encoding=encoding if encoding is not None else self.encoding,
-            timeout=self.timeout)
+            timeout=self.timeout, envelope_auth=self.envelope_auth)
 
     def __str__(self):
         return "%s(%s)" % (type(self).__name__, self.name)

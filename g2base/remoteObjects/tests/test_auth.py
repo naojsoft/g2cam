@@ -254,3 +254,175 @@ def test_the_thread_label_has_no_say_in_it():
                    svcname='a-thread-label').echo('hi')
     finally:
         server.ro_stop(wait=True, timeout=10)
+
+
+# ------------------------------------------- the cheap envelope mechanism --
+#
+# envelope_auth = 'credentials' carries the name and password in the header
+# instead of signing with a key derived from the password.  It costs 0.3us a
+# message against 6.5us, and does not grow with the message -- but it is a
+# claim rather than a proof, and the password crosses the wire in the clear.
+# It is a guard against a caller that has wandered into the wrong service.
+
+CREDS = ['g2rpc', 'g2rpc-tcp', 'g2rpc-zmq']
+
+
+@pytest.fixture
+def creds_service():
+    started = []
+
+    def _make(transport, authDict=None, svcname='credsvc'):
+        server = ro.remoteObjectServer(
+            svcname=svcname, name=svcname, obj=Service(), host=HOST,
+            logger=ro.nullLogger(), usethread=True, ns=False,
+            transport=transport, default_auth=authDict is None,
+            authDict=authDict, envelope_auth='credentials',
+            method_list=['echo'])
+        server.ro_start(wait=True, timeout=10)
+        started.append(server)
+        return server
+
+    yield _make
+    for server in started:
+        try:
+            server.ro_stop(wait=True, timeout=10)
+        except Exception:
+            pass
+
+
+def creds_client(transport, port, auth, svcname='credsvc'):
+    return ro.remoteObjectClient(HOST, port, name=svcname,
+                                 transport=transport, auth=auth,
+                                 default_auth=False, timeout=10,
+                                 envelope_auth='credentials')
+
+
+@pytest.mark.parametrize('transport', CREDS)
+def test_credentials_admit_a_caller_that_knows_the_password(transport,
+                                                            creds_service):
+    server = creds_service(transport)
+    handle = creds_client(transport, server.port, ('credsvc', 'credsvc'))
+
+    assert handle.echo('hi') == 'hi'
+
+
+@pytest.mark.parametrize('transport', CREDS)
+def test_credentials_refuse_the_wrong_password(transport, creds_service):
+    """The one that matters: a mechanism that admits everyone would pass the
+    test above and be worthless."""
+    server = creds_service(transport)
+    handle = creds_client(transport, server.port, ('credsvc', 'wrong'))
+
+    with pytest.raises(ro.remoteObjectError):
+        handle.echo('hi')
+
+
+@pytest.mark.parametrize('transport', CREDS)
+def test_credentials_refuse_an_unknown_caller(transport, creds_service):
+    server = creds_service(transport)
+    handle = creds_client(transport, server.port, ('stranger', 'credsvc'))
+
+    with pytest.raises(ro.remoteObjectError):
+        handle.echo('hi')
+
+
+@pytest.mark.parametrize('transport', CREDS)
+def test_credentials_refuse_a_caller_that_sends_none(transport, creds_service):
+    """The framing requires the section, so this is refused before the
+    authenticator sees it."""
+    server = creds_service(transport)
+    handle = ro.remoteObjectClient(HOST, server.port, transport=transport,
+                                   auth=None, default_auth=False, timeout=10)
+
+    with pytest.raises(ro.remoteObjectError):
+        handle.echo('hi')
+
+
+def test_a_signing_caller_is_refused_by_a_credentials_service(creds_service):
+    """Both ends have to agree.  A signer sends no credentials section, so
+    the service refuses it -- which is the failure to expect if the config
+    is changed at one end only."""
+    server = creds_service('g2rpc-tcp')
+    signer = ro.remoteObjectClient(HOST, server.port, name='credsvc',
+                                   transport='g2rpc-tcp',
+                                   auth=('credsvc', 'credsvc'),
+                                   default_auth=False, timeout=10,
+                                   envelope_auth='signature')
+
+    with pytest.raises(ro.remoteObjectError):
+        signer.echo('hi')
+
+
+def test_the_password_does_travel_which_is_the_whole_trade(creds_service):
+    """The counterpart of test_the_password_does_not_travel above: this
+    mechanism is cheap because it sends the secret, and a test should say so
+    rather than leave it to the docstring."""
+    from tinyrpc.framing import Credentials
+
+    creds = ro.client_credentials(ro_transport.get('g2rpc-tcp'),
+                                  ('credsvc', 'sekrit'),
+                                  mechanism='credentials')
+
+    assert isinstance(creds, Credentials)
+    assert b'sekrit' in creds.encode()
+
+
+def test_signing_remains_the_default():
+    """Nothing changes for a service that says nothing."""
+    spec = ro_transport.get('g2rpc-tcp')
+
+    assert ro.envelope_auth == 'signature'
+    assert ro.client_credentials(spec, ('svc', 'pw')) is None
+    assert ro.client_framing(spec, ('svc', 'pw'), 'svc') is not None
+
+
+def test_a_credentials_service_insists_on_the_section_in_its_framing():
+    """Belt as well as braces.  The authenticator refuses a request with no
+    credentials on its own, so the framing's requirement is not what makes
+    the service safe -- but it refuses one layer earlier, before anything is
+    dispatched, and that is worth asserting directly since no end-to-end
+    call can tell the two rejections apart.
+    """
+    from tinyrpc.framing import FLAG_CREDENTIALS
+
+    framing = ro.server_framing(ro_transport.get('g2rpc-tcp'),
+                                {'credsvc': 'credsvc'}, 'credsvc',
+                                mechanism='credentials')
+
+    assert framing.require & FLAG_CREDENTIALS
+
+
+def credentials_arrived(username, password):
+    """A request as it reaches a server, carrying the given credentials."""
+    from tinyrpc.framing import Credentials
+    plain = ro_g2rpc.G2RPCProtocol()
+    sender = ro_g2rpc.G2RPCProtocol(
+        credentials=Credentials(username, password))
+    return plain.parse_request(sender.create_request('echo').serialize())
+
+
+def test_the_credentials_authenticator_admits_a_matching_password():
+    authenticator = ro.make_authenticator({'status': 'pw'}, ro.nullLogger(),
+                                          'credentials')
+
+    authenticator(None, credentials_arrived('status', 'pw'))
+
+
+def test_the_credentials_authenticator_refuses_a_wrong_password():
+    authenticator = ro.make_authenticator({'status': 'pw'}, ro.nullLogger(),
+                                          'credentials')
+
+    with pytest.raises(ro.remoteObjectError):
+        authenticator(None, credentials_arrived('status', 'nope'))
+
+
+def test_the_credentials_authenticator_refuses_a_name_it_does_not_know():
+    """And refuses it in its own words.  Without the membership check the
+    password comparison raises KeyError instead, which still refuses the
+    caller but says nothing useful in the log and is not the error the rest
+    of the module reports."""
+    authenticator = ro.make_authenticator({'other': 'pw'}, ro.nullLogger(),
+                                          'credentials')
+
+    with pytest.raises(ro.remoteObjectError):
+        authenticator(None, credentials_arrived('status', 'pw'))
