@@ -306,6 +306,26 @@ def choose_endpoint(rec, prefer=None, pin=None, logger=None):
     return ways[0]
 
 
+def _one_for_all(field, asked, fallback):
+    """One value for every listener, and what a transport string says wins.
+
+    A service listens several ways over one object and one dispatcher, so an
+    encoding or an authentication mechanism is a property of the service
+    rather than of one way in.  Two strings that disagree are therefore a
+    configuration mistake rather than something to reconcile quietly.
+
+    A string beats the corresponding argument because it is the more specific
+    of the two: the argument is what everything gets unless something said
+    otherwise, and the string is something saying otherwise.
+    """
+    said = {getattr(a, field) for a in asked if getattr(a, field) is not None}
+    if len(said) > 1:
+        raise remoteObjectError(
+            "these transports ask for different %s: %s"
+            % (field.replace('_', ' '), ', '.join(sorted(said))))
+    return said.pop() if said else fallback
+
+
 def client_framing(spec, auth, service, mechanism=envelope_auth):
     """What a client should sign with, or ``None`` if it should not sign.
 
@@ -494,7 +514,22 @@ class remoteObjectServer:
         if not names:
             raise remoteObjectError('a server needs at least one transport')
 
-        specs = [ro_transport.get(name, encoding=encoding) for name in names]
+        # A transport string may say more than a name: 'g2rpc:json+auth=plain/tcp'
+        # names an encoding and how the envelope authenticates too.  Several
+        # listeners stay a list -- one string describes one way in -- but what
+        # any of them says about the service as a whole wins over the
+        # arguments.
+        asked = [ro_transport.parse(name) for name in names]
+        encoding = _one_for_all('encoding', asked, encoding)
+        envelope_auth = _one_for_all('envelope_auth', asked, envelope_auth)
+        secure = secure or any(a.secure for a in asked)
+        # Both were set above from the arguments, before the strings had been
+        # read.  Settle them again here, or a string saying '+auth=plain' or
+        # '+tls' would be parsed, believed, and then ignored.
+        self.secure = secure
+        self.envelope_auth = envelope_auth
+
+        specs = [ro_transport.get(a.name, encoding=encoding) for a in asked]
         self.spec = specs[0]
 
         for spec in specs:
@@ -1093,7 +1128,14 @@ class remoteObjectClient:
         try:
             self.auth = normalize_auth(auth, name=name,
                                        default_auth=default_auth)
-            self.spec = ro_transport.get(transport, encoding=encoding)
+            # What the string says beats the arguments; see _one_for_all.
+            asked = ro_transport.parse(transport)
+            encoding = _one_for_all('encoding', [asked], encoding)
+            envelope_auth = _one_for_all('envelope_auth', [asked],
+                                         envelope_auth)
+            secure = self.secure = secure or asked.secure
+            self.transport = asked.name
+            self.spec = ro_transport.get(asked.name, encoding=encoding)
             self.encoding = self.spec.check_encoding(encoding)
             self.proxy = _ServiceProxy(self.spec, host, port, auth=self.auth,
                                        secure=secure, timeout=timeout,
@@ -1270,7 +1312,10 @@ class multiplexingClient:
         self.auth = normalize_auth(auth, name=name,
                                    default_auth=default_auth)
 
-        self.spec = ro_transport.get(transport, encoding=encoding)
+        asked = ro_transport.parse(transport)
+        encoding = _one_for_all('encoding', [asked], encoding)
+        self.transport = asked.name
+        self.spec = ro_transport.get(asked.name, encoding=encoding)
         if not self.spec.supports_multiplexing:
             raise remoteObjectError(
                 "'%s' dials for every call, so there is never more than one "
@@ -1457,6 +1502,19 @@ class _ProxyBase:
         self._auth_overrides = {}
         self.auth = normalize_auth(auth, name=name, default_auth=default_auth)
         self.logger = logger if logger else nullLogger()
+
+        # Parsed once, here.  self.transport is compared against the protocol
+        # names in a registration -- it is choose_endpoint's `pin` -- so it
+        # has to be the registry name and not whatever was typed.  Anything
+        # else the string said is carried down to the clients this builds.
+        if transport is not None:
+            asked = ro_transport.parse(transport)
+            transport = asked.name
+            encoding = _one_for_all('encoding', [asked], encoding)
+            envelope_auth = _one_for_all('envelope_auth', [asked],
+                                         envelope_auth)
+            secure = secure or asked.secure
+
         self.secure = secure
         self.transport = transport
         self.encoding = encoding

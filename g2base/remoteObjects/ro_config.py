@@ -30,6 +30,14 @@ objectsBasePort    = 8000
 # intended behaviour: a service still called by old clients should say so,
 # with transport=['xmlrpc', 'g2rpc-tcp'], which keeps XML-RPC as the primary
 # they read while everything else takes the faster way.
+#
+# A plain protocol name, deliberately.  ro_transport.parse understands a
+# compound one -- 'g2rpc:json+auth=plain/tcp' -- and a transport= argument or
+# a --transport flag may use it, but not here: the other things such a string
+# would say already have settings of their own, default_encoding and
+# envelope_auth and default_secure below, and a site that set both would have
+# two places saying one thing.  Per-service is where a compound string
+# belongs, since that is where it differs from the default.
 default_transport  = 'g2rpc-tcp'
 #default_transport  = 'xmlrpc'
 #default_transport  = 'jsonrpc'

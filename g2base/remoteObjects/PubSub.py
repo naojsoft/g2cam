@@ -1403,7 +1403,10 @@ class PubSub:
         # so it is kept whatever the pool can spare.
         def costs_a_worker(name):
             try:
-                return ro_transport.get(name).server_holds_pool_worker
+                # parse, not get: a transport may be named in the compound
+                # form, and 'g2rpc/tcp-asyncio' is exactly the carrier this
+                # budget must not charge for.
+                return ro_transport.parse(name).spec.server_holds_pool_worker
             except Exception:
                 return True             # unknown: assume the dearer case
 

@@ -141,7 +141,9 @@ if __name__ == '__main__':
                       help="Register using service NAME", metavar="NAME")
     parser.add_argument("--transport", dest="transport", metavar='PROTOCOL',
                       default=ro.default_transport,
-                      help="Choose PROTOCOL for transport")
+                      help="Choose PROTOCOL for transport, plainly named "
+                      "('g2rpc-tcp') or compound "
+                      "('g2rpc:json+auth=plain/tcp')")
     ssdlog.addlogopts(parser)
 
     (options, args) = parser.parse_known_args(sys.argv[1:])

@@ -246,3 +246,178 @@ def test_encrypt_is_not_spelled_enc():
     would be two different things a syllable apart."""
     with pytest.raises(UnknownTransport, match='not a layer'):
         parse('g2rpc+enc=secretbox/tcp')
+
+
+# ------------------------------------------------ and it reaches the objects --
+#
+# The grammar is only useful if a server and a client actually honour what a
+# string says, and if what it says beats the arguments beside it -- the
+# argument is what everything gets unless something said otherwise, and the
+# string is something saying otherwise.
+
+from g2base.remoteObjects import remoteObjects as ro    # noqa: E402
+
+HOST = '127.0.0.1'
+
+
+class Echo:
+    def echo(self, value):
+        return value
+
+
+@pytest.fixture
+def served():
+    started = []
+
+    def _make(transport, **kwargs):
+        server = ro.remoteObjectServer(
+            svcname='parsesvc', name='parsesvc', obj=Echo(), host=HOST,
+            logger=ro.nullLogger(), usethread=True, ns=False,
+            transport=transport, method_list=['echo'], **kwargs)
+        server.ro_start(wait=True, timeout=10)
+        started.append(server)
+        return server
+
+    yield _make
+    for server in started:
+        try:
+            server.ro_stop(wait=True, timeout=10)
+        except Exception:
+            pass
+
+
+def test_a_server_honours_what_the_string_says(served):
+    server = served('g2rpc:json+auth=plain/tcp')
+
+    assert server.spec.name == 'g2rpc-tcp'
+    assert server.encoding == 'json'
+    assert server.envelope_auth == 'credentials'
+
+
+def test_the_string_beats_the_argument_beside_it(served):
+    """The precedence that had to be chosen one way or the other."""
+    server = served('g2rpc:json/tcp', encoding='msgpack')
+
+    assert server.encoding == 'json'
+
+
+def test_the_argument_still_applies_when_the_string_is_silent(served):
+    server = served('g2rpc/tcp', encoding='json')
+
+    assert server.encoding == 'json'
+
+
+def test_a_plain_name_behaves_exactly_as_before(served):
+    """The regression that matters: every existing caller passes one of
+    these, and none of them should notice the grammar exists."""
+    server = served('g2rpc-tcp')
+
+    assert server.spec.name == 'g2rpc-tcp'
+    assert server.encoding == 'msgpack'
+    assert server.envelope_auth == ro.envelope_auth
+
+
+def test_several_listeners_stay_a_list(served):
+    """One string describes one way in, so there is no syntax for 'and also'
+    and compat_transports is still a list."""
+    server = served(['xmlrpc', 'g2rpc:json/tcp'])
+
+    assert server.spec.name == 'xmlrpc'
+    assert [a['protocol'] for a in server.alternates] == ['g2rpc-tcp']
+    assert server.encoding == 'xml', 'the primary encodes as its own spec says'
+
+
+def test_listeners_that_ask_for_different_encodings_are_refused(served):
+    """A service listens several ways over one object, so an encoding is a
+    property of the service; two strings disagreeing is a mistake rather
+    than something to reconcile quietly."""
+    with pytest.raises(ro.remoteObjectError, match='different encoding'):
+        served(['g2rpc:json/tcp', 'g2rpc:msgpack/http'])
+
+
+def test_a_client_honours_what_the_string_says():
+    handle = ro.remoteObjectClient(HOST, 9999, name='parsesvc',
+                                   transport='g2rpc:json+auth=plain/tcp')
+
+    assert handle.spec.name == 'g2rpc-tcp'
+    assert handle.encoding == 'json'
+    assert handle.transport == 'g2rpc-tcp', 'normalised, not as typed'
+    assert handle.proxy._credentials is not None
+    assert handle.proxy._framing is None, 'carrying credentials, not signing'
+
+
+def test_a_proxy_normalises_its_pin():
+    """self.transport is choose_endpoint's `pin`, compared against the
+    protocol names in a registration, so it cannot be the string as typed."""
+    proxy = ro.remoteObjectProxy('parsesvc', hostports=[(HOST, 9999)],
+                                 transport='g2rpc:json+auth=plain/tcp')
+
+    assert proxy.transport == 'g2rpc-tcp'
+    assert proxy.encoding == 'json'
+    assert proxy.envelope_auth == 'credentials'
+
+
+def test_a_call_goes_through_with_a_compound_string_at_both_ends(served):
+    server = served('g2rpc:msgpack+auth=plain/tcp')
+    handle = ro.remoteObjectClient(HOST, server.port, name='parsesvc',
+                                   transport='g2rpc:msgpack+auth=plain/tcp',
+                                   timeout=10)
+
+    assert handle.echo('hi') == 'hi'
+
+
+def test_the_thread_budget_understands_a_compound_name():
+    """PubSub charges a worker for every listener whose serve loop runs on the
+    pool, and the asyncio carrier is the one that does not.  Looked up rather
+    than parsed, a compound name raised, was swallowed by a bare except, and
+    was charged for anyway.
+
+    Exercised through _affordable_transports rather than through parse, since
+    what broke was the lookup inside it: a pool with room for exactly one
+    charged listener keeps both of these when the free one is recognised, and
+    refuses when it is not.
+    """
+    from g2base.remoteObjects import PubSub
+
+    # reserved = outlimit(4) + subscription loop + start task + one spare = 7,
+    # so a pool of 8 can afford exactly one listener that costs a worker.
+    pubsub = PubSub.PubSub('budget', ro.nullLogger(), numthreads=8)
+    listeners = ['g2rpc/tcp-asyncio', 'g2rpc/tcp']
+
+    assert pubsub._affordable_transports(listeners, True, True) == listeners
+
+    # and the plain spelling has always been understood, so it agrees
+    plain = ['g2rpc-tcp-asyncio', 'g2rpc-tcp']
+    assert pubsub._affordable_transports(plain, True, True) == plain
+
+
+def test_a_pubsub_listens_the_way_a_compound_string_asks():
+    """--transport on ro_ps_svc is split on commas and handed to
+    start_server, which passes it to a remoteObjectServer -- so the grammar
+    reaches a pubsub without ro_ps_svc knowing about it."""
+    from g2base.remoteObjects import PubSub
+
+    pubsub = PubSub.PubSub('parse-ps', ro.nullLogger(), numthreads=20)
+    pubsub.start(wait=True)
+    try:
+        pubsub.start_server(port=0, transport=['g2rpc:json/tcp'], wait=True,
+                            usethread=True)
+        assert pubsub.server.spec.name == 'g2rpc-tcp'
+        assert pubsub.server.encoding == 'json'
+    finally:
+        try:
+            pubsub.stop_server(wait=True)
+        except Exception:
+            pass
+        pubsub.stop(wait=True)
+
+
+def test_the_default_transport_setting_stays_a_plain_name():
+    """Not enforced, but asserted: the other things a compound string would
+    say have settings of their own, so a compound default would be a second
+    place saying one thing."""
+    from g2base.remoteObjects import ro_transport as rt
+
+    assert rt.parse(ro.default_transport).name == ro.default_transport
+    assert rt.parse(ro.default_transport).encoding is None
+    assert rt.parse(ro.default_transport).envelope_auth is None
