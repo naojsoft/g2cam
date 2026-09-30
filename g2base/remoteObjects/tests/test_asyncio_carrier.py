@@ -75,6 +75,21 @@ def service(nameservice):
             pass
 
 
+def serving(nameservice, name):
+    """Wait until every way into `name` is actually answering.
+
+    A server reports itself started once its command loop runs, which is
+    before the listeners' serve loops have been picked up off the pool.  A
+    call over each is the shortest proof that they have been.
+    """
+    for protocol, port, _encoding in ro.endpoints_in(
+            nameservice.getInfo(name)[0]):
+        handle = ro.remoteObjectClient(HOST, port, name=name,
+                                       transport=protocol,
+                                       default_auth=False, timeout=15)
+        handle.echo('up')
+
+
 def port_for(nameservice, name, protocol):
     for offered, port, _encoding in ro.endpoints_in(
             nameservice.getInfo(name)[0]):
@@ -182,10 +197,20 @@ def test_a_blocking_handler_does_not_stall_other_connections(service,
 
 def test_a_burst_of_connections_costs_no_threads(service, nameservice):
     """The reason to prefer it.  A threaded carrier spends a thread on each
-    of these; this spends a coroutine, and the service keeps answering."""
+    of these; this spends a coroutine, and the service keeps answering.
+
+    The service is made to answer once over every way in before the baseline
+    is taken.  ro_start(wait=True) returns when the command loop is up, but
+    each listener's serve loop, the XML-RPC listener's own thread and the
+    asyncio carrier's loop thread all start after that -- so a baseline taken
+    any earlier counted those three as growth the connections had caused, and
+    the assertion had to be loose enough to forgive it.  Settled first, the
+    honest number is zero.
+    """
     service()
+    serving(nameservice, 'async-svc')
     port = port_for(nameservice, 'async-svc', CARRIER)
-    before = threading.active_count()
+    before = set(threading.enumerate())
 
     held = []
     try:
@@ -194,10 +219,11 @@ def test_a_burst_of_connections_costs_no_threads(service, nameservice):
             sock.connect((HOST, port))
             held.append(sock)
         time.sleep(0.5)
-        grew = threading.active_count() - before
+        added = set(threading.enumerate()) - before
 
-        assert grew <= 2, (
-            '%d connections added %d threads' % (len(held), grew))
+        assert not added, (
+            '%d connections added %d threads: %r'
+            % (len(held), len(added), sorted(t.name for t in added)))
 
         proxy = ro.remoteObjectProxy('async-svc', transport=CARRIER,
                                      default_auth=False)
