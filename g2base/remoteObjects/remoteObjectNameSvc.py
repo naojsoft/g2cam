@@ -37,6 +37,71 @@ report both, since clients that have not been upgraded read ``transport``.
 A name server is told about one other at startup (--peer) and finds the
 rest from it; see :py:meth:`~remoteObjectNameService.peers`.
 
+Authentication: what is known, and what is not
+----------------------------------------------
+
+The ``authDict`` argument below is commented out, and this service therefore
+checks nothing: anything that can reach the port may look a name up, and --
+worse -- may ``register`` any name at any host and port, or re-point one that
+exists.  Every client's endpoint discovery flows through here, so that is the
+widest hole in the system.  It is left open deliberately until the notes below
+are settled, because switching it on has a cost paid by clients that cannot be
+updated in step.
+
+*Old clients do not send what you would expect.*  A credential defaults to
+``(name, name)`` -- see ``normalize_auth`` -- and what ``name`` is depends on
+which code built the handle:
+
+    deployed (master)  getns()     'names(<host>)'   -- varies with the host!
+    deployed (master)  get_hosts() '<remote object>' -- a parameter default
+    current            both        'names'
+
+So an authDict of ``{'names': 'names'}`` refuses every deployed client, and
+admitting them would mean admitting ``<remote object>``, which every client
+anywhere gets for free.  The ``names(<host>)`` form is gone from the current
+code; the deployed one still sends it.
+
+*The second interface is the way in.*  This service answers XML-RPC on 7075
+and g2rpc-tcp on 7074, and the credential check is made per listener --
+``server_framing`` and ``make_authenticator`` both dispatch on
+``spec.auth_mechanism`` -- while ``authDict`` is per service.  Give the server
+an authDict *per listener* and 7074 can require a signature while 7075 goes on
+checking nothing, which authenticates every upgraded client without touching
+the port the old ones use.  That is the staging this needs, and the plumbing is
+small: ``__make_server`` already builds framing and authenticator per spec.
+
+Prefer ``+auth=hmac`` on 7074 over ``plain``.  This is the one service where a
+proof beats a claim: carried credentials can be replayed by anyone who saw a
+lookup, and a name-service handle is long-lived and makes few calls, so neither
+the 6.5us a message nor the 1.5ms of key derivation matters here.
+
+*Where the secrets come from is unsolved.*  The sketch was a single site
+secret, with each service's password derived from it --
+``HMAC(site_secret, svcname)`` -- because the existing convention already has
+the right shape (one secret per service, derived identically at both ends from
+the name) and only its *value* is wrong, being the public service name.  That
+makes the change surface two lines: ``self.authDict = {svcname: svcname}`` and
+``return (name, name)``.
+
+What that sketch assumes and should not: that one file is readable by
+everything that needs it.  Gen2 does not run everything as one user, and not
+every host shares a filesystem -- remote analysis hosts and instrument
+machines especially -- so "put it in $CONFHOME and chmod 600" reaches only
+part of the system.  A scheme that survives heterogeneous users and separate
+filesystems is the open question, and it is the thing to settle before any of
+the above is switched on.
+
+Two smaller consequences, recorded so they are not rediscovered:
+
+* Rotation is a flag day.  Both ends derive from the same secret, so changing
+  it means restarting everything that speaks to everything -- the same shape
+  as ``ro_config.kdf_rounds``, which also has to match at both ends.
+
+* ``kdf_rounds`` should drop to 1 if the passwords become derived.  PBKDF2
+  stretches a *weak* password so guessing is expensive; a password that is
+  already 256 bits of HMAC output gains nothing, and the 1.5ms per process is
+  then pure cost.
+
 """
 import sys
 import time

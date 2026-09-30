@@ -1801,12 +1801,12 @@ def get_hosts(svcname, nshost=None, port=nameServicePort,
         # The caller did not ask for a particular way in, so take the best
         # one that answers.
         def build(p, protocol, encoding):
-            return remoteObjectClient(host=nshost, port=p,
+            return remoteObjectClient(host=nshost, port=p, name='names',
                                       transport=protocol, encoding=encoding,
                                       auth=auth, secure=secure)
         tmpns = _first_working(build)
     else:
-        tmpns = remoteObjectClient(host=nshost, port=port,
+        tmpns = remoteObjectClient(host=nshost, port=port, name='names',
                                    transport=ns_transport,
                                    auth=auth, secure=secure)
 
