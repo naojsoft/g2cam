@@ -326,7 +326,8 @@ def _one_for_all(field, asked, fallback):
     return said.pop() if said else fallback
 
 
-def client_framing(spec, auth, service, mechanism=envelope_auth):
+def client_framing(spec, auth, service, mechanism=envelope_auth,
+                   layers=()):
     """What a client should sign with, or ``None`` if it should not sign.
 
     Deliberately tolerant: it does not *require* a signed reply.  A service
@@ -338,12 +339,18 @@ def client_framing(spec, auth, service, mechanism=envelope_auth):
     is no layer then, only a header section, and that is
     :py:func:`client_credentials`.
     """
-    if (auth is None or spec.auth_mechanism != 'signature'
-            or mechanism != 'signature'):
+    if spec.auth_mechanism != 'signature':
         return None
+    if auth is None or mechanism != 'signature':
+        # Nothing to sign with, or signing is not how this end authenticates
+        # -- but compression is still worth having, so a framing may be
+        # needed for the layers alone.
+        built = ro_g2rpc.framing_layers(layers)
+        return Framing(layers=built) if built else None
     user, password = auth
     return ro_g2rpc.signing_framing({user: password}, service=service,
-                                    sign_as=user, require=False)
+                                    sign_as=user, require=False,
+                                    layers=layers)
 
 
 def client_credentials(spec, auth, mechanism=envelope_auth):
@@ -360,7 +367,8 @@ def client_credentials(spec, auth, mechanism=envelope_auth):
     return Credentials(user, password)
 
 
-def server_framing(spec, authDict, svcname, mechanism=envelope_auth):
+def server_framing(spec, authDict, svcname, mechanism=envelope_auth,
+                   layers=()):
     """What a service should sign with, or ``None`` if it should not.
 
     Strict, where the client is tolerant: a service with an authDict refuses
@@ -371,14 +379,18 @@ def server_framing(spec, authDict, svcname, mechanism=envelope_auth):
     caller can know: it is what the service registers under and what the
     name service hands out.  A server's ``name`` is a thread label.
     """
-    if not authDict or spec.auth_mechanism != 'signature':
+    if spec.auth_mechanism != 'signature':
         return None
+    built = ro_g2rpc.framing_layers(layers)
+    if not authDict:
+        return Framing(layers=built) if built else None
     if mechanism == 'credentials':
-        # No layer to apply, only a section to insist on.  The framing
-        # refuses a message that carries none, so the authenticator can be
-        # sure there is something to compare.
-        return Framing(require=FLAG_CREDENTIALS)
-    return ro_g2rpc.signing_framing(authDict, service=svcname, require=True)
+        # No authenticating layer to apply, only a section to insist on.  The
+        # framing refuses a message that carries none, so the authenticator
+        # can be sure there is something to compare.
+        return Framing(layers=built, require=FLAG_CREDENTIALS)
+    return ro_g2rpc.signing_framing(authDict, service=svcname, require=True,
+                                    layers=layers)
 
 
 class remoteObjectServer:
@@ -530,6 +542,10 @@ class remoteObjectServer:
         self.envelope_auth = envelope_auth
 
         specs = [ro_transport.get(a.name, encoding=encoding) for a in asked]
+        # Per listener, unlike the encoding: a compressing layer belongs to
+        # the way in rather than to the service, since only some carriers are
+        # worth compressing over.
+        self._layers = {id(spec): a.layers for spec, a in zip(specs, asked)}
         self.spec = specs[0]
 
         for spec in specs:
@@ -665,7 +681,8 @@ class remoteObjectServer:
         of its own checks a signature in it.
         """
         framing = server_framing(spec, self.authDict, self.svcname,
-                                 mechanism=self.envelope_auth)
+                                 mechanism=self.envelope_auth,
+                                 layers=self._layers.get(id(spec), ()))
         server = spec.make_rpc_server(rpc_transport,
                                       spec.make_protocol(encoding,
                                                          framing=framing),
@@ -1141,7 +1158,8 @@ class remoteObjectClient:
                                        secure=secure, timeout=timeout,
                                        encoding=self.encoding,
                                        service=name,
-                                       envelope_auth=envelope_auth)
+                                       envelope_auth=envelope_auth,
+                                       layers=asked.layers)
 
         except Exception as e:
             raise remoteObjectError(
@@ -1173,7 +1191,7 @@ class _ServiceProxy:
 
     def __init__(self, spec, host, port, auth=None, secure=False,
                  timeout=None, encoding=None, service='',
-                 envelope_auth=envelope_auth):
+                 envelope_auth=envelope_auth, layers=()):
         self.spec = spec
         self.host = host
         self.port = port
@@ -1190,7 +1208,8 @@ class _ServiceProxy:
         # Built once.  Deriving a key from a password is deliberately slow,
         # and a protocol is made per call.
         self._framing = client_framing(spec, auth, service,
-                                       mechanism=envelope_auth)
+                                       mechanism=envelope_auth,
+                                       layers=layers)
         self._credentials = client_credentials(spec, auth,
                                                mechanism=envelope_auth)
 

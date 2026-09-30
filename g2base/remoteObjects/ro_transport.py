@@ -23,6 +23,7 @@ import socket
 import ssl
 from typing import NamedTuple, Optional, Tuple
 
+from tinyrpc.layers import COMPRESSORS
 from tinyrpc.protocols.jsonrpc import JSONRPCProtocol
 from tinyrpc.protocols.msgpackrpc import MSGPACKRPCProtocol
 from tinyrpc.protocols.xmlrpc import XMLRPCProtocol
@@ -488,7 +489,7 @@ AUTH_VARIANTS = {'hmac': 'signature', 'plain': 'credentials'}
 #: optional scheme -- there is one of each today, so naming it is how a
 #: second one arrives without the strings written now becoming ambiguous.
 LAYER_VALUES = {'auth': ('required', tuple(AUTH_VARIANTS)),
-                'compress': ('optional', ('deflate',)),
+                'compress': ('optional', tuple(sorted(COMPRESSORS))),
                 'encrypt': ('optional', ('secretbox',)),
                 'tls': ('none', None)}
 
@@ -496,9 +497,6 @@ LAYER_VALUES = {'auth': ('required', tuple(AUTH_VARIANTS)),
 #: then refused, so a string written today means what it will mean when the
 #: layer is built rather than being silently ignored until then.
 UNBUILT_LAYERS = {
-    'compress': "nothing threads extra layers through signing_framing yet, "
-                "and a receiver must hold the layer to undo a compressed "
-                "message -- see tinyrpc.framing's cannot_undo check",
     'encrypt': "tinyrpc's Encrypt exists but g2cam never builds one, and its "
                "key would need deriving the way signing keys are, which both "
                "ends must then agree on",

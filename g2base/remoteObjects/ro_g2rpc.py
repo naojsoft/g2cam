@@ -27,7 +27,7 @@ registrations, and those outlive any rearrangement of the code behind them.
 
 from tinyrpc import serializers
 from tinyrpc.framing import FLAG_SIGNED, Framing
-from tinyrpc.layers import Credentials, Signature, derive_key
+from tinyrpc.layers import COMPRESSORS, Credentials, Signature, derive_key
 from tinyrpc.protocols.flexrpc import (ERROR_APPLICATION,  # noqa: F401
                                        ERROR_INTERNAL, ERROR_INVALID_PARAMS,
                                        ERROR_INVALID_REQUEST,
@@ -118,8 +118,48 @@ def key_for(password: str, service: str = '') -> bytes:
     return cached
 
 
+def compress_layers(layers) -> list:
+    """Build the compressing layers a transport string asked for.
+
+    :param layers: ``(name, variant)`` pairs as
+        :py:func:`ro_transport.parse` returns them.  Anything but 'compress'
+        is ignored here: authentication is chosen by ``envelope_auth`` rather
+        than assembled, and encryption has no key to build one from yet.
+
+    The level and the decompression bound come from ro_config rather than
+    from the string: both have to match at neither end -- a sender's level is
+    its own business and a receiver's bound is its own -- but they are the
+    kind of number nobody types twice, and the bound in particular is a
+    property of the host rather than of the conversation.
+    """
+    built = []
+    for name, variant in layers or ():
+        if name != 'compress':
+            continue
+        scheme = variant or ro_config.default_compress
+        try:
+            factory = COMPRESSORS[scheme]
+        except KeyError:
+            raise ValueError(
+                "no compression scheme named '%s'; tinyrpc offers %s"
+                % (scheme, ', '.join(sorted(COMPRESSORS)))) from None
+        built.append(factory(level=ro_config.compress_level,
+                             threshold=ro_config.compress_threshold,
+                             max_size=ro_config.max_decompressed))
+    return built
+
+
+def framing_layers(layers) -> list:
+    """Every envelope layer a transport string asked for, unauthenticated.
+
+    For a client or service that carries no credentials at all and so builds
+    no Signature: compression is still worth having there.
+    """
+    return compress_layers(layers)
+
+
 def signing_framing(authDict, service: str = '', sign_as: str = None,
-                    require: bool = True) -> Framing:
+                    require: bool = True, layers=()) -> Framing:
     """Build the framing a service or its callers should sign with.
 
     Gen2 already has a table of who may call what: ``authDict`` maps a name
@@ -149,6 +189,10 @@ def signing_framing(authDict, service: str = '', sign_as: str = None,
     :param require: Whether to refuse an unsigned message.  A server should;
         a client talking to a server that may not yet be upgraded should
         not.
+    :param layers: Other envelope layers the transport string asked for, as
+        ``(name, variant)`` pairs.  Compression goes *under* the signature,
+        which is what tinyrpc's framing does anyway whatever order they are
+        given in: what is verified has to be what arrived.
     """
     keys = {name: key_for(password, service)
             for name, password in authDict.items()}
@@ -168,8 +212,9 @@ def signing_framing(authDict, service: str = '', sign_as: str = None,
                 "'%s' has several credentials and none of its own, so there "
                 "is no obvious one to sign as; name it" % (service,))
 
-    return Framing(layers=[Signature(keys, sign_as=sign_as,
-                                     audience=service or None)],
+    return Framing(layers=(compress_layers(layers)
+                           + [Signature(keys, sign_as=sign_as,
+                                        audience=service or None)]),
                    require=FLAG_SIGNED if require else 0)
 
 

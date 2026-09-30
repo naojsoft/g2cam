@@ -211,11 +211,9 @@ def test_each_layer_says_whether_it_takes_a_value():
 # which a caller can tell apart from having got the string wrong.
 
 @pytest.mark.parametrize('text', [
-    'g2rpc+compress/tcp',
-    'g2rpc+compress=deflate/tcp',
     'g2rpc+encrypt/tcp',
     'g2rpc+encrypt=secretbox/tcp',
-    'g2rpc:json+auth=hmac+compress/tcp',
+    'g2rpc:json+auth=hmac+encrypt/tcp',
 ])
 def test_an_accepted_layer_that_is_not_built_yet_says_so(text):
     with pytest.raises(NotImplementedError, match='not yet wired up'):
@@ -223,7 +221,7 @@ def test_an_accepted_layer_that_is_not_built_yet_says_so(text):
 
 
 @pytest.mark.parametrize('text,offered', [
-    ('g2rpc+compress=lzma/tcp', 'deflate'),
+    ('g2rpc+compress=gzip/tcp', 'deflate'),
     ('g2rpc+encrypt=rot13/tcp', 'secretbox'),
 ])
 def test_a_wrong_scheme_is_a_typo_rather_than_a_promise(text, offered):
@@ -235,10 +233,17 @@ def test_a_wrong_scheme_is_a_typo_rather_than_a_promise(text, offered):
 
 def test_compression_is_not_spelled_deflate():
     """deflate is the scheme, not the thing being asked for: '+compress' says
-    what you want and '=deflate' says how, which leaves room for a second
-    how."""
+    what you want and '=deflate' says how -- and there are now three hows."""
     with pytest.raises(UnknownTransport, match='not a layer'):
         parse('g2rpc+deflate/tcp')
+
+
+def test_gzip_is_not_among_the_schemes():
+    """It is the same deflate algorithm inside a larger header, with a
+    checksum this envelope does not need -- strictly worse than 'deflate' for
+    no gain, so offering it would only invite the question."""
+    with pytest.raises(UnknownTransport, match='not a kind'):
+        parse('g2rpc+compress=gzip/tcp')
 
 
 def test_encrypt_is_not_spelled_enc():
@@ -421,3 +426,95 @@ def test_the_default_transport_setting_stays_a_plain_name():
     assert rt.parse(ro.default_transport).name == ro.default_transport
     assert rt.parse(ro.default_transport).encoding is None
     assert rt.parse(ro.default_transport).envelope_auth is None
+
+
+# ---------------------------------------------------------- compressing --
+#
+# '+compress' used to parse and then refuse.  Now it builds a layer, at both
+# ends, which must be configured alike: the header records that a body is
+# compressed and not how.
+
+def test_compress_is_offered_by_scheme():
+    from g2base.remoteObjects import ro_transport as rt
+
+    assert rt.parse('g2rpc+compress/tcp').layers == (('compress', None),)
+    assert (rt.parse('g2rpc+compress=lzma/tcp').layers
+            == (('compress', 'lzma'),))
+    for scheme in ('deflate', 'bzip2', 'lzma'):
+        assert scheme in rt.LAYER_VALUES['compress'][1]
+
+
+def test_a_compressing_service_builds_the_layer_under_its_signature(served):
+    """Under, not over: what is verified has to be what arrived, so the
+    framing compresses first and signs the result -- whatever order the
+    string named them in."""
+    server = served('g2rpc+compress/tcp')
+    layers = server.server.protocol.framing.layers
+
+    assert [type(layer).__name__ for layer in layers] == ['Deflate',
+                                                          'Signature']
+
+
+def test_the_scheme_the_string_names_is_the_one_built(served):
+    server = served('g2rpc+compress=lzma/tcp')
+    layers = server.server.protocol.framing.layers
+
+    assert [type(layer).__name__ for layer in layers] == ['Lzma', 'Signature']
+
+
+def test_a_client_builds_it_too():
+    handle = ro.remoteObjectClient(HOST, 9999, name='parsesvc',
+                                   transport='g2rpc+compress=bzip2/tcp')
+
+    assert [type(layer).__name__ for layer in handle.proxy._framing.layers] \
+        == ['Bzip2', 'Signature']
+
+
+def test_a_large_body_goes_and_comes_back(served):
+    server = served('g2rpc+compress/tcp')
+    handle = ro.remoteObjectClient(HOST, server.port, name='parsesvc',
+                                   transport='g2rpc+compress/tcp', timeout=15)
+    big = 'MEASURE TARGET NGC1234 EXPTIME=30 ' * 2000
+
+    assert handle.echo(big) == big
+
+
+def test_a_small_body_still_goes_through_a_compressing_service(served):
+    """It is declined rather than compressed, so the flag is clear and the
+    far end passes it through."""
+    server = served('g2rpc+compress/tcp')
+    handle = ro.remoteObjectClient(HOST, server.port, name='parsesvc',
+                                   transport='g2rpc+compress/tcp', timeout=10)
+
+    assert handle.echo('hi') == 'hi'
+
+
+def test_it_actually_shrinks_the_body(served):
+    """Otherwise every test above would pass with a layer that did nothing."""
+    import msgpack
+
+    plain = served('g2rpc/tcp')
+    squeezed = served('g2rpc+compress/tcp')
+    body = msgpack.packb([0, 1, 'echo', ['NGC1234 EXPTIME=30 ' * 3000]])
+
+    assert (len(squeezed.server.protocol.framing.wrap(body))
+            < len(plain.server.protocol.framing.wrap(body)) / 10)
+
+
+def test_a_service_that_asks_for_nothing_builds_no_layer(served):
+    """What the majority get: an empty pipeline, which wrap() skips."""
+    server = served('g2rpc/tcp')
+    layers = server.server.protocol.framing.layers
+
+    assert [type(layer).__name__ for layer in layers] == ['Signature']
+
+
+def test_the_decompression_bound_comes_from_the_configuration(served):
+    """A small message costing arbitrary memory is the one hazard here, and
+    the limit is a property of the host rather than of the conversation."""
+    server = served('g2rpc+compress/tcp')
+    deflate = server.server.protocol.framing.layers[0]
+
+    assert deflate.max_size == ro.max_decompressed
+    assert deflate.level == ro.compress_level
+    assert deflate.threshold == ro.compress_threshold

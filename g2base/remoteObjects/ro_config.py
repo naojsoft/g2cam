@@ -135,6 +135,34 @@ kdf_rounds = 10000
 # is refused, and the reverse.
 envelope_auth = 'signature'
 
+# Compression, for the services that ask for it with '+compress' on their
+# transport.  Nothing compresses unless a transport string says so, and a
+# service that says nothing pays nothing: an empty layer list is a branch
+# not taken rather than a walk over a pipeline.
+#
+# Which scheme, when '+compress' names none.  'deflate' is zlib, 'bzip2' and
+# 'lzma' trade more time for a smaller body.  Both ends must agree -- the
+# header records that a message is compressed, not how -- so this is a
+# per-conversation choice despite living here.
+default_compress = 'deflate'
+
+# How hard to compress.  1, not zlib's 6: measured on a 2MB raw image buffer,
+# level 6 costs seven times level 1 and gains 2% of ratio, and level 9 costs
+# twenty-two times for 4%.  Compression is here for slow links, where the
+# bytes matter; on a local network it does not pay at all, and the ratio past
+# level 1 never pays.
+compress_level = 1
+
+# Bodies smaller than this are sent uncompressed, and the flag left clear.
+# Compressing a short message usually lengthens it.
+compress_threshold = 4096
+
+# How large a compressed body may expand to before it is refused.  The bound
+# matters because decompressing is the one operation where a small message
+# costs arbitrary memory: 48KB of zeroes becomes 50MB.  Generous enough for a
+# raw instrument frame, which is what these services send.
+max_decompressed = 64 << 20
+
 # If set to True, and no explicit authentication is supplied
 # servers and clients will resort to using the service name.
 # A good idea to leave True, to prevent accidental masquerading.
