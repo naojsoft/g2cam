@@ -31,13 +31,21 @@ objectsBasePort    = 8000
 # with transport=['xmlrpc', 'g2rpc-tcp'], which keeps XML-RPC as the primary
 # they read while everything else takes the faster way.
 #
-# A plain protocol name, deliberately.  ro_transport.parse understands a
-# compound one -- 'g2rpc:json+auth=plain/tcp' -- and a transport= argument or
-# a --transport flag may use it, but not here: the other things such a string
-# would say already have settings of their own, default_encoding and
-# envelope_auth and default_secure below, and a site that set both would have
-# two places saying one thing.  Per-service is where a compound string
-# belongs, since that is where it differs from the default.
+# The carrier is part of the name because the bare name means the other one:
+# 'g2rpc' is registered as the HTTP-carried spec, so 'g2rpc' here would
+# quietly ask for the slower of the two.  'g2rpc/tcp' parses to this very
+# spec and would work -- the hyphen is not structural, and a registration
+# carries the spec's own name rather than whatever was typed here.
+#
+# A plain registry name is still what belongs here.  ro_transport.parse
+# understands a compound one -- 'g2rpc:json+auth=plain/tcp' -- and a
+# transport= argument or a --transport flag may use it, but the other things
+# such a string would say already have settings of their own,
+# default_encoding and envelope_auth and default_secure below, and a site
+# that set both would have two places saying one thing.  Per-service is where
+# a compound string belongs, since that is where it differs from the default.
+# test_the_default_transport_resolves and
+# test_the_default_transport_setting_stays_a_plain_name hold the line.
 default_transport  = 'g2rpc-tcp'
 #default_transport  = 'xmlrpc'
 #default_transport  = 'jsonrpc'
