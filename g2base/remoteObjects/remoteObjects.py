@@ -1178,6 +1178,20 @@ class remoteObjectClient:
 
         return call
 
+    def ro_release(self):
+        """Release the connections this client holds.
+
+        The ro_ prefix is not decoration: a client's unknown attributes are
+        the service's method names, so a plain ``close`` would be
+        indistinguishable from a service that has a close() of its own, and
+        asking ``getattr(client, 'close', None)`` whether this client can be
+        closed returns a closure rather than an answer.
+
+        Harmless on a connectionless carrier, which holds nothing between
+        calls; on one that holds a connection this is what gives it back.
+        """
+        self.proxy.close()
+
     def __str__(self):
         return "remoteObjectClient(%s, %d)" % (self.host, self.port)
 
@@ -1419,6 +1433,17 @@ class multiplexingClient:
 
         return call
 
+    def ro_release(self):
+        """Release the connection and stop collecting replies.
+
+        :py:meth:`stop` under the name every client answers to, so that
+        whatever is holding a mixture of client kinds need not know which is
+        which.  It matters more here than for a plain client: the collecting
+        thread holds a reference to this object, so without stopping it
+        nothing would ever collect either.
+        """
+        self.stop()
+
     def __str__(self):
         return "multiplexingClient(%s, %d)" % (self.host, self.port)
 
@@ -1593,6 +1618,15 @@ class _ProxyBase:
             transport=protocol or self.transport,
             encoding=encoding if encoding is not None else self.encoding,
             timeout=self.timeout, envelope_auth=self.envelope_auth)
+
+    def close(self):
+        """Release the clients, and with them the connections they hold.
+
+        A proxy resolves its providers lazily, so this leaves it usable: the
+        next call resolves again.  It is the connections that are given back,
+        not the proxy.
+        """
+        self.endpoints.close()
 
     def __str__(self):
         return "%s(%s)" % (type(self).__name__, self.name)
