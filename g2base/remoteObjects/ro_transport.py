@@ -857,9 +857,17 @@ register(G2RPCTcpSpec(
 class G2RPCTcpAsyncioSpec(G2RPCTcpSpec):
     """g2rpc over TCP, served from an event loop rather than a thread each.
 
-    The client side is exactly g2rpc-tcp's: it dials, sends, reads its reply
-    and hangs up.  Only the server differs, which is what makes the two
-    comparable -- and means a caller needs to know nothing about it.
+    Only the server differs from the threaded TCP specs, which is what makes
+    them comparable -- and means a caller needs to know nothing about it.
+    The client side is whichever ``persistent`` selects, exactly as it is
+    there: g2rpc-tcp-asyncio dials per call, g2rpc-tcp-asyncio-persistent
+    holds its connection.
+
+    Holding one is what the loop makes cheap.  A held connection costs the
+    service a coroutine instead of a thread, so the two ways of spending a
+    thread per connection -- one per call, or one per connection for as long
+    as it lasts -- both go away: 200 connections opened and left silent cost
+    this server no threads at all, where either threaded carrier spends 200.
     """
 
     #: The loop runs on a thread of its own, so it takes nothing from the
@@ -898,6 +906,20 @@ register(G2RPCTcpAsyncioSpec(
                 "with the handlers on a thread pool.  A connection costs a "
                 "coroutine rather than a thread, which is what a burst of "
                 "them costs less of."))
+
+register(G2RPCTcpAsyncioSpec(
+    'g2rpc-tcp-asyncio-persistent',
+    ro_g2rpc.G2RPCProtocol,
+    content_type='application/octet-stream',
+    encoding=ro_g2rpc.DEFAULT_ENCODING,
+    encodings=ro_g2rpc.ENCODINGS,
+    persistent=True,
+    description="Gen2's own protocol over a TCP connection that is held "
+                "open, served from one event loop.  The combination the "
+                "other three each miss half of: the client pays no "
+                "connection setup per call, and the service pays no thread "
+                "per connection -- so a service reached by many callers at "
+                "once costs coroutines rather than threads."))
 
 register(G2RPCZmqSpec(
     'g2rpc-zmq',

@@ -28,6 +28,8 @@ from g2base.remoteObjects import ro_asyncio, ro_transport
 
 HOST = '127.0.0.1'
 CARRIER = 'g2rpc-tcp-asyncio'
+#: The same server, with the client holding its connection.
+HELD = 'g2rpc-tcp-asyncio-persistent'
 
 
 class Service:
@@ -326,3 +328,147 @@ def test_the_runner_presents_start_and_stop():
     """What __cmd_loop calls on every listener it owns."""
     assert callable(ro_asyncio.AsyncioServerRunner.start)
     assert callable(ro_asyncio.AsyncioServerRunner.stop)
+
+
+# ------------------------------------- the same loop, a held connection --
+#
+# g2rpc-tcp-asyncio avoids a thread per connection by not holding one: the
+# client dials per call, so it pays a connection setup every time.  The
+# persistent variant is the same server with the other client, which is the
+# combination neither threaded carrier can offer -- no setup per call, and
+# no thread per connection either.
+
+
+@pytest.fixture
+def held_service(nameservice):
+    started = []
+
+    def _make(obj=None):
+        obj = obj if obj is not None else Service()
+        server = ro.remoteObjectServer(
+            svcname='held-svc', obj=obj, transport=[HELD], host=HOST,
+            logger=ro.nullLogger(), usethread=True, ns=nameservice,
+            default_auth=False, method_list=['echo', 'block'])
+        server.ro_start(wait=True, timeout=15)
+        started.append(server)
+        return server
+
+    yield _make
+    for server in started:
+        try:
+            server.ro_stop(wait=True, timeout=15)
+        except Exception:
+            pass
+
+
+def test_the_held_carrier_is_registered_and_available():
+    spec = ro_transport.get(HELD)
+
+    assert spec.available()
+    assert spec.persistent
+    assert spec.supports_multiplexing, (
+        'a held connection is what multiplexing needs')
+    assert not spec.server_holds_pool_worker, (
+        'the loop runs on its own thread, so it takes nothing from the pool')
+
+
+def test_the_held_carrier_keeps_the_loops_server():
+    """Only the client side differs from g2rpc-tcp-asyncio: both drive the
+    asyncio runner, which is where the thread saving comes from."""
+    loop_side = ro_transport.get(CARRIER)
+    held_side = ro_transport.get(HELD)
+
+    assert type(held_side) is type(loop_side)
+    assert held_side.make_rpc_server.__func__ is \
+        loop_side.make_rpc_server.__func__
+
+
+def test_the_held_carrier_holds_its_connection():
+    """Which is the whole difference, and the opposite of what
+    test_the_client_side_is_the_ordinary_tcp_one asserts of the other one."""
+    held = ro_transport.get(HELD)
+    per_call = ro_transport.get(CARRIER)
+
+    assert held.reuse_client_transport
+    assert held.client_transport_per_thread
+    assert not per_call.reuse_client_transport
+    assert type(held.make_client_transport(HOST, 9)) is not type(
+        per_call.make_client_transport(HOST, 9))
+
+
+def test_a_call_is_answered_over_a_held_connection(held_service, nameservice):
+    held_service()
+    proxy = ro.remoteObjectProxy('held-svc', transport=HELD,
+                                 default_auth=False)
+
+    assert proxy.echo('hello') == 'hello'
+    assert proxy.echo('again') == 'again', 'the second call reuses it'
+
+
+def test_held_connections_cost_no_threads_either(held_service, nameservice):
+    """The point of the combination.  g2rpc-tcp-persistent spends a thread on
+    every one of these and keeps it for as long as the connection lasts;
+    this spends a coroutine, as the per-call variant does."""
+    held_service()
+    serving(nameservice, 'held-svc')
+    port = port_for(nameservice, 'held-svc', HELD)
+    before = set(threading.enumerate())
+
+    held = []
+    try:
+        for _ in range(200):
+            sock = socket.socket()
+            sock.connect((HOST, port))
+            held.append(sock)
+        time.sleep(0.5)
+        added = set(threading.enumerate()) - before
+
+        assert not added, (
+            '%d held connections added %d threads: %r'
+            % (len(held), len(added), sorted(t.name for t in added)))
+
+        proxy = ro.remoteObjectProxy('held-svc', transport=HELD,
+                                     default_auth=False)
+        assert proxy.echo('still here') == 'still here'
+    finally:
+        for sock in held:
+            sock.close()
+
+
+def test_a_blocking_handler_does_not_stall_a_held_connection(held_service,
+                                                             nameservice):
+    """It matters more here than for the per-call variant: a stalled loop
+    would hold up every connection it is carrying, and these last."""
+    obj = Service()
+    held_service(obj=obj)
+
+    slow = ro.remoteObjectProxy('held-svc', transport=HELD,
+                                default_auth=False)
+    done = threading.Event()
+
+    def call_slow():
+        try:
+            slow.block(3.0)
+        finally:
+            done.set()
+
+    caller = threading.Thread(target=call_slow, daemon=True)
+    caller.start()
+    assert obj.entered.wait(10), 'the slow call reached the handler'
+
+    fast = ro.remoteObjectProxy('held-svc', transport=HELD,
+                                default_auth=False)
+    started = time.perf_counter()
+    assert fast.echo('quick') == 'quick'
+    elapsed = time.perf_counter() - started
+
+    assert elapsed < 1.5, (
+        'answered in %.2fs while a handler slept 3s; the loop was blocked'
+        % (elapsed,))
+    done.wait(10)
+    caller.join(timeout=10)
+
+
+def test_the_held_carrier_is_opt_in_too(held_service):
+    assert HELD not in ro.default_protocol_preference
+    assert HELD != ro.default_transport
