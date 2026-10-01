@@ -242,3 +242,41 @@ def test_a_lost_connection_does_not_leak_the_call(service, client):
         handle.echo('lost')
 
     assert handle.client.tracking_board == {}
+
+
+# ----------------------------------------- one call path, two client kinds --
+
+def test_both_client_kinds_make_a_call_the_same_way(service, client):
+    """call_remote holds whichever client an Endpoints produced, so there has
+    to be one call it can make without knowing which kind it has.  It used to
+    reach in as client.proxy.call(...) -- a plain client's internals -- and a
+    multiplexing client has no 'proxy'.  Worse than absent: unknown
+    attributes are the service's method names, so asking for one returned a
+    closure for a remote method called 'proxy'."""
+    svc = service()
+    muxed = client(svc, transport=TRANSPORT, default_auth=False)
+    plain = ro.remoteObjectClient(HOST, svc.port, name='muxsvc',
+                                  default_auth=False, transport=TRANSPORT,
+                                  timeout=20.0)
+
+    for handle in (plain, muxed):
+        assert handle.ro_call('echo', ('a',), {}) == 'a', type(handle).__name__
+        assert ro.call_remote(handle, 'add', (1, 2), {'c': 3}) == (ro.OK, 6)
+
+
+def test_a_refusal_is_not_dressed_up_as_a_transport_failure(service, client):
+    """call_remote tells "did not answer" from "answered and refused" by the
+    exception's type, so ro_call must not wrap it -- attribute access does,
+    and a remoteObjectError is in neither tuple, which would make every
+    refusal look like something worth failing over for."""
+    svc = service()
+    muxed = client(svc, transport=TRANSPORT, default_auth=False)
+    plain = ro.remoteObjectClient(HOST, svc.port, name='muxsvc',
+                                  default_auth=False, transport=TRANSPORT,
+                                  timeout=20.0)
+
+    for handle in (plain, muxed):
+        flag, _message = ro.call_remote(handle, 'boom', (), {})
+        assert flag == ro.ERROR_FATAL, (
+            '%s: a service that answered and refused should not be retried '
+            'elsewhere' % (type(handle).__name__,))

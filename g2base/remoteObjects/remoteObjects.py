@@ -1106,7 +1106,7 @@ def call_remote(client, attrname, args, kwdargs):
     where = "%s.%s at %s:%d" % (client.name, attrname, client.host,
                                 client.port)
     try:
-        return (OK, client.proxy.call(attrname, args, kwdargs))
+        return (OK, client.ro_call(attrname, args, kwdargs))
 
     except fatal_errors as e:
         return (ERROR_FATAL, "Method call %s failed: %s" % (where, e))
@@ -1177,6 +1177,23 @@ class remoteObjectClient:
             raise remoteObjectError(res)
 
         return call
+
+    def ro_call(self, attrname, args, kwdargs):
+        """Make one call, raising whatever went wrong.
+
+        The one entry point every client kind answers to, so that a caller
+        holding a mixture of them -- :py:func:`call_remote` is the one that
+        does -- need not know which it has.  It used to reach in as
+        ``client.proxy.call(...)``, which is a plain client's internals: a
+        multiplexing client has no ``proxy``, and because unknown attributes
+        are forwarded to the service, asking for one returned a closure that
+        would have called a remote method named 'proxy'.
+
+        The exception is deliberately not wrapped.  :py:func:`call_remote`
+        sorts failures into "this provider did not answer" and "it answered
+        and refused", and it can only do that from the original.
+        """
+        return self.proxy.call(attrname, args, kwdargs)
 
     def ro_release(self):
         """Release the connections this client holds.
@@ -1399,7 +1416,7 @@ class multiplexingClient:
 
     def begin_call(self, attrname, args=(), kwdargs=None):
         """Send a call and return at once, without waiting for the result."""
-        self.__started()
+        self._started()
         return self.client.begin_call(attrname, tuple(args), dict(kwdargs or {}))
 
     def collect(self, pending, timeout=None):
@@ -1413,7 +1430,7 @@ class multiplexingClient:
                 "Method call %s failed to %s:%d: %s"
                 % (self.name, self.host, self.port, e))
 
-    def __started(self):
+    def _started(self):
         if self._thread is None:
             self.start()
 
@@ -1422,7 +1439,7 @@ class multiplexingClient:
             raise AttributeError(attrname)
 
         def call(*args, **kwdargs):
-            self.__started()
+            self._started()
             try:
                 return self.client.call(attrname, tuple(args), dict(kwdargs),
                                         timeout=self.timeout)
@@ -1432,6 +1449,18 @@ class multiplexingClient:
                     % (self.name, attrname, self.host, self.port, e))
 
         return call
+
+    def ro_call(self, attrname, args, kwdargs):
+        """Make one call, raising whatever went wrong.
+
+        Attribute access wraps failures in ``remoteObjectError`` to say
+        which call and where; this does not, because
+        :py:func:`call_remote` classifies the original and a wrapped one
+        looks to it like a service that answered and refused.
+        """
+        self._started()
+        return self.client.call(attrname, tuple(args), dict(kwdargs or {}),
+                                timeout=self.timeout)
 
     def ro_release(self):
         """Release the connection and stop collecting replies.
