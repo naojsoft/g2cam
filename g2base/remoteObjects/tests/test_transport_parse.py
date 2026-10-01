@@ -518,3 +518,77 @@ def test_the_decompression_bound_comes_from_the_configuration(served):
     assert deflate.max_size == ro.max_decompressed
     assert deflate.level == ro.compress_level
     assert deflate.threshold == ro.compress_threshold
+
+
+# ------------------------------------ a layer that describes the caller --
+#
+# '+multiplex' says how this end will use a held connection.  Nothing goes
+# on the wire for it -- a multiplexing client and a plain one are
+# indistinguishable to the service -- so it resolves to the same registered
+# name and is carried beside the layers rather than among them.
+
+def test_multiplex_resolves_to_the_plain_registered_name():
+    t = parse('g2rpc/tcp-persistent+multiplex')
+
+    assert t.name == 'g2rpc-tcp-persistent'
+    assert t.multiplex is True
+
+
+def test_multiplex_is_not_one_of_the_layers():
+    """Nothing downstream should find it among the things to apply to a
+    message, because there is nothing to apply."""
+    t = parse('g2rpc/tcp-persistent+multiplex')
+
+    assert t.layers == ()
+    assert 'multiplex' not in dict(t.layers)
+
+
+def test_nothing_asks_to_multiplex_unless_it_says_so():
+    for text in ('g2rpc-tcp-persistent', 'g2rpc/tcp-persistent',
+                 'g2rpc/tcp', 'xmlrpc', 'g2rpc:json/tcp-persistent'):
+        assert parse(text).multiplex is False, text
+
+
+def test_it_composes_with_the_rest_of_the_string():
+    t = parse('g2rpc:json+auth=plain/tcp-persistent+multiplex')
+
+    assert t.name == 'g2rpc-tcp-persistent'
+    assert t.encoding == 'json'
+    assert t.envelope_auth == 'credentials'
+    assert t.multiplex is True
+
+
+def test_the_asyncio_carrier_can_be_multiplexed_too():
+    t = parse('g2rpc/tcp-asyncio-persistent+multiplex')
+
+    assert t.name == 'g2rpc-tcp-asyncio-persistent'
+    assert t.multiplex is True
+
+
+def test_a_carrier_that_dials_per_call_cannot_multiplex():
+    """One call at a time means there is never a second reply to tell
+    apart, so the request is a contradiction rather than a preference."""
+    with pytest.raises(UnknownTransport) as caught:
+        parse('g2rpc/tcp+multiplex')
+    assert 'nothing to multiplex' in str(caught.value)
+    assert 'tcp-persistent' in str(caught.value), 'says what to use instead'
+
+
+def test_multiplex_takes_no_value():
+    with pytest.raises(UnknownTransport):
+        parse('g2rpc/tcp-persistent+multiplex=yes')
+
+
+def test_it_belongs_after_the_slash():
+    """Written with the carrier, because the connection is what it is
+    about; on the protocol it is not one of the envelope's layers."""
+    with pytest.raises(UnknownTransport) as caught:
+        parse('g2rpc+multiplex/tcp-persistent')
+    assert 'multiplex' in str(caught.value)
+
+
+def test_every_registered_name_still_round_trips():
+    """The new layer must not have changed what a plain name means."""
+    for name in ro_transport.names():
+        assert parse(name).name == name
+        assert parse(name).multiplex is False

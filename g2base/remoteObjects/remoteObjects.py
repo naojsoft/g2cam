@@ -532,6 +532,17 @@ class remoteObjectServer:
         # any of them says about the service as a whole wins over the
         # arguments.
         asked = [ro_transport.parse(name) for name in names]
+        for want, name in zip(asked, names):
+            if want.multiplex:
+                # Nothing to apply: multiplexing is how a caller uses a held
+                # connection, and this end cannot tell a caller that does
+                # from one that does not.  Refused rather than ignored, so a
+                # string that cannot mean anything here says so.
+                raise remoteObjectError(
+                    "'%s' asks to multiplex, which is a caller's choice and "
+                    "not a service's: a service holding the other end of "
+                    "the connection cannot tell. Serve '%s' and let the "
+                    "caller ask." % (name, want.name))
         encoding = _one_for_all('encoding', asked, encoding)
         envelope_auth = _one_for_all('envelope_auth', asked, envelope_auth)
         secure = secure or any(a.secure for a in asked)
@@ -1353,7 +1364,8 @@ class multiplexingClient:
     def __init__(self, host, port, name='<remote object>',
                  transport='g2rpc-tcp-persistent', encoding=None,
                  timeout=None, logger=None, auth=None,
-                 default_auth=use_default_auth):
+                 default_auth=use_default_auth,
+                 envelope_auth=envelope_auth, layers=()):
         self.host = host
         self.port = port
         self.name = name
@@ -1376,11 +1388,19 @@ class multiplexingClient:
         self.encoding = self.spec.check_encoding(encoding)
         self.rpc_transport = self.spec.make_client_transport(
             host, port, timeout=timeout)
+        # As a plain client settles them: the mechanism and the layers are
+        # the caller's to choose, and taking the module default here meant a
+        # multiplexed client could not be told to carry credentials.
+        envelope_auth = _one_for_all('envelope_auth', [asked], envelope_auth)
+        self.envelope_auth = envelope_auth
         self.client = MultiplexingRPCClient(
             self.spec.make_protocol(
                 self.encoding,
-                framing=client_framing(self.spec, self.auth, name),
-                credentials=client_credentials(self.spec, self.auth)),
+                framing=client_framing(self.spec, self.auth, name,
+                                       mechanism=envelope_auth,
+                                       layers=tuple(layers) + asked.layers),
+                credentials=client_credentials(self.spec, self.auth,
+                                               mechanism=envelope_auth)),
             self.rpc_transport)
 
         self.ev_quit = threading.Event()
@@ -1580,6 +1600,7 @@ class _ProxyBase:
         # names in a registration -- it is choose_endpoint's `pin` -- so it
         # has to be the registry name and not whatever was typed.  Anything
         # else the string said is carried down to the clients this builds.
+        multiplex = False
         if transport is not None:
             asked = ro_transport.parse(transport)
             transport = asked.name
@@ -1587,8 +1608,14 @@ class _ProxyBase:
             envelope_auth = _one_for_all('envelope_auth', [asked],
                                          envelope_auth)
             secure = secure or asked.secure
+            multiplex = asked.multiplex
 
         self.secure = secure
+        #: Whether to keep several calls in flight on one connection, which
+        #: '+multiplex' on the transport string asks for.  Not part of
+        #: `transport`: that is the registered protocol name, and the two
+        #: ways of calling it are indistinguishable to the service.
+        self.multiplex = multiplex
         self.transport = transport
         self.encoding = encoding
         self.timeout = timeout
@@ -1614,16 +1641,42 @@ class _ProxyBase:
             return (tup[0], tup[1])
         raise remoteObjectError("Malformed hostports entry: %s" % (tup,))
 
+    def __make_client(self, host, port, transport, encoding, auth, secure):
+        """One client, of whichever kind was asked for.
+
+        Both kinds take the same arguments and answer to the same calls
+        (:py:meth:`ro_call`, :py:meth:`ro_release`), so this is the only
+        place that has to know there are two.
+        """
+        if not self.multiplex:
+            return remoteObjectClient(
+                host, port, name=self.name, auth=auth, default_auth=False,
+                secure=secure, transport=transport, encoding=encoding,
+                timeout=self.timeout, envelope_auth=self.envelope_auth)
+
+        # The pin normally settles this -- a proxy asking to multiplex names
+        # a persistent protocol, and choose_endpoint will not offer another
+        # -- but `prefer` and a hand-written hostports list can both reach
+        # here with something else, and silently not multiplexing would be
+        # the wrong kindness.
+        if not ro_transport.get(transport).supports_multiplexing:
+            raise remoteObjectError(
+                "'%s' was asked to multiplex but '%s' provides '%s', which "
+                "dials for every call; there is never more than one in "
+                "flight on it and nothing to multiplex"
+                % (self.name, host, transport))
+        return multiplexingClient(
+            host, port, name=self.name, auth=auth, default_auth=False,
+            transport=transport, encoding=encoding, timeout=self.timeout,
+            envelope_auth=self.envelope_auth, logger=self.logger)
+
     def __client_for_hostport(self, host, port):
         # No registration to follow, so a concrete protocol is needed and
         # the module default is the only thing left to fall back on.
         auth = self._auth_overrides.get((host, port), self.auth)
-        return remoteObjectClient(
-            host, port, name=self.name, auth=auth, default_auth=False,
-            secure=self.secure,
-            transport=self.transport or default_transport,
-            encoding=self.encoding, timeout=self.timeout,
-            envelope_auth=self.envelope_auth)
+        return self.__make_client(
+            host, port, self.transport or default_transport,
+            self.encoding, auth, self.secure)
 
     def __client_for_record(self, rec):
         """Build a client from one name service registration.
@@ -1640,13 +1693,10 @@ class _ProxyBase:
         protocol, port, encoding = choose_endpoint(
             rec, prefer=self.prefer, pin=self.transport, logger=self.logger)
 
-        return remoteObjectClient(
-            rec['host'], port, name=self.name, auth=self.auth,
-            default_auth=False,
-            secure=rec.get('secure', self.secure),
-            transport=protocol or self.transport,
-            encoding=encoding if encoding is not None else self.encoding,
-            timeout=self.timeout, envelope_auth=self.envelope_auth)
+        return self.__make_client(
+            rec['host'], port, protocol or self.transport,
+            encoding if encoding is not None else self.encoding,
+            self.auth, rec.get('secure', self.secure))
 
     def close(self):
         """Release the clients, and with them the connections they hold.

@@ -244,6 +244,169 @@ def test_a_lost_connection_does_not_leak_the_call(service, client):
     assert handle.client.tracking_board == {}
 
 
+# ------------------------------- asking for it through a normal proxy --
+#
+# The pattern this exists for in Gen2 is several threads of a pool sharing
+# one proxy, each making an ordinary blocking call.  They need no new idiom:
+# '+multiplex' on the transport string selects the client, and
+# proxy.method() goes on meaning what it meant.
+
+
+@pytest.fixture
+def nameservice():
+    from g2base.remoteObjects import remoteObjectNameSvc as ns_mod
+    return ns_mod.remoteObjectNameService('names', ro.nullLogger(), HOST)
+
+
+@pytest.fixture
+def registered(nameservice):
+    started = []
+
+    def _make(transport=TRANSPORT):
+        svc = ro.remoteObjectServer(
+            svcname='muxsvc', obj=ServiceObject(), host=HOST,
+            logger=ro.nullLogger(), usethread=True, ns=nameservice,
+            default_auth=False, transport=transport, numthreads=16,
+            method_list=['echo', 'add', 'slow', 'boom'])
+        svc.ro_start(wait=True, timeout=10.0)
+        started.append(svc)
+        return svc
+
+    yield _make
+    for svc in started:
+        try:
+            svc.ro_stop(wait=True, timeout=10.0)
+        except Exception:
+            pass
+
+
+def proxy_for(nameservice, transport):
+    return ro.remoteObjectProxy('muxsvc', ns=nameservice, transport=transport,
+                                default_auth=False, logger=ro.nullLogger())
+
+
+def test_the_string_selects_the_multiplexing_client(registered, nameservice):
+    registered()
+    proxy = proxy_for(nameservice, 'g2rpc/tcp-persistent+multiplex')
+
+    assert proxy.echo('hello') == 'hello'
+    assert type(proxy.endpoints.clients()[0]) is ro.multiplexingClient
+    proxy.close()
+
+
+def test_without_it_the_plain_client_is_built(registered, nameservice):
+    registered()
+    proxy = proxy_for(nameservice, 'g2rpc/tcp-persistent')
+
+    assert proxy.echo('hello') == 'hello'
+    assert type(proxy.endpoints.clients()[0]) is ro.remoteObjectClient
+    proxy.close()
+
+
+def test_the_pin_is_the_registered_name_either_way(registered, nameservice):
+    """'+multiplex' is not part of what the service registered, so it must
+    not leak into the name choose_endpoint matches against."""
+    registered()
+    muxed = proxy_for(nameservice, 'g2rpc/tcp-persistent+multiplex')
+    plain = proxy_for(nameservice, 'g2rpc/tcp-persistent')
+
+    assert muxed.transport == plain.transport == 'g2rpc-tcp-persistent'
+    assert muxed.multiplex and not plain.multiplex
+    muxed.close()
+    plain.close()
+
+
+def test_pool_threads_sharing_one_proxy_get_their_own_replies(registered,
+                                                              nameservice):
+    """The case it is for.  Every call is an ordinary blocking
+    proxy.method(); what differs is that one connection carries them all."""
+    registered()
+    proxy = proxy_for(nameservice, 'g2rpc/tcp-persistent+multiplex')
+    proxy.echo('warm')
+
+    wrong, lock = [], threading.Lock()
+
+    def work(tid):
+        for i in range(20):
+            want = '%d-%d' % (tid, i)
+            got = proxy.echo(want)
+            if got != want:
+                with lock:
+                    wrong.append((want, got))
+
+    threads = [threading.Thread(target=work, args=(t,), daemon=True)
+               for t in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=60)
+
+    assert not wrong, 'replies were crossed: %r' % (wrong[:3],)
+    client = proxy.endpoints.clients()[0]
+    transport = vars(client)['rpc_transport']
+    assert transport.connected, 'one connection carried all of it'
+    proxy.close()
+
+
+def test_a_service_refuses_to_be_told_to_multiplex(nameservice):
+    """It cannot tell a caller that multiplexes from one that does not, so
+    there is nothing for it to do with this."""
+    with pytest.raises(ro.remoteObjectError) as caught:
+        ro.remoteObjectServer(
+            svcname='muxsvc', obj=ServiceObject(), host=HOST,
+            logger=ro.nullLogger(), usethread=True, ns=nameservice,
+            default_auth=False, method_list=['echo'],
+            transport='g2rpc/tcp-persistent+multiplex')
+    assert "caller's choice" in str(caught.value)
+
+
+def test_a_carrier_that_dials_per_call_is_refused(registered, nameservice):
+    """Checked by the grammar, before anything is built."""
+    with pytest.raises(ro_transport.UnknownTransport) as caught:
+        proxy_for(nameservice, 'g2rpc/tcp+multiplex')
+    assert 'nothing to multiplex' in str(caught.value)
+
+
+def test_a_refusing_service_is_still_told_apart_from_a_silent_one(
+        registered, nameservice):
+    """call_failover classifies from the original exception, so a
+    multiplexed client must not wrap it the way attribute access does."""
+    registered()
+    proxy = proxy_for(nameservice, 'g2rpc/tcp-persistent+multiplex')
+
+    with pytest.raises(ro.remoteObjectError) as caught:
+        proxy.boom()
+    assert 'kaboom' in str(caught.value)
+    assert proxy.echo('still here') == 'still here', 'it did not fail over'
+    proxy.close()
+
+
+def test_closing_the_proxy_stops_the_collector(registered, nameservice):
+    registered()
+    proxy = proxy_for(nameservice, 'g2rpc/tcp-persistent+multiplex')
+    proxy.echo('a')
+    client = proxy.endpoints.clients()[0]
+    collector = vars(client)['_thread']
+    assert collector is not None and collector.is_alive()
+
+    proxy.close()
+
+    collector.join(timeout=10)
+    assert not collector.is_alive()
+
+
+def test_it_works_over_the_asyncio_server_too(registered, nameservice):
+    """The combination with no thread per connection on either count: a
+    coroutine for the connection, and one connection for the pool."""
+    registered(transport='g2rpc-tcp-asyncio-persistent')
+    proxy = proxy_for(nameservice,
+                      'g2rpc/tcp-asyncio-persistent+multiplex')
+
+    assert proxy.echo('hello') == 'hello'
+    assert type(proxy.endpoints.clients()[0]) is ro.multiplexingClient
+    proxy.close()
+
+
 # ----------------------------------------- one call path, two client kinds --
 
 def test_both_client_kinds_make_a_call_the_same_way(service, client):

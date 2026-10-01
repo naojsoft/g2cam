@@ -477,6 +477,16 @@ def resolve_legacy_transport(transport):
 ENVELOPE_LAYERS = ('auth', 'compress', 'encrypt')
 CARRIER_LAYERS = ('tls',)
 
+#: Layers that say how this end *calls* rather than what goes on the wire.
+#:
+#: Written beside the carrier's own, since what they concern is the
+#: connection, but they are not carried: a multiplexing client and a plain
+#: one on a held connection put identical bytes on it, and a service cannot
+#: tell them apart.  So these never reach a registration, parse() keeps them
+#: out of `layers` where something downstream would try to apply one, and a
+#: service that is given one is refused rather than quietly ignoring it.
+CLIENT_LAYERS = ('multiplex',)
+
 #: How the envelope authenticates.  Not called 'sign': only one of these
 #: signs.  A signature is computed over the message and proves the sender
 #: holds the secret; credentials are carried and only claim it, which is the
@@ -491,7 +501,8 @@ AUTH_VARIANTS = {'hmac': 'signature', 'plain': 'credentials'}
 LAYER_VALUES = {'auth': ('required', tuple(AUTH_VARIANTS)),
                 'compress': ('optional', tuple(sorted(COMPRESSORS))),
                 'encrypt': ('optional', ('secretbox',)),
-                'tls': ('none', None)}
+                'tls': ('none', None),
+                'multiplex': ('none', None)}
 
 #: Layers the grammar accepts and nothing yet applies.  Parsed, checked and
 #: then refused, so a string written today means what it will mean when the
@@ -524,6 +535,11 @@ class Transport(NamedTuple):
     #: in the order given.  The framing applies its own order regardless;
     #: see tinyrpc.framing.
     layers: Tuple[Tuple[str, Optional[str]], ...] = ()
+    #: Whether the caller asked to keep several calls in flight on one
+    #: connection.  Nothing about the wire, and so nothing a service reads:
+    #: it selects the client, and `name` is the registered protocol either
+    #: way.
+    multiplex: bool = False
 
     @property
     def spec(self):
@@ -581,12 +597,12 @@ def parse(spec_string):
         if layer not in ENVELOPE_LAYERS:
             raise UnknownTransport(
                 "'%s' is not a layer this protocol can carry; it offers %s "
-                "(and '%s' on the carrier)"
+                "(and %s after the '/')"
                 % (layer, ', '.join(ENVELOPE_LAYERS),
-                   "', '".join(CARRIER_LAYERS)))
+                   ', '.join(CARRIER_LAYERS + CLIENT_LAYERS)))
         _check_value(layer, value, spec_string)
     for layer, value in carrier_layers:
-        if layer not in CARRIER_LAYERS:
+        if layer not in CARRIER_LAYERS and layer not in CLIENT_LAYERS:
             raise UnknownTransport(
                 "'%s' belongs on the protocol, before the '/', not on the "
                 "carrier" % (layer,))
@@ -615,6 +631,14 @@ def parse(spec_string):
             "the '%s' carrier cannot encrypt; use an HTTP-carried protocol"
             % (carrier or spec.carrier,))
 
+    multiplex = any(layer == 'multiplex' for layer, _value in carrier_layers)
+    if multiplex and not spec.supports_multiplexing:
+        raise UnknownTransport(
+            "the '%s' carrier dials for every call, so there is never more "
+            "than one in flight and nothing to multiplex; name one whose "
+            "connection persists, such as '%s/tcp-persistent'"
+            % (carrier or spec.carrier, protocol))
+
     envelope_auth = None
     rest = []
     for layer, value in layers:
@@ -636,7 +660,7 @@ def parse(spec_string):
                 % (layer, UNBUILT_LAYERS[layer]))
 
     return Transport(name=name, encoding=encoding, envelope_auth=envelope_auth,
-                     secure=secure, layers=rest)
+                     secure=secure, layers=rest, multiplex=multiplex)
 
 
 def _check_value(layer, value, spec_string):
