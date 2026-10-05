@@ -165,22 +165,34 @@ def test_closing_a_connectionless_proxy_is_harmless(service, nameservice):
 
 # ------------------------------------- the collector has to be stopped --
 
-def test_releasing_a_multiplexing_client_stops_its_collector(service,
-                                                             nameservice):
-    """It holds a thread as well as a connection, and that thread holds a
-    reference to the client, so letting go of the client is not enough."""
+def test_releasing_a_multiplexing_client_leaves_nothing_running(service,
+                                                               nameservice):
+    """It holds a connection, and it used to hold a thread for collecting
+    replies as well.
+
+    The transport now hands each reply to the client on its own reader
+    thread, so there is usually no second thread to stop -- but there is
+    still a connection to give back, and a released client must not go on
+    being handed replies.  Written to hold either way, since the thread is
+    only absent when the transport offers to deliver.
+    """
     server = service()
     client = ro.multiplexingClient(HOST, server.port, name='life',
                                    default_auth=False, transport=HELD,
                                    timeout=15)
     assert client.echo('a') == 'a'
     collector = vars(client)['_thread']
-    assert collector is not None and collector.is_alive()
+    transport = vars(client)['rpc_transport']
+    assert transport.connected, 'it should be holding a connection'
 
     ro_endpoints.Endpoints._release([client])
 
-    collector.join(timeout=10)
-    assert not collector.is_alive(), 'the collector thread outlived it'
+    if collector is not None:
+        collector.join(timeout=10)
+        assert not collector.is_alive(), 'the collector outlived it'
+    assert not transport.connected, 'the connection was not given back'
+    assert not getattr(transport, 'delivers_to_callback', False), (
+        'the transport would still deliver to a client that was released')
 
 
 def test_both_client_kinds_answer_to_the_same_name():

@@ -381,18 +381,45 @@ def test_a_refusing_service_is_still_told_apart_from_a_silent_one(
     proxy.close()
 
 
-def test_closing_the_proxy_stops_the_collector(registered, nameservice):
+def test_closing_the_proxy_releases_the_client(registered, nameservice):
+    """Whatever the client was holding -- a connection, and a collecting
+    thread if the transport did not deliver replies itself -- closing the
+    proxy has to give back."""
     registered()
     proxy = proxy_for(nameservice, 'g2rpc/tcp-persistent+multiplex')
     proxy.echo('a')
     client = proxy.endpoints.clients()[0]
     collector = vars(client)['_thread']
-    assert collector is not None and collector.is_alive()
+    transport = vars(client)['rpc_transport']
+    assert transport.connected
 
     proxy.close()
 
-    collector.join(timeout=10)
-    assert not collector.is_alive()
+    if collector is not None:
+        collector.join(timeout=10)
+        assert not collector.is_alive()
+    assert not transport.connected
+
+
+def test_the_reader_thread_delivers_rather_than_a_second_thread(registered,
+                                                                nameservice):
+    """The reply path, and why there is no collecting thread to stop.
+
+    The transport's reader thread already holds a whole reply; handing it to
+    a queue meant waking a second thread to parse it and give it to the
+    waiting call.  It does that itself now, which is one thread and one
+    wakeup per reply fewer.
+    """
+    registered()
+    proxy = proxy_for(nameservice, 'g2rpc/tcp-persistent+multiplex')
+    assert proxy.echo('a') == 'a'
+    client = proxy.endpoints.clients()[0]
+
+    assert vars(client)['client'].pushed, 'the client is not being delivered to'
+    assert vars(client)['_thread'] is None, (
+        'a collecting thread was started with nothing for it to do')
+    assert vars(client)['rpc_transport'].delivers_to_callback
+    proxy.close()
 
 
 def test_it_works_over_the_asyncio_server_too(registered, nameservice):

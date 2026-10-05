@@ -1405,10 +1405,21 @@ class multiplexingClient:
 
         self.ev_quit = threading.Event()
         self._thread = None
+        self._driven = False
 
     def start(self):
-        """Begin collecting replies, on a thread of its own."""
-        if self._thread is not None:
+        """Begin collecting replies, on a thread of its own.
+
+        Unless the transport hands them over itself, in which case there is
+        nothing to start: its reader thread already holds a whole reply and
+        gives it to the waiting call, so a second thread here would exist
+        only to return.  See
+        :py:meth:`tinyrpc.transports.tcp.NonBlockingTcpClientTransport.deliver_to`.
+        """
+        if self._driven:
+            return
+        self._driven = True
+        if getattr(self.client, 'pushed', False):
             return
         self._thread = threading.Thread(target=self.client.receive_forever,
                                         args=(self.ev_quit,),
@@ -1451,7 +1462,7 @@ class multiplexingClient:
                 % (self.name, self.host, self.port, e))
 
     def _started(self):
-        if self._thread is None:
+        if not self._driven:
             self.start()
 
     def __getattr__(self, attrname):
