@@ -442,11 +442,20 @@ class PubSub:
 
         Whether it can take one is discovered by asking rather than by
         announcing.  A subscriber that has not been upgraded has no
-        remote_update_many, so the call is refused; the same records then go
-        one at a time, and if *that* works the refusal was about the method
-        and not about the subscriber, so we stop offering.  A subscriber
+        remote_update_many, so the call is *refused*; the same records then
+        go one at a time, and we stop offering the batch call.  A subscriber
         that is really unreachable fails both ways and is handled as a
         failure always has been.
+
+        Only a refusal counts.  A batch call that never arrived -- a
+        timeout, a connection that went, no ephemeral port left to dial
+        from -- says nothing about whether the method exists, and taking it
+        as an answer was a trap: one slow batch would turn batching off for
+        that subscriber permanently, and without batching every update costs
+        its own call and its own connection, which makes the next failure
+        likelier than the last.  ``remoteObjectError.refused`` is the
+        distinction, drawn where it is known rather than guessed from the
+        message.
         """
         if len(records) > 1 and partner.takes_batches:
             updates = [(value, names, channels)
@@ -456,16 +465,23 @@ class PubSub:
                 return True
 
             except Exception as e:
-                self._debug("subscriber '%s' would not take a batch of %d: "
-                            "%s", subscriber, len(updates), e)
+                refused = getattr(e, 'refused', False)
+                self._debug("subscriber '%s' would not take a batch of %d "
+                            "(refused=%s): %s", subscriber, len(updates),
+                            refused, e)
+                if not refused:
+                    # It did not get there.  Let the failure be a failure,
+                    # rather than sending the same records again one at a
+                    # time and concluding something from that.
+                    raise
 
         # One at a time, in the order they were published.
         for _sub, value, names, channels, _pri in records:
             proxy_obj.remote_update(value, names, channels)
 
         if len(records) > 1 and partner.takes_batches:
-            # They took the updates but not the batch, so the batch call is
-            # what they lack.  Stop paying for the attempt.
+            # They took the updates but refused the batch, so the batch call
+            # is what they lack.  Stop paying for the attempt.
             with self._lock:
                 partner.takes_batches = False
             self.logger.info("subscriber '%s' does not take batched updates; "

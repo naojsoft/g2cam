@@ -268,6 +268,73 @@ def test_a_current_subscriber_keeps_taking_batches(monitors):
     assert publisher._partner[subscriber.name].takes_batches
 
 
+def test_a_batch_that_never_arrived_does_not_disable_batching(monitors):
+    """The trap.  A batch call that failed to *arrive* says nothing about
+    whether the subscriber has the method, and taking it as an answer cost
+    batching permanently: without it every update is its own call and its
+    own connection, which makes the next failure likelier than the last.
+
+    So only a refusal counts, and a refusal is what remoteObjectError
+    reports rather than what its message looks like.
+    """
+    publisher = monitors('ghost-pub')
+    subscriber = monitors('ghost-sub')
+    seen = watch(subscriber)
+    publisher.subscribe(subscriber.name, [publisher.name], {'unsub': False})
+    time.sleep(0.4)
+
+    partner = publisher._partner[subscriber.name]
+    assert partner.takes_batches, 'it should start out offering batches'
+
+    # A batch call that does not get there, exactly as a timeout or a
+    # connection that went would look.
+    original = partner.proxy.remote_update_many
+    calls = []
+
+    def unreachable(updates):
+        calls.append(len(updates))
+        raise ro.remoteObjectError('it never got there', refused=False)
+
+    partner.proxy.remote_update_many = unreachable
+    try:
+        publish(publisher, 40)
+        time.sleep(1.5)
+        assert calls, 'no batch was attempted, so nothing was tested'
+        assert partner.takes_batches, (
+            'a batch that never arrived turned batching off')
+    finally:
+        partner.proxy.remote_update_many = original
+
+    # And it recovers: the records were not lost, they are still pending or
+    # delivered once the call works again.
+    publish(publisher, 10)
+    assert wait_for(seen, 1) >= 1, 'delivery never resumed'
+    assert partner.takes_batches
+
+
+def test_a_refused_batch_still_disables_batching(monitors):
+    """The other half: a subscriber that answers and declines is telling us
+    something, and we still stop paying for the attempt."""
+    publisher = monitors('refuse-pub')
+    subscriber = monitors('refuse-sub')
+    seen = watch(subscriber)
+    publisher.subscribe(subscriber.name, [publisher.name], {'unsub': False})
+    time.sleep(0.4)
+
+    partner = publisher._partner[subscriber.name]
+
+    def declines(updates):
+        raise ro.remoteObjectError('Method not found', refused=True)
+
+    partner.proxy.remote_update_many = declines
+
+    publish(publisher, 40)
+    wait_for(seen, 40)
+
+    assert not partner.takes_batches, (
+        'a refusal should be learned, as it always was')
+
+
 # ------------------------------------------------ the receiving side --
 
 def test_remote_update_many_applies_them_in_order():

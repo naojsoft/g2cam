@@ -66,7 +66,25 @@ default_ns = None
 # For generating errors from this module
 #
 class remoteObjectError(Exception):
-    pass
+    """Something went wrong making a remote call.
+
+    :param refused: Whether the call reached a service and that service
+        said no, as opposed to never arriving.
+
+        The distinction is one :py:func:`call_remote` already draws, to
+        decide whether another provider is worth trying, and it used to be
+        flattened into the message and lost.  A caller that is asking the
+        far end a *question* -- PubSub asking whether a subscriber has
+        ``remote_update_many`` -- needs it: a call that was refused answers
+        the question, and one that never arrived answers nothing, however
+        similar the two look from here.
+    """
+
+    def __init__(self, *args, refused=False):
+        super().__init__(*args)
+        #: True when a service answered and declined; False when the call
+        #: did not get there, which includes every timeout.
+        self.refused = refused
 
 class NameServiceWarning(RuntimeWarning):
     pass
@@ -1185,7 +1203,7 @@ class remoteObjectClient:
             (flag, res) = call_remote(self, attrname, args, kwdargs)
             if flag == OK:
                 return res
-            raise remoteObjectError(res)
+            raise remoteObjectError(res, refused=(flag != ERROR_FAILOVER))
 
         return call
 
@@ -1532,7 +1550,7 @@ def call_failover(endpoints, attrname, args, kwdargs, logger=None):
     if flag == OK:
         return res
     if flag != ERROR_FAILOVER:
-        raise remoteObjectError(res)
+        raise remoteObjectError(res, refused=True)
 
     # Did not answer.  Ask again who provides this service, then work
     # through them.
@@ -1544,16 +1562,18 @@ def call_failover(endpoints, attrname, args, kwdargs, logger=None):
     except LookupError as e:
         raise remoteObjectError(str(e))
 
+    refused = False
     for client in clients:
         (flag, res) = call_remote(client, attrname, args, kwdargs)
         if flag == OK:
             return res
         if flag != ERROR_FAILOVER:
+            refused = True
             break
         if logger:
             logger.warning("%s; trying another provider" % (res,))
 
-    raise remoteObjectError(res)
+    raise remoteObjectError(res, refused=refused)
 
 
 def call_all(endpoints, attrname, args, kwdargs):
