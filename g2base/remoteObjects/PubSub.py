@@ -465,7 +465,11 @@ class PubSub:
                 return True
 
             except Exception as e:
-                refused = getattr(e, 'refused', False)
+                # A local object without the method raises AttributeError,
+                # which is a refusal in every sense that matters here --
+                # the call reached them and there was nothing to call.
+                refused = (getattr(e, 'refused', False)
+                           or isinstance(e, AttributeError))
                 self._debug("subscriber '%s' would not take a batch of %d "
                             "(refused=%s): %s", subscriber, len(updates),
                             refused, e)
@@ -1363,6 +1367,19 @@ class PubSub:
                     # Don't requeue local subscribers
                     self.parent.logger.error("Error updating local subscriber: %s" % (
                         str(e)))
+
+            def remote_update_many(self, updates):
+                # A local subscriber is as able to take a run of updates
+                # as a remote one, and must say so: a publisher finds out
+                # by calling, and a local object that does not have this
+                # raises AttributeError rather than refusing, which is
+                # not an answer _send_batch() can read.  Without it the
+                # first batch for this subscriber fails, is requeued, and
+                # fails again -- the feed stops as soon as two updates
+                # ever gather at once.
+                for value, names, channels in updates:
+                    self.remote_update(value, names, channels)
+                return ro.OK
 
         local_obj = anonClass(fn_update, self)
 
